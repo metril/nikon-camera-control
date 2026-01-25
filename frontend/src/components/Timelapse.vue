@@ -30,6 +30,7 @@ const combineMode = ref('sequence')  // 'sequence' or 'paired'
 // Advanced mode state - explicit shot list
 const advancedSteps = ref([])
 const selectedPreset = ref('')
+const expandedSteps = ref(new Set())  // Track which steps are expanded
 
 // Generated preview
 const generatedSteps = ref([])
@@ -382,15 +383,42 @@ function loadPresetToAdvanced(presetName) {
       delay_ms: s.delay_ms || 0
     }))
     selectedPreset.value = presetName
+    // Expand all loaded steps so users can see the settings
+    expandedSteps.value = new Set(advancedSteps.value.map((_, i) => i))
   }
 }
 
 function addAdvancedStep() {
+  const newIndex = advancedSteps.value.length
   advancedSteps.value.push({
     settings: {},
-    label: `Step ${advancedSteps.value.length + 1}`,
+    label: `Step ${newIndex + 1}`,
     delay_ms: 0
   })
+  expandedSteps.value.add(newIndex)  // Auto-expand new step
+}
+
+function toggleStepExpand(index) {
+  if (expandedSteps.value.has(index)) {
+    expandedSteps.value.delete(index)
+  } else {
+    expandedSteps.value.add(index)
+  }
+}
+
+function toggleStepSetting(step, settingKey, enabled) {
+  if (enabled) {
+    // Add setting with default value
+    const defaults = {
+      exposurecompensation: '0',
+      iso: '400',
+      aperture: '5.6',
+      shutterspeed: '1/125'
+    }
+    step.settings[settingKey] = defaults[settingKey]
+  } else {
+    delete step.settings[settingKey]
+  }
 }
 
 function removeAdvancedStep(index) {
@@ -829,27 +857,112 @@ onUnmounted(() => {
                 </select>
               </div>
 
-              <!-- Shot List -->
-              <div class="space-y-1 max-h-48 overflow-y-auto">
+              <!-- Shot List with Expandable Settings -->
+              <div class="space-y-2 max-h-64 overflow-y-auto">
                 <div
                   v-for="(step, i) in advancedSteps"
                   :key="i"
-                  class="flex items-center gap-2 p-2 bg-camera-bg rounded text-xs"
+                  class="bg-camera-bg rounded overflow-hidden"
                 >
-                  <span class="w-5 text-camera-muted">#{{ i + 1 }}</span>
-                  <input
-                    v-model="step.label"
-                    type="text"
-                    placeholder="Label"
-                    class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
-                  />
-                  <button
-                    @click="removeAdvancedStep(i)"
-                    :disabled="advancedSteps.length <= 2"
-                    class="px-2 py-1 text-camera-error hover:bg-camera-error/10 rounded disabled:opacity-30"
-                  >
-                    ×
-                  </button>
+                  <!-- Header row (always visible) -->
+                  <div class="flex items-center gap-2 p-2">
+                    <span class="w-5 text-camera-muted text-xs">#{{ i + 1 }}</span>
+                    <input
+                      v-model="step.label"
+                      type="text"
+                      placeholder="Label"
+                      class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
+                    />
+                    <button
+                      @click="toggleStepExpand(i)"
+                      class="px-2 py-1 text-camera-muted hover:bg-camera-surface rounded text-xs"
+                    >
+                      {{ expandedSteps.has(i) ? '▲' : '▼' }}
+                    </button>
+                    <button
+                      @click="removeAdvancedStep(i)"
+                      :disabled="advancedSteps.length <= 2"
+                      class="px-2 py-1 text-camera-error hover:bg-camera-error/10 rounded disabled:opacity-30"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <!-- Settings section (expandable) -->
+                  <div v-if="expandedSteps.has(i)" class="px-2 pb-2 space-y-2 border-t border-camera-border/50">
+                    <!-- Exposure setting -->
+                    <div class="flex items-center gap-2 pt-2">
+                      <input
+                        type="checkbox"
+                        :checked="'exposurecompensation' in step.settings"
+                        @change="toggleStepSetting(step, 'exposurecompensation', $event.target.checked)"
+                        class="w-3 h-3"
+                      />
+                      <span class="text-xs w-16">Exposure</span>
+                      <select
+                        v-if="'exposurecompensation' in step.settings"
+                        v-model="step.settings.exposurecompensation"
+                        class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
+                      >
+                        <option v-for="val in bracketTypes.exposure.presets" :key="val" :value="val">{{ val }} EV</option>
+                      </select>
+                      <span v-else class="flex-1 text-xs text-camera-muted">--</span>
+                    </div>
+                    <!-- ISO setting -->
+                    <div class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        :checked="'iso' in step.settings"
+                        @change="toggleStepSetting(step, 'iso', $event.target.checked)"
+                        class="w-3 h-3"
+                      />
+                      <span class="text-xs w-16">ISO</span>
+                      <select
+                        v-if="'iso' in step.settings"
+                        v-model="step.settings.iso"
+                        class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
+                      >
+                        <option v-for="val in bracketTypes.iso.presets" :key="val" :value="val">{{ val }}</option>
+                      </select>
+                      <span v-else class="flex-1 text-xs text-camera-muted">--</span>
+                    </div>
+                    <!-- Aperture setting -->
+                    <div class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        :checked="'aperture' in step.settings"
+                        @change="toggleStepSetting(step, 'aperture', $event.target.checked)"
+                        class="w-3 h-3"
+                      />
+                      <span class="text-xs w-16">Aperture</span>
+                      <select
+                        v-if="'aperture' in step.settings"
+                        v-model="step.settings.aperture"
+                        class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
+                      >
+                        <option v-for="val in bracketTypes.aperture.presets" :key="val" :value="val">f/{{ val }}</option>
+                      </select>
+                      <span v-else class="flex-1 text-xs text-camera-muted">--</span>
+                    </div>
+                    <!-- Shutter setting -->
+                    <div class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        :checked="'shutterspeed' in step.settings"
+                        @change="toggleStepSetting(step, 'shutterspeed', $event.target.checked)"
+                        class="w-3 h-3"
+                      />
+                      <span class="text-xs w-16">Shutter</span>
+                      <select
+                        v-if="'shutterspeed' in step.settings"
+                        v-model="step.settings.shutterspeed"
+                        class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
+                      >
+                        <option v-for="val in bracketTypes.shutter.presets" :key="val" :value="val">{{ val }}</option>
+                      </select>
+                      <span v-else class="flex-1 text-xs text-camera-muted">--</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
