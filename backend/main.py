@@ -333,7 +333,7 @@ else:
         return {
             "application": "Nikon D500 Camera Control",
             "version": "0.1.0",
-            "message": "Frontend not built. Run 'cd frontend && npm install && npm run build' or use Docker.",
+            "message": "Frontend not built. Run 'cd frontend && bun install && bun run build' or use Docker.",
             "camera": status,
             "docs": "/docs",
             "warning": "IMPORTANT: Set camera mode dial to P, A, S, or M for remote control to work!",

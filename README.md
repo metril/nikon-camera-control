@@ -239,12 +239,12 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ### Frontend Development
 
 ```bash
-# Install Node.js dependencies
+# Install dependencies (using Bun)
 cd frontend
-npm install
+bun install
 
 # Run development server with hot reload (proxies to backend on port 8000)
-npm run dev
+bun run dev
 
 # Frontend will be available at http://localhost:5173
 ```
@@ -258,7 +258,7 @@ For development, run the backend and frontend in separate terminals:
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: Frontend
-cd frontend && npm run dev
+cd frontend && bun run dev
 ```
 
 The frontend dev server (Vite) is configured to proxy `/api` and `/ws` requests to the backend.
@@ -273,8 +273,8 @@ pytest tests/ -v
 
 ```bash
 cd frontend
-npm install
-npm run build
+bun install
+bun run build
 # Built files go to frontend/dist/
 ```
 
