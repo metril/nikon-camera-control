@@ -362,13 +362,14 @@ function getActiveTypesFromSteps(steps) {
 }
 
 function toggleValue(valuesRef, value) {
-  const idx = valuesRef.value.indexOf(value)
+  const strValue = String(value)
+  const idx = valuesRef.value.findIndex(v => String(v) === strValue)
   if (idx >= 0) {
     if (valuesRef.value.length > 1) {
       valuesRef.value.splice(idx, 1)
     }
   } else {
-    valuesRef.value.push(value)
+    valuesRef.value.push(strValue)
     // Sort appropriately based on type
     valuesRef.value.sort((a, b) => parseFloat(a) - parseFloat(b))
   }
