@@ -123,6 +123,18 @@ POST /api/camera/disconnect
 GET /api/camera/summary
 ```
 
+### Time-lapse
+```
+POST /api/timelapse/configure    # Configure session (interval, frames/duration)
+POST /api/timelapse/start        # Start capture session
+POST /api/timelapse/stop         # Stop capture session
+POST /api/timelapse/pause        # Pause capture
+POST /api/timelapse/resume       # Resume capture
+GET  /api/timelapse/status       # Get current progress
+POST /api/timelapse/generate-video  # Generate video from frames
+POST /api/timelapse/estimate-disk-space  # Estimate storage required
+```
+
 ### WebSocket Events
 ```
 WS /ws/events
@@ -214,15 +226,42 @@ docker-compose -f docker/docker-compose.yml up
 
 ## Development
 
-### Local Development
+### Backend Development
 
 ```bash
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 
-# Run in development mode
+# Run backend in development mode
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+### Frontend Development
+
+```bash
+# Install Node.js dependencies
+cd frontend
+npm install
+
+# Run development server with hot reload (proxies to backend on port 8000)
+npm run dev
+
+# Frontend will be available at http://localhost:5173
+```
+
+### Running Both Together
+
+For development, run the backend and frontend in separate terminals:
+
+```bash
+# Terminal 1: Backend
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2: Frontend
+cd frontend && npm run dev
+```
+
+The frontend dev server (Vite) is configured to proxy `/api` and `/ws` requests to the backend.
 
 ### Running Tests
 
@@ -230,12 +269,13 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 pytest tests/ -v
 ```
 
-### Building Frontend
+### Building for Production
 
 ```bash
 cd frontend
 npm install
 npm run build
+# Built files go to frontend/dist/
 ```
 
 ---
