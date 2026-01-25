@@ -9,9 +9,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 import structlog
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.camera.controller import CameraController
 from backend.camera.exceptions import CameraError, CameraNotFoundError
@@ -281,60 +283,42 @@ async def websocket_events(websocket: WebSocket):
 # Static Files (Vue Frontend)
 # =============================================================================
 
-# Mount static files for frontend (will be built Vue app)
-# app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
+# Determine frontend dist path (works in Docker and local dev)
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
+# Check if built frontend exists
+if FRONTEND_DIST.exists():
+    # Mount static assets (js, css, etc.)
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
-# =============================================================================
-# Development Mode: Simple HTML for testing
-# =============================================================================
+    @app.get("/")
+    async def serve_spa():
+        """Serve the Vue SPA."""
+        return FileResponse(FRONTEND_DIST / "index.html")
 
-@app.get("/")
-async def root():
-    """Root endpoint with basic status page."""
-    status = await camera_controller.get_status()
-    return {
-        "application": "Nikon D500 Camera Control",
-        "version": "0.1.0",
-        "camera": status,
-        "endpoints": {
-            "health": "GET /api/health",
-            "camera": {
-                "status": "GET /api/camera/status",
-                "connect": "POST /api/camera/connect",
-                "disconnect": "POST /api/camera/disconnect",
-                "summary": "GET /api/camera/summary",
-                "reconnect": "POST /api/camera/reconnect",
-            },
-            "settings": {
-                "all": "GET /api/settings",
-                "common": "GET /api/settings/common",
-                "get": "GET /api/settings/{name}",
-                "set": "PUT /api/settings/{name}",
-                "battery": "GET /api/settings/battery/level",
-            },
-            "capture": {
-                "photo": "POST /api/capture/photo",
-                "trigger": "POST /api/capture/trigger",
-                "files": "GET /api/capture/files",
-                "download": "GET /api/capture/files/{filename}",
-                "delete": "DELETE /api/capture/files/{filename}",
-            },
-            "timelapse": {
-                "status": "GET /api/timelapse/status",
-                "configure": "POST /api/timelapse/configure",
-                "start": "POST /api/timelapse/start",
-                "stop": "POST /api/timelapse/stop",
-                "pause": "POST /api/timelapse/pause",
-                "resume": "POST /api/timelapse/resume",
-                "generate_video": "POST /api/timelapse/generate-video",
-                "disk_estimate": "POST /api/timelapse/estimate-disk-space",
-            },
-            "websocket": {
-                "events": "/ws/events",
-                "liveview": "/ws/liveview",
-            },
-        },
-        "warning": "IMPORTANT: Set camera mode dial to P, A, S, or M for remote control to work!",
-        "docs": "/docs",
-    }
+    # Catch-all for Vue Router (SPA routing)
+    @app.get("/{path:path}")
+    async def serve_spa_routes(path: str):
+        """Serve Vue SPA for all non-API routes."""
+        # Check if it's a static file
+        file_path = FRONTEND_DIST / path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html for Vue Router
+        return FileResponse(FRONTEND_DIST / "index.html")
+else:
+    # Development mode fallback - show API info
+    logger.warning("frontend_not_built", path=str(FRONTEND_DIST))
+
+    @app.get("/")
+    async def root():
+        """Root endpoint with basic status page (frontend not built)."""
+        status = await camera_controller.get_status()
+        return {
+            "application": "Nikon D500 Camera Control",
+            "version": "0.1.0",
+            "message": "Frontend not built. Run 'cd frontend && npm install && npm run build' or use Docker.",
+            "camera": status,
+            "docs": "/docs",
+            "warning": "IMPORTANT: Set camera mode dial to P, A, S, or M for remote control to work!",
+        }

@@ -1,7 +1,29 @@
 # Nikon D500 Camera Control Application
 # Multi-stage build with pinned versions for reproducibility
 
-FROM python:3.11-slim-bookworm AS builder
+# =============================================================================
+# Stage 1: Build Frontend
+# =============================================================================
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Build production bundle
+RUN npm run build
+
+# =============================================================================
+# Stage 2: Build Python Dependencies
+# =============================================================================
+FROM python:3.11-slim-bookworm AS python-builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,7 +41,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Runtime stage
+# =============================================================================
+# Stage 3: Runtime
+# =============================================================================
 FROM python:3.11-slim-bookworm
 
 # Install runtime dependencies only
@@ -31,7 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=python-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Create non-root user for security
@@ -42,7 +66,9 @@ WORKDIR /app
 
 # Copy application code
 COPY backend/ ./backend/
-COPY frontend/ ./frontend/
+
+# Copy built frontend from frontend-builder
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist/
 
 # Create output directory
 RUN mkdir -p /app/output && chown appuser:appuser /app/output
