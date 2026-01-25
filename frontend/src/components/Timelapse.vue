@@ -361,20 +361,23 @@ function getActiveTypesFromSteps(steps) {
   return Array.from(types)
 }
 
-function toggleValue(valuesRef, value) {
+function toggleValue(valuesArray, value) {
+  // Note: In Vue 3 templates, refs are auto-unwrapped when passed to functions,
+  // so valuesArray is the actual array, not the ref. Return the new array.
   const strValue = String(value)
-  const idx = valuesRef.value.findIndex(v => String(v) === strValue)
+  const idx = valuesArray.findIndex(v => String(v) === strValue)
 
   if (idx >= 0) {
     // Remove: only if more than 1 value remains
-    if (valuesRef.value.length > 1) {
-      valuesRef.value = valuesRef.value.filter((_, i) => i !== idx)
+    if (valuesArray.length > 1) {
+      return valuesArray.filter((_, i) => i !== idx)
     }
+    return valuesArray
   } else {
-    // Add: create new array with value, sort, and replace
-    const newValues = [...valuesRef.value, strValue]
+    // Add: create new array with value, sort, and return
+    const newValues = [...valuesArray, strValue]
     newValues.sort((a, b) => parseFloat(a) - parseFloat(b))
-    valuesRef.value = newValues
+    return newValues
   }
 }
 
@@ -736,7 +739,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.exposure.presets"
                     :key="val"
-                    @click="toggleValue(exposureValues, val)"
+                    @click="exposureValues = toggleValue(exposureValues, val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="exposureValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
@@ -757,7 +760,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.iso.presets"
                     :key="val"
-                    @click="toggleValue(isoValues, val)"
+                    @click="isoValues = toggleValue(isoValues, val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="isoValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
@@ -778,7 +781,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.aperture.presets"
                     :key="val"
-                    @click="toggleValue(apertureValues, val)"
+                    @click="apertureValues = toggleValue(apertureValues, val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="apertureValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
@@ -799,7 +802,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.shutter.presets"
                     :key="val"
-                    @click="toggleValue(shutterValues, val)"
+                    @click="shutterValues = toggleValue(shutterValues, val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="shutterValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
