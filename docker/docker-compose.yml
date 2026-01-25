@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  nikon-camera-control:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: nikon-camera-control
+    ports:
+      - "8000:8000"
+    # USB device passthrough - DO NOT USE privileged: true
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      # Output volume for captured media
+      - ${OUTPUT_PATH:-./output}:/app/output
+      # D-Bus for udev events (optional)
+      - /var/run/dbus:/var/run/dbus:ro
+    environment:
+      - OUTPUT_PATH=/app/output
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CAMERA_KEEPALIVE_INTERVAL=30
+      - LIVEVIEW_TARGET_FPS=8
+    restart: unless-stopped
+    # Security: DO NOT enable privileged mode
+    # privileged: true  # NEVER USE THIS
+
+    # If you need specific device access instead of all USB:
+    # device_cgroup_rules:
+    #   - 'c 189:* rwm'  # USB devices major number
+
+  # Optional: Development mode with hot reload
+  nikon-camera-control-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: nikon-camera-control-dev
+    ports:
+      - "8000:8000"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      - ${OUTPUT_PATH:-./output}:/app/output
+      - ../backend:/app/backend:ro
+      - ../frontend:/app/frontend:ro
+    environment:
+      - OUTPUT_PATH=/app/output
+      - LOG_LEVEL=DEBUG
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    profiles:
+      - dev

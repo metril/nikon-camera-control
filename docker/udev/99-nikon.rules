@@ -1,0 +1,16 @@
+# Nikon Camera USB Rules
+# Copy this file to /etc/udev/rules.d/ on the host machine
+# Then run: sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Nikon cameras - allow all users to access
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04b0", MODE="0666"
+
+# Nikon D500 specifically (Product ID may vary)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04b0", ATTRS{idProduct}=="0432", MODE="0666", SYMLINK+="nikon-d500"
+
+# Alternative: Grant access to a specific group
+# SUBSYSTEM=="usb", ATTRS{idVendor}=="04b0", MODE="0660", GROUP="plugdev"
+
+# Prevent gvfs-gphoto2-volume-monitor from claiming the camera
+# This can interfere with remote control
+SUBSYSTEM=="usb", ENV{ID_USB_INTERFACES}=="*:060101:*", ENV{GPHOTO2_DRIVER}="proprietary", ENV{ID_MEDIA_PLAYER}="0"
