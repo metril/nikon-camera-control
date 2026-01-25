@@ -12,11 +12,27 @@ const durationMinutes = ref(10)
 
 // Bracketing configuration
 const bracketEnabled = ref(false)
-const bracketType = ref('exposure')
-const bracketPreset = ref('exposure_3')
-const customBracketValues = ref('')
+const bracketMode = ref('quick')  // 'quick' or 'advanced'
 const bracketPresets = ref({})
-const showBracketOptions = ref(false)
+const multiBracketPresets = ref({})
+
+// Quick setup state - independent toggles for each bracket type
+const exposureEnabled = ref(false)
+const exposureValues = ref(['-2', '0', '+2'])
+const isoEnabled = ref(false)
+const isoValues = ref(['100', '400', '1600'])
+const apertureEnabled = ref(false)
+const apertureValues = ref(['2.8', '5.6', '11'])
+const shutterEnabled = ref(false)
+const shutterValues = ref(['1/250', '1/125', '1/60'])
+const combineMode = ref('sequence')  // 'sequence' or 'paired'
+
+// Advanced mode state - explicit shot list
+const advancedSteps = ref([])
+const selectedPreset = ref('')
+
+// Generated preview
+const generatedSteps = ref([])
 
 // Session state
 const status = ref({
@@ -48,7 +64,7 @@ const isRunning = computed(() => status.value.state === 'running')
 const isPaused = computed(() => status.value.state === 'paused')
 const isIdle = computed(() => ['idle', 'completed', 'cancelled', 'error'].includes(status.value.state))
 const hasFrames = computed(() => status.value.frames_captured > 0)
-const isBracketing = computed(() => status.value.bracketing?.enabled)
+const isBracketing = computed(() => status.value.bracketing?.enabled || status.value.multi_bracket_active)
 
 const progressPercent = computed(() => {
   if (status.value.total_frames === 0) return 0
@@ -65,11 +81,7 @@ const computedTotalFrames = computed(() => {
   return Math.floor((durationMinutes.value * 60) / intervalSeconds.value)
 })
 
-const shotsPerBracket = computed(() => {
-  if (!bracketEnabled.value) return 1
-  const preset = bracketPresets.value[bracketPreset.value]
-  return preset?.shots_per_bracket || 3
-})
+// shotsPerBracket is defined in the multi-bracket section below
 
 const totalShots = computed(() => {
   return computedTotalFrames.value * shotsPerBracket.value
@@ -96,21 +108,117 @@ const estimatedVideoDuration = computed(() => {
   return `${secs.toFixed(1)}s`
 })
 
-const bracketTypeOptions = [
-  { value: 'exposure', label: 'Exposure (EV)', icon: 'EV' },
-  { value: 'iso', label: 'ISO', icon: 'ISO' },
-  { value: 'aperture', label: 'Aperture', icon: 'f/' },
-  { value: 'shutter', label: 'Shutter Speed', icon: 'S' }
-]
+// Quick bracket type definitions
+const bracketTypes = {
+  exposure: {
+    label: 'Exposure',
+    icon: 'EV',
+    setting: 'exposurecompensation',
+    presets: ['-2', '-1', '0', '+1', '+2'],
+    defaultValues: ['-2', '0', '+2']
+  },
+  iso: {
+    label: 'ISO',
+    icon: 'ISO',
+    setting: 'iso',
+    presets: ['100', '200', '400', '800', '1600', '3200', '6400'],
+    defaultValues: ['100', '400', '1600']
+  },
+  aperture: {
+    label: 'Aperture',
+    icon: 'f/',
+    setting: 'aperture',
+    presets: ['1.4', '2', '2.8', '4', '5.6', '8', '11', '16', '22'],
+    defaultValues: ['2.8', '5.6', '11']
+  },
+  shutter: {
+    label: 'Shutter',
+    icon: 'S',
+    setting: 'shutterspeed',
+    presets: ['1/4000', '1/2000', '1/1000', '1/500', '1/250', '1/125', '1/60', '1/30', '1/15'],
+    defaultValues: ['1/250', '1/125', '1/60']
+  }
+}
 
-const presetOptions = computed(() => {
-  return Object.entries(bracketPresets.value)
-    .filter(([key, preset]) => preset.bracket_type === bracketType.value)
-    .map(([key, preset]) => ({
-      value: key,
-      label: `${preset.shots_per_bracket} shots`,
-      steps: preset.steps.map(s => s.label).join(', ')
-    }))
+// Check if any bracket type is enabled
+const anyBracketTypeEnabled = computed(() => {
+  return exposureEnabled.value || isoEnabled.value || apertureEnabled.value || shutterEnabled.value
+})
+
+// Generate steps preview for quick mode
+const quickModeSteps = computed(() => {
+  const steps = []
+
+  if (combineMode.value === 'sequence') {
+    // Concatenate all enabled types
+    if (exposureEnabled.value) {
+      exposureValues.value.forEach(val => {
+        steps.push({ settings: { exposurecompensation: val }, label: `${val} EV` })
+      })
+    }
+    if (isoEnabled.value) {
+      isoValues.value.forEach(val => {
+        steps.push({ settings: { iso: val }, label: `ISO ${val}` })
+      })
+    }
+    if (apertureEnabled.value) {
+      apertureValues.value.forEach(val => {
+        steps.push({ settings: { aperture: val }, label: `f/${val}` })
+      })
+    }
+    if (shutterEnabled.value) {
+      shutterValues.value.forEach(val => {
+        steps.push({ settings: { shutterspeed: val }, label: val })
+      })
+    }
+  } else {
+    // Paired mode: combine at same indices
+    const enabledTypes = []
+    if (exposureEnabled.value) enabledTypes.push({ setting: 'exposurecompensation', values: exposureValues.value, prefix: 'EV' })
+    if (isoEnabled.value) enabledTypes.push({ setting: 'iso', values: isoValues.value, prefix: 'ISO ' })
+    if (apertureEnabled.value) enabledTypes.push({ setting: 'aperture', values: apertureValues.value, prefix: 'f/' })
+    if (shutterEnabled.value) enabledTypes.push({ setting: 'shutterspeed', values: shutterValues.value, prefix: '' })
+
+    if (enabledTypes.length > 0) {
+      const maxLen = Math.max(...enabledTypes.map(t => t.values.length))
+      for (let i = 0; i < maxLen; i++) {
+        const settings = {}
+        const labels = []
+        enabledTypes.forEach(({ setting, values, prefix }) => {
+          if (i < values.length) {
+            settings[setting] = values[i]
+            labels.push(`${prefix}${values[i]}`)
+          }
+        })
+        if (Object.keys(settings).length > 0) {
+          steps.push({ settings, label: labels.join(' / ') })
+        }
+      }
+    }
+  }
+
+  return steps
+})
+
+// Calculate shots per bracket based on mode
+const shotsPerBracket = computed(() => {
+  if (!bracketEnabled.value) return 1
+
+  if (bracketMode.value === 'quick') {
+    return quickModeSteps.value.length || 1
+  } else {
+    return advancedSteps.value.length || 1
+  }
+})
+
+// Multi-bracket preset options
+const multiBracketPresetOptions = computed(() => {
+  return Object.entries(multiBracketPresets.value).map(([key, preset]) => ({
+    value: key,
+    label: key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    shots: preset.shots_per_bracket,
+    types: preset.active_types?.join(', ') || ''
+  }))
 })
 
 function formatTime(seconds) {
@@ -136,9 +244,16 @@ async function fetchStatus() {
 
 async function fetchBracketPresets() {
   try {
-    const response = await fetch('/api/timelapse/bracket-presets')
-    if (response.ok) {
-      bracketPresets.value = await response.json()
+    const [legacyResponse, multiResponse] = await Promise.all([
+      fetch('/api/timelapse/bracket-presets'),
+      fetch('/api/timelapse/multi-bracket/presets')
+    ])
+
+    if (legacyResponse.ok) {
+      bracketPresets.value = await legacyResponse.json()
+    }
+    if (multiResponse.ok) {
+      multiBracketPresets.value = await multiResponse.json()
     }
   } catch (e) {
     console.error('Failed to fetch bracket presets:', e)
@@ -166,22 +281,121 @@ async function estimateDiskSpace() {
 
 async function configureBracket() {
   if (!bracketEnabled.value) {
-    await fetch('/api/timelapse/configure/bracket-disable', { method: 'POST' })
+    // Disable both legacy and multi-bracket
+    await Promise.all([
+      fetch('/api/timelapse/configure/bracket-disable', { method: 'POST' }),
+      fetch('/api/timelapse/configure/multi-bracket/disable', { method: 'POST' })
+    ])
     return
   }
 
   try {
-    const response = await fetch('/api/timelapse/configure/bracket-preset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preset_name: bracketPreset.value })
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.detail || 'Bracket configuration failed')
+    if (bracketMode.value === 'quick') {
+      // Use quick setup API
+      const response = await fetch('/api/timelapse/configure/multi-bracket/quick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exposure_enabled: exposureEnabled.value,
+          exposure_values: exposureValues.value,
+          iso_enabled: isoEnabled.value,
+          iso_values: isoValues.value,
+          aperture_enabled: apertureEnabled.value,
+          aperture_values: apertureValues.value,
+          shutter_enabled: shutterEnabled.value,
+          shutter_values: shutterValues.value,
+          combine_mode: combineMode.value
+        })
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.detail || 'Multi-bracket configuration failed')
+      }
+      const result = await response.json()
+      generatedSteps.value = result.generated_steps || []
+    } else if (bracketMode.value === 'advanced') {
+      if (selectedPreset.value) {
+        // Use preset
+        const response = await fetch('/api/timelapse/configure/multi-bracket/preset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preset_name: selectedPreset.value })
+        })
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.detail || 'Preset configuration failed')
+        }
+      } else if (advancedSteps.value.length >= 2) {
+        // Use custom steps
+        const response = await fetch('/api/timelapse/configure/multi-bracket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            active_types: getActiveTypesFromSteps(advancedSteps.value),
+            steps: advancedSteps.value
+          })
+        })
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.detail || 'Advanced bracket configuration failed')
+        }
+      }
     }
   } catch (e) {
     error.value = e.message
+  }
+}
+
+function getActiveTypesFromSteps(steps) {
+  const types = new Set()
+  steps.forEach(step => {
+    if (step.settings) {
+      if ('exposurecompensation' in step.settings) types.add('exposure')
+      if ('iso' in step.settings) types.add('iso')
+      if ('aperture' in step.settings) types.add('aperture')
+      if ('shutterspeed' in step.settings) types.add('shutter')
+    }
+  })
+  return Array.from(types)
+}
+
+function toggleValue(valuesRef, value) {
+  const idx = valuesRef.value.indexOf(value)
+  if (idx >= 0) {
+    if (valuesRef.value.length > 1) {
+      valuesRef.value.splice(idx, 1)
+    }
+  } else {
+    valuesRef.value.push(value)
+    // Sort appropriately based on type
+    valuesRef.value.sort((a, b) => parseFloat(a) - parseFloat(b))
+  }
+}
+
+function loadPresetToAdvanced(presetName) {
+  const preset = multiBracketPresets.value[presetName]
+  if (preset && preset.steps) {
+    advancedSteps.value = preset.steps.map(s => ({
+      settings: { ...s.settings },
+      label: s.label || '',
+      delay_ms: s.delay_ms || 0
+    }))
+    selectedPreset.value = presetName
+  }
+}
+
+function addAdvancedStep() {
+  advancedSteps.value.push({
+    settings: {},
+    label: `Step ${advancedSteps.value.length + 1}`,
+    delay_ms: 0
+  })
+}
+
+function removeAdvancedStep(index) {
+  if (advancedSteps.value.length > 2) {
+    advancedSteps.value.splice(index, 1)
   }
 }
 
@@ -314,6 +528,13 @@ async function generateVideo() {
 watch(bracketEnabled, (enabled) => {
   if (enabled && intervalSeconds.value < 5) {
     intervalSeconds.value = 5
+  }
+})
+
+// Auto-enable bracket when any type is toggled on
+watch([exposureEnabled, isoEnabled, apertureEnabled, shutterEnabled], () => {
+  if (anyBracketTypeEnabled.value && !bracketEnabled.value) {
+    bracketEnabled.value = true
   }
 })
 
@@ -451,48 +672,205 @@ onUnmounted(() => {
           </div>
 
           <div v-if="bracketEnabled" class="space-y-3">
-            <!-- Bracket Type -->
-            <div>
-              <label class="block text-xs text-camera-muted mb-1">Type</label>
-              <div class="grid grid-cols-4 gap-1">
-                <button
-                  v-for="opt in bracketTypeOptions"
-                  :key="opt.value"
-                  @click="bracketType = opt.value"
-                  class="px-2 py-1.5 text-xs rounded transition-colors text-center"
-                  :class="bracketType === opt.value ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-text'"
-                >
-                  {{ opt.icon }}
-                </button>
+            <!-- Mode Toggle -->
+            <div class="flex gap-1 bg-camera-bg p-1 rounded">
+              <button
+                @click="bracketMode = 'quick'"
+                class="flex-1 px-2 py-1 text-xs rounded transition-colors"
+                :class="bracketMode === 'quick' ? 'bg-camera-accent text-white' : 'text-camera-muted'"
+              >
+                Quick Setup
+              </button>
+              <button
+                @click="bracketMode = 'advanced'"
+                class="flex-1 px-2 py-1 text-xs rounded transition-colors"
+                :class="bracketMode === 'advanced' ? 'bg-camera-accent text-white' : 'text-camera-muted'"
+              >
+                Advanced
+              </button>
+            </div>
+
+            <!-- Quick Setup Mode -->
+            <div v-if="bracketMode === 'quick'" class="space-y-3">
+              <!-- Exposure Bracket -->
+              <div class="p-2 bg-camera-bg rounded">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" v-model="exposureEnabled" class="w-4 h-4 rounded" />
+                    <span class="text-xs font-medium">Exposure (EV)</span>
+                  </label>
+                </div>
+                <div v-if="exposureEnabled" class="flex flex-wrap gap-1">
+                  <button
+                    v-for="val in bracketTypes.exposure.presets"
+                    :key="val"
+                    @click="toggleValue(exposureValues, val)"
+                    class="px-2 py-0.5 text-xs rounded transition-colors"
+                    :class="exposureValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
+                  >
+                    {{ val }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- ISO Bracket -->
+              <div class="p-2 bg-camera-bg rounded">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" v-model="isoEnabled" class="w-4 h-4 rounded" />
+                    <span class="text-xs font-medium">ISO</span>
+                  </label>
+                </div>
+                <div v-if="isoEnabled" class="flex flex-wrap gap-1">
+                  <button
+                    v-for="val in bracketTypes.iso.presets"
+                    :key="val"
+                    @click="toggleValue(isoValues, val)"
+                    class="px-2 py-0.5 text-xs rounded transition-colors"
+                    :class="isoValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
+                  >
+                    {{ val }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Aperture Bracket -->
+              <div class="p-2 bg-camera-bg rounded">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" v-model="apertureEnabled" class="w-4 h-4 rounded" />
+                    <span class="text-xs font-medium">Aperture (f/)</span>
+                  </label>
+                </div>
+                <div v-if="apertureEnabled" class="flex flex-wrap gap-1">
+                  <button
+                    v-for="val in bracketTypes.aperture.presets"
+                    :key="val"
+                    @click="toggleValue(apertureValues, val)"
+                    class="px-2 py-0.5 text-xs rounded transition-colors"
+                    :class="apertureValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
+                  >
+                    f/{{ val }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Shutter Bracket -->
+              <div class="p-2 bg-camera-bg rounded">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" v-model="shutterEnabled" class="w-4 h-4 rounded" />
+                    <span class="text-xs font-medium">Shutter Speed</span>
+                  </label>
+                </div>
+                <div v-if="shutterEnabled" class="flex flex-wrap gap-1">
+                  <button
+                    v-for="val in bracketTypes.shutter.presets"
+                    :key="val"
+                    @click="toggleValue(shutterValues, val)"
+                    class="px-2 py-0.5 text-xs rounded transition-colors"
+                    :class="shutterValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
+                  >
+                    {{ val }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Combine Mode (when multiple types enabled) -->
+              <div v-if="[exposureEnabled, isoEnabled, apertureEnabled, shutterEnabled].filter(Boolean).length > 1" class="p-2 bg-camera-bg rounded">
+                <label class="block text-xs text-camera-muted mb-2">Combine Mode</label>
+                <div class="flex gap-2">
+                  <label class="flex items-center gap-1 text-xs">
+                    <input type="radio" v-model="combineMode" value="sequence" />
+                    <span>Sequence</span>
+                  </label>
+                  <label class="flex items-center gap-1 text-xs">
+                    <input type="radio" v-model="combineMode" value="paired" />
+                    <span>Paired</span>
+                  </label>
+                </div>
+                <p class="text-xs text-camera-muted mt-1">
+                  {{ combineMode === 'sequence' ? 'Each type adds shots sequentially' : 'Types combined at same positions' }}
+                </p>
+              </div>
+
+              <!-- Preview -->
+              <div v-if="quickModeSteps.length > 0" class="p-2 bg-camera-bg rounded">
+                <label class="block text-xs text-camera-muted mb-1">Shot Preview ({{ quickModeSteps.length }} shots)</label>
+                <div class="flex flex-wrap gap-1">
+                  <span
+                    v-for="(step, i) in quickModeSteps.slice(0, 8)"
+                    :key="i"
+                    class="px-1.5 py-0.5 text-xs bg-camera-border rounded"
+                  >
+                    {{ step.label }}
+                  </span>
+                  <span v-if="quickModeSteps.length > 8" class="px-1.5 py-0.5 text-xs text-camera-muted">
+                    +{{ quickModeSteps.length - 8 }} more
+                  </span>
+                </div>
               </div>
             </div>
 
-            <!-- Preset Selector -->
-            <div v-if="presetOptions.length > 0">
-              <label class="block text-xs text-camera-muted mb-1">Preset</label>
-              <select
-                v-model="bracketPreset"
-                class="w-full px-3 py-2 bg-camera-bg border border-camera-border rounded text-sm focus:outline-none focus:border-camera-accent"
-              >
-                <option
-                  v-for="preset in presetOptions"
-                  :key="preset.value"
-                  :value="preset.value"
+            <!-- Advanced Mode -->
+            <div v-else class="space-y-3">
+              <!-- Preset Selector -->
+              <div>
+                <label class="block text-xs text-camera-muted mb-1">Load Preset</label>
+                <select
+                  v-model="selectedPreset"
+                  @change="loadPresetToAdvanced(selectedPreset)"
+                  class="w-full px-2 py-1.5 bg-camera-bg border border-camera-border rounded text-xs"
                 >
-                  {{ preset.label }} ({{ preset.steps }})
-                </option>
-              </select>
+                  <option value="">Custom...</option>
+                  <option v-for="opt in multiBracketPresetOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }} ({{ opt.shots }} shots)
+                  </option>
+                </select>
+              </div>
+
+              <!-- Shot List -->
+              <div class="space-y-1 max-h-48 overflow-y-auto">
+                <div
+                  v-for="(step, i) in advancedSteps"
+                  :key="i"
+                  class="flex items-center gap-2 p-2 bg-camera-bg rounded text-xs"
+                >
+                  <span class="w-5 text-camera-muted">#{{ i + 1 }}</span>
+                  <input
+                    v-model="step.label"
+                    type="text"
+                    placeholder="Label"
+                    class="flex-1 px-2 py-1 bg-camera-surface border border-camera-border rounded text-xs"
+                  />
+                  <button
+                    @click="removeAdvancedStep(i)"
+                    :disabled="advancedSteps.length <= 2"
+                    class="px-2 py-1 text-camera-error hover:bg-camera-error/10 rounded disabled:opacity-30"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <button
+                @click="addAdvancedStep"
+                :disabled="advancedSteps.length >= 15"
+                class="w-full py-1.5 text-xs bg-camera-border text-camera-text rounded hover:bg-camera-border/80 disabled:opacity-50"
+              >
+                + Add Shot
+              </button>
             </div>
 
             <!-- Bracket Info -->
-            <div class="p-2 bg-camera-bg rounded text-xs">
+            <div class="p-2 bg-camera-accent/10 rounded text-xs">
               <div class="flex justify-between">
                 <span class="text-camera-muted">Shots per interval:</span>
-                <span>{{ shotsPerBracket }}</span>
+                <span class="font-medium">{{ shotsPerBracket }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-camera-muted">Total shots:</span>
-                <span>{{ totalShots }}</span>
+                <span class="font-medium">{{ totalShots }}</span>
               </div>
             </div>
           </div>
@@ -557,11 +935,14 @@ onUnmounted(() => {
         <!-- Bracket Info (if bracketing) -->
         <div v-if="isBracketing" class="p-2 bg-camera-accent/10 rounded text-xs">
           <span class="text-camera-accent font-medium">
-            {{ status.bracketing.bracket_type.toUpperCase() }} Bracketing
+            {{ status.multi_bracket_active ? 'Multi-Bracket' : (status.bracketing?.bracket_type?.toUpperCase() || 'Bracket') }}
           </span>
           <span class="text-camera-muted ml-2">
-            {{ status.bracketing.shots_per_bracket }} shots per set
+            {{ status.bracketing?.shots_per_bracket || shotsPerBracket }} shots per set
           </span>
+          <div v-if="status.bracketing?.active_types?.length > 1" class="mt-1 text-camera-muted">
+            Types: {{ status.bracketing.active_types.join(', ') }}
+          </div>
         </div>
 
         <!-- Stats -->

@@ -3,9 +3,12 @@ Time-lapse API routes with bracketing support.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 
-from backend.camera.timelapse import BracketConfig, BracketStep, BracketType
+from backend.camera.timelapse import (
+    BracketConfig, BracketStep, BracketType,
+    MultiBracketConfig, MultiBracketStep, QuickBracketSetup
+)
 
 router = APIRouter(prefix="/api/timelapse", tags=["timelapse"])
 
@@ -72,7 +75,112 @@ class DiskSpaceRequest(BaseModel):
     """Disk space estimation request."""
     total_frames: int = Field(..., ge=1)
     format_type: str = Field("raw", pattern="^(raw|raw_compressed|jpeg_fine|jpeg_normal|jpeg_basic)$")
-    bracket_shots: int = Field(1, ge=1, le=9, description="Shots per bracket set")
+    bracket_shots: int = Field(1, ge=1, le=15, description="Shots per bracket set")
+
+
+# =============================================================================
+# Multi-Bracket Models (New)
+# =============================================================================
+
+class MultiBracketStepModel(BaseModel):
+    """A single shot in a multi-bracket sequence."""
+    settings: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Setting name to value mapping for this shot (e.g., {'exposurecompensation': '-2', 'iso': '100'})"
+    )
+    label: str = Field("", description="Human-readable label")
+    delay_ms: int = Field(0, ge=0, le=5000, description="Delay before shot in ms")
+
+    def to_multi_bracket_step(self) -> MultiBracketStep:
+        return MultiBracketStep(
+            settings=self.settings,
+            label=self.label,
+            delay_ms=self.delay_ms
+        )
+
+
+class MultiBracketConfigModel(BaseModel):
+    """Multi-type bracketing configuration."""
+    enabled: bool = Field(True)
+    active_types: List[str] = Field(
+        default_factory=list,
+        description="Active bracket types: exposure, iso, aperture, shutter"
+    )
+    steps: List[MultiBracketStepModel] = Field(
+        ...,
+        min_length=2,
+        max_length=15,
+        description="Shot sequence (2-15 steps)"
+    )
+    base_settings: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Base settings to restore after bracket set"
+    )
+
+    def to_multi_bracket_config(self) -> MultiBracketConfig:
+        active = set()
+        for t in self.active_types:
+            try:
+                active.add(BracketType(t))
+            except ValueError:
+                pass
+        return MultiBracketConfig(
+            enabled=self.enabled,
+            active_types=active,
+            steps=[s.to_multi_bracket_step() for s in self.steps],
+            base_settings=self.base_settings,
+            mode="advanced"
+        )
+
+
+class QuickBracketSetupModel(BaseModel):
+    """Quick setup for generating bracket sequences."""
+    exposure_enabled: bool = Field(False, description="Enable exposure bracketing")
+    exposure_values: List[str] = Field(
+        default_factory=lambda: ["-2", "0", "+2"],
+        description="Exposure compensation values"
+    )
+    iso_enabled: bool = Field(False, description="Enable ISO bracketing")
+    iso_values: List[str] = Field(
+        default_factory=lambda: ["100", "400", "1600"],
+        description="ISO values"
+    )
+    aperture_enabled: bool = Field(False, description="Enable aperture bracketing")
+    aperture_values: List[str] = Field(
+        default_factory=lambda: ["2.8", "5.6", "11"],
+        description="Aperture values (without f/ prefix)"
+    )
+    shutter_enabled: bool = Field(False, description="Enable shutter speed bracketing")
+    shutter_values: List[str] = Field(
+        default_factory=lambda: ["1/250", "1/125", "1/60"],
+        description="Shutter speed values"
+    )
+    combine_mode: str = Field(
+        "sequence",
+        pattern="^(sequence|paired)$",
+        description="How to combine types: 'sequence' (concatenate) or 'paired' (zip)"
+    )
+
+    def to_quick_bracket_setup(self) -> QuickBracketSetup:
+        return QuickBracketSetup(
+            exposure_enabled=self.exposure_enabled,
+            exposure_values=self.exposure_values,
+            iso_enabled=self.iso_enabled,
+            iso_values=self.iso_values,
+            aperture_enabled=self.aperture_enabled,
+            aperture_values=self.aperture_values,
+            shutter_enabled=self.shutter_enabled,
+            shutter_values=self.shutter_values,
+            combine_mode=self.combine_mode
+        )
+
+
+class MultiBracketPresetConfig(BaseModel):
+    """Configure multi-bracketing from a preset."""
+    preset_name: str = Field(
+        ...,
+        description="Preset name (hdr_3shot, hdr_5shot, hdr_iso_combo, astro_stack, aperture_sweep)"
+    )
 
 
 # =============================================================================
@@ -300,3 +408,153 @@ async def estimate_disk_space(request: DiskSpaceRequest):
         format_type=request.format_type,
         bracket_shots=request.bracket_shots
     )
+
+
+# =============================================================================
+# Multi-Bracket Endpoints (New)
+# =============================================================================
+
+@router.get("/multi-bracket/presets")
+async def get_multi_bracket_presets():
+    """
+    Get available multi-bracket presets.
+
+    Available presets:
+    - hdr_3shot: 3-shot exposure bracket (-2, 0, +2 EV)
+    - hdr_5shot: 5-shot exposure bracket (-2, -1, 0, +1, +2 EV)
+    - hdr_iso_combo: HDR + ISO bracket combo (4 shots)
+    - astro_stack: ISO stacking for astrophotography
+    - aperture_sweep: Aperture sweep for focus stacking
+    """
+    from backend.camera.timelapse import TimelapseHandler
+    return TimelapseHandler.get_multi_bracket_presets()
+
+
+@router.get("/multi-bracket/preview")
+async def get_multi_bracket_preview():
+    """Get preview of current multi-bracket configuration."""
+    from backend.main import timelapse_handler
+
+    if timelapse_handler is None:
+        raise HTTPException(status_code=503, detail="Time-lapse handler not initialized")
+
+    return timelapse_handler.get_multi_bracket_preview()
+
+
+@router.post("/configure/multi-bracket")
+async def configure_multi_bracket(config: MultiBracketConfigModel):
+    """
+    Configure advanced multi-type bracketing with explicit shot sequence.
+
+    Each step defines settings to apply before that shot.
+    Multiple settings can be combined (e.g., exposure + ISO).
+
+    Example:
+    ```json
+    {
+        "enabled": true,
+        "active_types": ["exposure", "iso"],
+        "steps": [
+            {"settings": {"exposurecompensation": "-2", "iso": "100"}, "label": "-2EV / ISO100"},
+            {"settings": {"exposurecompensation": "0", "iso": "100"}, "label": "0EV / ISO100"},
+            {"settings": {"exposurecompensation": "+2", "iso": "100"}, "label": "+2EV / ISO100"},
+            {"settings": {"exposurecompensation": "0", "iso": "800"}, "label": "0EV / ISO800"}
+        ]
+    }
+    ```
+    """
+    from backend.main import timelapse_handler
+
+    if timelapse_handler is None:
+        raise HTTPException(status_code=503, detail="Time-lapse handler not initialized")
+
+    try:
+        multi_config = config.to_multi_bracket_config()
+        result = timelapse_handler.configure_multi_bracket(multi_config)
+        return result.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/configure/multi-bracket/quick")
+async def configure_multi_bracket_quick(setup: QuickBracketSetupModel):
+    """
+    Configure multi-type bracketing using quick setup toggles.
+
+    Enable bracket types independently and provide values for each.
+    Steps are auto-generated based on combine_mode:
+
+    - 'sequence': Each type adds sequential shots
+      e.g., 3 EV + 3 ISO = 6 shots (EV1, EV2, EV3, ISO1, ISO2, ISO3)
+
+    - 'paired': Combine types at same indices
+      e.g., 3 EV + 3 ISO = 3 shots (EV1+ISO1, EV2+ISO2, EV3+ISO3)
+
+    Example:
+    ```json
+    {
+        "exposure_enabled": true,
+        "exposure_values": ["-2", "0", "+2"],
+        "iso_enabled": true,
+        "iso_values": ["100", "400", "1600"],
+        "combine_mode": "sequence"
+    }
+    ```
+    """
+    from backend.main import timelapse_handler
+
+    if timelapse_handler is None:
+        raise HTTPException(status_code=503, detail="Time-lapse handler not initialized")
+
+    try:
+        quick_setup = setup.to_quick_bracket_setup()
+        result = timelapse_handler.configure_multi_bracket_quick(quick_setup)
+        return {
+            **result.to_dict(),
+            "generated_steps": [
+                {"index": i, "label": s.label, "settings": s.settings}
+                for i, s in enumerate(result.steps)
+            ]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/configure/multi-bracket/preset")
+async def configure_multi_bracket_preset(config: MultiBracketPresetConfig):
+    """
+    Configure multi-bracketing using a preset.
+
+    Available presets:
+    - hdr_3shot: 3-shot exposure bracket (-2, 0, +2 EV)
+    - hdr_5shot: 5-shot exposure bracket (-2, -1, 0, +1, +2 EV)
+    - hdr_iso_combo: HDR + ISO bracket combo
+    - astro_stack: ISO stacking for astrophotography
+    - aperture_sweep: Aperture sweep for focus stacking
+    """
+    from backend.main import timelapse_handler
+
+    if timelapse_handler is None:
+        raise HTTPException(status_code=503, detail="Time-lapse handler not initialized")
+
+    try:
+        result = timelapse_handler.configure_multi_bracket_preset(config.preset_name)
+        return result.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/configure/multi-bracket/disable")
+async def disable_multi_bracket():
+    """Disable multi-bracket mode."""
+    from backend.main import timelapse_handler
+
+    if timelapse_handler is None:
+        raise HTTPException(status_code=503, detail="Time-lapse handler not initialized")
+
+    timelapse_handler.disable_multi_bracket()
+    return {"enabled": False, "multi_bracket_active": False}
