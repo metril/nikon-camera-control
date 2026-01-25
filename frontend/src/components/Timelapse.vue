@@ -364,14 +364,17 @@ function getActiveTypesFromSteps(steps) {
 function toggleValue(valuesRef, value) {
   const strValue = String(value)
   const idx = valuesRef.value.findIndex(v => String(v) === strValue)
+
   if (idx >= 0) {
+    // Remove: only if more than 1 value remains
     if (valuesRef.value.length > 1) {
-      valuesRef.value.splice(idx, 1)
+      valuesRef.value = valuesRef.value.filter((_, i) => i !== idx)
     }
   } else {
-    valuesRef.value.push(strValue)
-    // Sort appropriately based on type
-    valuesRef.value.sort((a, b) => parseFloat(a) - parseFloat(b))
+    // Add: create new array with value, sort, and replace
+    const newValues = [...valuesRef.value, strValue]
+    newValues.sort((a, b) => parseFloat(a) - parseFloat(b))
+    valuesRef.value = newValues
   }
 }
 
