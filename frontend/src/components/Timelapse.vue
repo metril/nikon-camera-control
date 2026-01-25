@@ -7,17 +7,27 @@ const camera = useCameraStore()
 // Configuration state
 const intervalSeconds = ref(5)
 const totalFrames = ref(100)
-const useFrameCount = ref(true) // true = frame count, false = duration
+const useFrameCount = ref(true)
 const durationMinutes = ref(10)
+
+// Bracketing configuration
+const bracketEnabled = ref(false)
+const bracketType = ref('exposure')
+const bracketPreset = ref('exposure_3')
+const customBracketValues = ref('')
+const bracketPresets = ref({})
+const showBracketOptions = ref(false)
 
 // Session state
 const status = ref({
   state: 'idle',
   frames_captured: 0,
+  bracket_sets_captured: 0,
   total_frames: 0,
   interval_seconds: 0,
   elapsed_seconds: 0,
   estimated_remaining_seconds: 0,
+  bracketing: { enabled: false, bracket_type: 'exposure', shots_per_bracket: 1 }
 })
 const diskEstimate = ref(null)
 const configSummary = ref(null)
@@ -26,6 +36,7 @@ const configSummary = ref(null)
 const videoFps = ref(24)
 const videoCodec = ref('h264')
 const videoQuality = ref('high')
+const useMiddleBracket = ref(true)
 const isGenerating = ref(false)
 
 // UI state
@@ -37,9 +48,13 @@ const isRunning = computed(() => status.value.state === 'running')
 const isPaused = computed(() => status.value.state === 'paused')
 const isIdle = computed(() => ['idle', 'completed', 'cancelled', 'error'].includes(status.value.state))
 const hasFrames = computed(() => status.value.frames_captured > 0)
+const isBracketing = computed(() => status.value.bracketing?.enabled)
 
 const progressPercent = computed(() => {
   if (status.value.total_frames === 0) return 0
+  if (isBracketing.value) {
+    return Math.round((status.value.bracket_sets_captured / status.value.total_frames) * 100)
+  }
   return Math.round((status.value.frames_captured / status.value.total_frames) * 100)
 })
 
@@ -48,6 +63,16 @@ const computedTotalFrames = computed(() => {
     return totalFrames.value
   }
   return Math.floor((durationMinutes.value * 60) / intervalSeconds.value)
+})
+
+const shotsPerBracket = computed(() => {
+  if (!bracketEnabled.value) return 1
+  const preset = bracketPresets.value[bracketPreset.value]
+  return preset?.shots_per_bracket || 3
+})
+
+const totalShots = computed(() => {
+  return computedTotalFrames.value * shotsPerBracket.value
 })
 
 const estimatedDuration = computed(() => {
@@ -71,6 +96,23 @@ const estimatedVideoDuration = computed(() => {
   return `${secs.toFixed(1)}s`
 })
 
+const bracketTypeOptions = [
+  { value: 'exposure', label: 'Exposure (EV)', icon: 'EV' },
+  { value: 'iso', label: 'ISO', icon: 'ISO' },
+  { value: 'aperture', label: 'Aperture', icon: 'f/' },
+  { value: 'shutter', label: 'Shutter Speed', icon: 'S' }
+]
+
+const presetOptions = computed(() => {
+  return Object.entries(bracketPresets.value)
+    .filter(([key, preset]) => preset.bracket_type === bracketType.value)
+    .map(([key, preset]) => ({
+      value: key,
+      label: `${preset.shots_per_bracket} shots`,
+      steps: preset.steps.map(s => s.label).join(', ')
+    }))
+})
+
 function formatTime(seconds) {
   if (!seconds || seconds <= 0) return '--'
   const hrs = Math.floor(seconds / 3600)
@@ -92,6 +134,17 @@ async function fetchStatus() {
   }
 }
 
+async function fetchBracketPresets() {
+  try {
+    const response = await fetch('/api/timelapse/bracket-presets')
+    if (response.ok) {
+      bracketPresets.value = await response.json()
+    }
+  } catch (e) {
+    console.error('Failed to fetch bracket presets:', e)
+  }
+}
+
 async function estimateDiskSpace() {
   try {
     const response = await fetch('/api/timelapse/estimate-disk-space', {
@@ -99,7 +152,8 @@ async function estimateDiskSpace() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         total_frames: computedTotalFrames.value,
-        format_type: 'raw'
+        format_type: 'raw',
+        bracket_shots: shotsPerBracket.value
       })
     })
     if (response.ok) {
@@ -110,11 +164,35 @@ async function estimateDiskSpace() {
   }
 }
 
+async function configureBracket() {
+  if (!bracketEnabled.value) {
+    await fetch('/api/timelapse/configure/bracket-disable', { method: 'POST' })
+    return
+  }
+
+  try {
+    const response = await fetch('/api/timelapse/configure/bracket-preset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset_name: bracketPreset.value })
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Bracket configuration failed')
+    }
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 async function configure() {
   isConfiguring.value = true
   error.value = null
 
   try {
+    // Configure bracketing first
+    await configureBracket()
+
     const payload = {
       interval_seconds: intervalSeconds.value,
     }
@@ -123,6 +201,11 @@ async function configure() {
       payload.total_frames = totalFrames.value
     } else {
       payload.duration_seconds = durationMinutes.value * 60
+    }
+
+    // Include bracket config if enabled
+    if (bracketEnabled.value && bracketPresets.value[bracketPreset.value]) {
+      payload.bracket_config = bracketPresets.value[bracketPreset.value]
     }
 
     const response = await fetch('/api/timelapse/configure', {
@@ -147,12 +230,10 @@ async function configure() {
 
 async function start() {
   error.value = null
+  configSummary.value = null  // Reset to force reconfigure
 
-  // Configure first if not already done
-  if (!configSummary.value) {
-    await configure()
-    if (error.value) return
-  }
+  await configure()
+  if (error.value) return
 
   try {
     const response = await fetch('/api/timelapse/start', { method: 'POST' })
@@ -210,7 +291,8 @@ async function generateVideo() {
       body: JSON.stringify({
         fps: videoFps.value,
         codec: videoCodec.value,
-        quality: videoQuality.value
+        quality: videoQuality.value,
+        use_middle_bracket: useMiddleBracket.value
       })
     })
 
@@ -228,6 +310,13 @@ async function generateVideo() {
   }
 }
 
+// Update interval minimum when bracketing changes
+watch(bracketEnabled, (enabled) => {
+  if (enabled && intervalSeconds.value < 5) {
+    intervalSeconds.value = 5
+  }
+})
+
 // Poll for status updates when running
 let statusInterval = null
 watch(isRunning, (running) => {
@@ -239,7 +328,6 @@ watch(isRunning, (running) => {
   }
 })
 
-// Also watch for paused state
 watch(isPaused, (paused) => {
   if (paused && statusInterval) {
     clearInterval(statusInterval)
@@ -249,6 +337,7 @@ watch(isPaused, (paused) => {
 
 onMounted(() => {
   fetchStatus()
+  fetchBracketPresets()
 })
 
 onUnmounted(() => {
@@ -262,16 +351,24 @@ onUnmounted(() => {
   <div class="bg-camera-surface border border-camera-border rounded-lg overflow-hidden">
     <div class="px-4 py-2 border-b border-camera-border flex items-center justify-between">
       <h2 class="font-medium">Time-lapse</h2>
-      <span
-        class="text-xs px-2 py-0.5 rounded"
-        :class="{
-          'bg-camera-success/20 text-camera-success': isRunning,
-          'bg-camera-warning/20 text-camera-warning': isPaused,
-          'bg-camera-border text-camera-muted': isIdle
-        }"
-      >
-        {{ status.state }}
-      </span>
+      <div class="flex items-center gap-2">
+        <span
+          v-if="isBracketing"
+          class="text-xs px-2 py-0.5 rounded bg-camera-accent/20 text-camera-accent"
+        >
+          Bracket
+        </span>
+        <span
+          class="text-xs px-2 py-0.5 rounded"
+          :class="{
+            'bg-camera-success/20 text-camera-success': isRunning,
+            'bg-camera-warning/20 text-camera-warning': isPaused,
+            'bg-camera-border text-camera-muted': isIdle
+          }"
+        >
+          {{ status.state }}
+        </span>
+      </div>
     </div>
 
     <div class="p-4 space-y-4">
@@ -288,11 +385,13 @@ onUnmounted(() => {
           <input
             v-model.number="intervalSeconds"
             type="number"
-            min="1"
+            :min="bracketEnabled ? 5 : 1"
             max="3600"
             class="w-full px-3 py-2 bg-camera-bg border border-camera-border rounded text-sm focus:outline-none focus:border-camera-accent"
           />
-          <p class="text-xs text-camera-muted mt-1">Min 2s for RAW, 1s for JPEG</p>
+          <p class="text-xs text-camera-muted mt-1">
+            {{ bracketEnabled ? 'Min 5s with bracketing' : 'Min 2s for RAW, 1s for JPEG' }}
+          </p>
         </div>
 
         <!-- Mode Toggle -->
@@ -315,7 +414,7 @@ onUnmounted(() => {
 
         <!-- Frame Count / Duration Input -->
         <div v-if="useFrameCount">
-          <label class="block text-sm text-camera-muted mb-1">Total Frames</label>
+          <label class="block text-sm text-camera-muted mb-1">Total {{ bracketEnabled ? 'Bracket Sets' : 'Frames' }}</label>
           <input
             v-model.number="totalFrames"
             type="number"
@@ -335,11 +434,79 @@ onUnmounted(() => {
           />
         </div>
 
+        <!-- Bracketing Section -->
+        <div class="border-t border-camera-border pt-4">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-sm font-medium">Bracketing</span>
+            <button
+              @click="bracketEnabled = !bracketEnabled"
+              class="relative w-10 h-5 rounded-full transition-colors"
+              :class="bracketEnabled ? 'bg-camera-accent' : 'bg-camera-border'"
+            >
+              <span
+                class="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform"
+                :class="bracketEnabled ? 'left-5' : 'left-0.5'"
+              ></span>
+            </button>
+          </div>
+
+          <div v-if="bracketEnabled" class="space-y-3">
+            <!-- Bracket Type -->
+            <div>
+              <label class="block text-xs text-camera-muted mb-1">Type</label>
+              <div class="grid grid-cols-4 gap-1">
+                <button
+                  v-for="opt in bracketTypeOptions"
+                  :key="opt.value"
+                  @click="bracketType = opt.value"
+                  class="px-2 py-1.5 text-xs rounded transition-colors text-center"
+                  :class="bracketType === opt.value ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-text'"
+                >
+                  {{ opt.icon }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Preset Selector -->
+            <div v-if="presetOptions.length > 0">
+              <label class="block text-xs text-camera-muted mb-1">Preset</label>
+              <select
+                v-model="bracketPreset"
+                class="w-full px-3 py-2 bg-camera-bg border border-camera-border rounded text-sm focus:outline-none focus:border-camera-accent"
+              >
+                <option
+                  v-for="preset in presetOptions"
+                  :key="preset.value"
+                  :value="preset.value"
+                >
+                  {{ preset.label }} ({{ preset.steps }})
+                </option>
+              </select>
+            </div>
+
+            <!-- Bracket Info -->
+            <div class="p-2 bg-camera-bg rounded text-xs">
+              <div class="flex justify-between">
+                <span class="text-camera-muted">Shots per interval:</span>
+                <span>{{ shotsPerBracket }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-camera-muted">Total shots:</span>
+                <span>{{ totalShots }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Summary -->
         <div class="p-3 bg-camera-bg rounded text-sm space-y-1">
           <div class="flex justify-between">
-            <span class="text-camera-muted">Frames:</span>
+            <span class="text-camera-muted">{{ bracketEnabled ? 'Bracket Sets:' : 'Frames:' }}</span>
             <span>{{ computedTotalFrames }}</span>
+          </div>
+          <div v-if="bracketEnabled" class="flex justify-between">
+            <span class="text-camera-muted">Total Shots:</span>
+            <span>{{ totalShots }}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-camera-muted">Capture Duration:</span>
@@ -361,7 +528,7 @@ onUnmounted(() => {
           :disabled="!camera.connected || isConfiguring"
           class="w-full py-3 bg-camera-accent text-white font-medium rounded hover:bg-camera-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {{ isConfiguring ? 'Configuring...' : 'Start Time-lapse' }}
+          {{ isConfiguring ? 'Configuring...' : (bracketEnabled ? 'Start Bracketed Time-lapse' : 'Start Time-lapse') }}
         </button>
       </div>
 
@@ -370,7 +537,13 @@ onUnmounted(() => {
         <!-- Progress Bar -->
         <div>
           <div class="flex justify-between text-sm mb-1">
-            <span>{{ status.frames_captured }} / {{ status.total_frames }} frames</span>
+            <span v-if="isBracketing">
+              {{ status.bracket_sets_captured }} / {{ status.total_frames }} sets
+              ({{ status.frames_captured }} shots)
+            </span>
+            <span v-else>
+              {{ status.frames_captured }} / {{ status.total_frames }} frames
+            </span>
             <span>{{ progressPercent }}%</span>
           </div>
           <div class="w-full h-3 bg-camera-border rounded-full overflow-hidden">
@@ -379,6 +552,16 @@ onUnmounted(() => {
               :style="{ width: `${progressPercent}%` }"
             ></div>
           </div>
+        </div>
+
+        <!-- Bracket Info (if bracketing) -->
+        <div v-if="isBracketing" class="p-2 bg-camera-accent/10 rounded text-xs">
+          <span class="text-camera-accent font-medium">
+            {{ status.bracketing.bracket_type.toUpperCase() }} Bracketing
+          </span>
+          <span class="text-camera-muted ml-2">
+            {{ status.bracketing.shots_per_bracket }} shots per set
+          </span>
         </div>
 
         <!-- Stats -->
@@ -462,6 +645,19 @@ onUnmounted(() => {
                 <option value="high">High</option>
               </select>
             </div>
+          </div>
+
+          <!-- Bracket video option -->
+          <div v-if="status.bracketing?.enabled" class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="useMiddleBracket"
+              v-model="useMiddleBracket"
+              class="w-4 h-4"
+            />
+            <label for="useMiddleBracket" class="text-xs text-camera-muted">
+              Use middle exposure from each bracket set
+            </label>
           </div>
 
           <button

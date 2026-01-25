@@ -105,6 +105,21 @@ async def lifespan(app: FastAPI):
         )
         return await handler.capture_photo(download=True)
 
+    async def timelapse_settings_callback(setting_name: str, value: str) -> bool:
+        """Settings callback for bracketing - changes camera settings."""
+        from backend.camera.settings import CameraSettingsManager
+        try:
+            manager = CameraSettingsManager(
+                camera_controller._camera,
+                camera_controller._context,
+                camera_controller._lock
+            )
+            await manager.set_setting(setting_name, value)
+            return True
+        except Exception as e:
+            logger.warning("timelapse_setting_change_failed", setting=setting_name, value=value, error=str(e))
+            return False
+
     async def timelapse_event_callback(event_type, data):
         """Event callback for time-lapse progress."""
         await ws_manager.broadcast({
@@ -115,6 +130,7 @@ async def lifespan(app: FastAPI):
 
     timelapse_handler = TimelapseHandler(
         capture_callback=timelapse_capture_callback,
+        settings_callback=timelapse_settings_callback,
         event_callback=timelapse_event_callback
     )
 
