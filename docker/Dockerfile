@@ -4,21 +4,21 @@
 # =============================================================================
 # Stage 1: Build Frontend
 # =============================================================================
-FROM node:20-slim AS frontend-builder
+FROM oven/bun:1-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
 # Copy package files
-COPY frontend/package*.json ./
+COPY frontend/package.json ./
 
 # Install dependencies
-RUN npm install
+RUN bun install
 
 # Copy frontend source
 COPY frontend/ ./
 
 # Build production bundle
-RUN npm run build
+RUN bun run build
 
 # =============================================================================
 # Stage 2: Build Python Dependencies
