@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from backend.camera.controller import CameraController
 from backend.camera.exceptions import CameraError, CameraNotFoundError
+from backend.camera.timelapse import TimelapseHandler
 from backend.config import settings
 
 # Configure structured logging
@@ -39,6 +40,9 @@ logger = structlog.get_logger(__name__)
 
 # Global camera controller instance
 camera_controller = CameraController()
+
+# Global time-lapse handler (initialized after app starts)
+timelapse_handler = None
 
 # WebSocket connection manager for status updates
 class ConnectionManager:
@@ -66,6 +70,8 @@ ws_manager = ConnectionManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    global timelapse_handler
+
     logger.info(
         "application_starting",
         host=settings.server.host,
@@ -85,6 +91,31 @@ async def lifespan(app: FastAPI):
 
     camera_controller.on_state_change(on_state_change)
 
+    # Initialize time-lapse handler
+    async def timelapse_capture_callback():
+        """Capture callback for time-lapse."""
+        from backend.camera.capture import CaptureHandler
+        handler = CaptureHandler(
+            camera_controller._camera,
+            camera_controller._context,
+            camera_controller._lock,
+            camera_controller
+        )
+        return await handler.capture_photo(download=True)
+
+    async def timelapse_event_callback(event_type, data):
+        """Event callback for time-lapse progress."""
+        await ws_manager.broadcast({
+            "type": event_type,
+            "data": data,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    timelapse_handler = TimelapseHandler(
+        capture_callback=timelapse_capture_callback,
+        event_callback=timelapse_event_callback
+    )
+
     # Try to connect to camera on startup (non-blocking)
     try:
         await camera_controller.connect()
@@ -97,6 +128,8 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("application_shutting_down")
+    if timelapse_handler and timelapse_handler.state.value == "running":
+        await timelapse_handler.stop()
     await camera_controller.disconnect()
 
 
@@ -143,10 +176,12 @@ async def camera_error_handler(request, exc: CameraError):
 from backend.api.routes import camera as camera_routes
 from backend.api.routes import settings as settings_routes
 from backend.api.routes import capture as capture_routes
+from backend.api.routes import timelapse as timelapse_routes
 
 app.include_router(camera_routes.router)
 app.include_router(settings_routes.router)
 app.include_router(capture_routes.router)
+app.include_router(timelapse_routes.router)
 
 
 # =============================================================================
@@ -284,6 +319,16 @@ async def root():
                 "files": "GET /api/capture/files",
                 "download": "GET /api/capture/files/{filename}",
                 "delete": "DELETE /api/capture/files/{filename}",
+            },
+            "timelapse": {
+                "status": "GET /api/timelapse/status",
+                "configure": "POST /api/timelapse/configure",
+                "start": "POST /api/timelapse/start",
+                "stop": "POST /api/timelapse/stop",
+                "pause": "POST /api/timelapse/pause",
+                "resume": "POST /api/timelapse/resume",
+                "generate_video": "POST /api/timelapse/generate-video",
+                "disk_estimate": "POST /api/timelapse/estimate-disk-space",
             },
             "websocket": {
                 "events": "/ws/events",
