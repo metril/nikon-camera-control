@@ -361,23 +361,64 @@ function getActiveTypesFromSteps(steps) {
   return Array.from(types)
 }
 
-function toggleValue(valuesArray, value) {
-  // Note: In Vue 3 templates, refs are auto-unwrapped when passed to functions,
-  // so valuesArray is the actual array, not the ref. Return the new array.
+// Dedicated toggle functions for each bracket type - avoids Vue template ref passing issues
+function toggleExposureValue(value) {
   const strValue = String(value)
-  const idx = valuesArray.findIndex(v => String(v) === strValue)
-
+  const arr = exposureValues.value
+  const idx = arr.findIndex(v => String(v) === strValue)
   if (idx >= 0) {
-    // Remove: only if more than 1 value remains
-    if (valuesArray.length > 1) {
-      return valuesArray.filter((_, i) => i !== idx)
+    if (arr.length > 1) {
+      exposureValues.value = arr.filter((_, i) => i !== idx)
     }
-    return valuesArray
   } else {
-    // Add: create new array with value, sort, and return
-    const newValues = [...valuesArray, strValue]
+    const newValues = [...arr, strValue]
     newValues.sort((a, b) => parseFloat(a) - parseFloat(b))
-    return newValues
+    exposureValues.value = newValues
+  }
+}
+
+function toggleIsoValue(value) {
+  const strValue = String(value)
+  const arr = isoValues.value
+  const idx = arr.findIndex(v => String(v) === strValue)
+  if (idx >= 0) {
+    if (arr.length > 1) {
+      isoValues.value = arr.filter((_, i) => i !== idx)
+    }
+  } else {
+    const newValues = [...arr, strValue]
+    newValues.sort((a, b) => parseFloat(a) - parseFloat(b))
+    isoValues.value = newValues
+  }
+}
+
+function toggleApertureValue(value) {
+  const strValue = String(value)
+  const arr = apertureValues.value
+  const idx = arr.findIndex(v => String(v) === strValue)
+  if (idx >= 0) {
+    if (arr.length > 1) {
+      apertureValues.value = arr.filter((_, i) => i !== idx)
+    }
+  } else {
+    const newValues = [...arr, strValue]
+    newValues.sort((a, b) => parseFloat(a) - parseFloat(b))
+    apertureValues.value = newValues
+  }
+}
+
+function toggleShutterValue(value) {
+  const strValue = String(value)
+  const arr = shutterValues.value
+  const idx = arr.findIndex(v => String(v) === strValue)
+  if (idx >= 0) {
+    if (arr.length > 1) {
+      shutterValues.value = arr.filter((_, i) => i !== idx)
+    }
+  } else {
+    const newValues = [...arr, strValue]
+    newValues.sort((a, b) => parseFloat(a) - parseFloat(b))
+    shutterValues.value = newValues
   }
 }
 
@@ -739,7 +780,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.exposure.presets"
                     :key="val"
-                    @click="exposureValues = toggleValue(exposureValues, val)"
+                    @click="toggleExposureValue(val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="exposureValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
@@ -760,7 +801,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.iso.presets"
                     :key="val"
-                    @click="isoValues = toggleValue(isoValues, val)"
+                    @click="toggleIsoValue(val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="isoValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
@@ -781,7 +822,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.aperture.presets"
                     :key="val"
-                    @click="apertureValues = toggleValue(apertureValues, val)"
+                    @click="toggleApertureValue(val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="apertureValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
@@ -802,7 +843,7 @@ onUnmounted(() => {
                   <button
                     v-for="val in bracketTypes.shutter.presets"
                     :key="val"
-                    @click="shutterValues = toggleValue(shutterValues, val)"
+                    @click="toggleShutterValue(val)"
                     class="px-2 py-0.5 text-xs rounded transition-colors"
                     :class="shutterValues.includes(val) ? 'bg-camera-accent text-white' : 'bg-camera-border text-camera-muted'"
                   >
