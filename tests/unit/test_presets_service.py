@@ -1,16 +1,19 @@
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from backend.api.schemas.common import EventType
 from backend.api.schemas.presets import (
     BracketPresetIn,
     PresetImportIn,
     SettingsPresetIn,
 )
 from backend.api.schemas.timelapse import QuickBracketing
-from backend.core.errors import InvalidState, PresetNotFound, SettingNotAllowed
+from backend.core.errors import Forbidden, InvalidState, PresetNotFound, SettingNotAllowed
+from backend.core.events import EventBus
 from backend.services.presets import FILE_NAME, PresetService
 
 
@@ -89,3 +92,54 @@ async def test_import_replace_and_merge(tmp_path: Path) -> None:
     r = await s.import_(doc)
     assert (r.created, r.failed, r.skipped) == (1, 1, 1)
     assert [p.name for p in (await s.list("settings")).items] == ["new"]
+
+
+async def test_unreadable_file_refuses_writes_instead_of_overwriting(tmp_path: Path) -> None:
+    (tmp_path / FILE_NAME).mkdir()  # exists but cannot be read (OSError)
+    s = svc(tmp_path)
+    out = await s.list()
+    assert out.warning and "unreadable" in out.warning
+    with pytest.raises(InvalidState, match="cannot be read"):
+        await s.create(sp())
+    assert (tmp_path / FILE_NAME).is_dir()  # untouched
+    (tmp_path / FILE_NAME).rmdir()  # fixed: readable again, writes work
+    await s.create(sp())
+    assert json.loads((tmp_path / FILE_NAME).read_text())["presets"]
+
+
+async def test_skipped_entries_are_backed_up_before_first_rewrite(tmp_path: Path) -> None:
+    await svc(tmp_path).create(sp())
+    doc = json.loads((tmp_path / FILE_NAME).read_text())
+    doc["presets"].append({"id": "x", "kind": "nope", "keep": "me"})
+    original = json.dumps(doc)
+    (tmp_path / FILE_NAME).write_text(original)
+    s = svc(tmp_path)
+    await s.create(sp("second"))
+    baks = leftovers(tmp_path, f"{FILE_NAME}.bak-*")
+    assert len(baks) == 1 and baks[0].read_text() == original
+    out = await s.list()
+    assert "skipped" in (out.warning or "") and baks[0].name in (out.warning or "")
+    await s.create(sp("third"))
+    assert len(leftovers(tmp_path, f"{FILE_NAME}.bak-*")) == 1  # only before the first rewrite
+
+
+async def test_builtin_modification_is_forbidden_not_setting_error(tmp_path: Path) -> None:
+    with pytest.raises(Forbidden):
+        await svc(tmp_path).delete("builtin-exposure_3")
+
+
+async def test_presets_changed_event_on_create_update_delete_import(tmp_path: Path) -> None:
+    bus = EventBus()
+    sub = bus.subscribe()
+    s = PresetService(tmp_path, MagicMock(), bus=bus)
+    p = await s.create(sp())
+    await s.update(p.id, sp("Renamed"))
+    await s.delete(p.id)
+    await s.import_(
+        PresetImportIn(presets=[{"kind": "settings", "name": "i", "values": {"iso": 1}}])
+    )
+    got = [await asyncio.wait_for(anext(sub), 1) for _ in range(4)]
+    sub.close()
+    assert [e.type for e in got] == [EventType.PRESETS_CHANGED] * 4
+    assert [e.data["action"] for e in got] == ["created", "updated", "deleted", "imported"]
+    assert got[0].data["id"] == p.id and got[0].data["kind"] == "settings"

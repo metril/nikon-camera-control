@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 
 from backend.api.schemas.exposure import BulbRequest
-from backend.core.errors import CameraNotConnected, InvalidState
+from backend.core.errors import CameraNotConnected, CameraOperationFailed, InvalidState
 from backend.core.state import CameraState
 from backend.services.bulb import BulbService, _Run
 
@@ -45,3 +47,52 @@ async def test_start_requires_idle_state(app: FastAPI, connected_client: object)
     await app.state.camera_service.transition(CameraState.LIVEVIEW)
     with pytest.raises(InvalidState):
         await make(app, [0.0]).start(BulbRequest(seconds=2))
+
+
+async def test_cancel_during_open_waits_for_in_flight_open_and_reports_it(
+    app: FastAPI, client: object
+) -> None:
+    svc = make(app, [0.0])
+    gate, calls = asyncio.Event(), []
+
+    async def slow_set_bulb(v: int) -> None:
+        await gate.wait()
+        calls.append(v)
+
+    svc._set_bulb = slow_set_bulb  # type: ignore[method-assign,assignment]
+    t = asyncio.create_task(svc._open(_Run("j", 5.0)))
+    await asyncio.sleep(0.01)
+    t.cancel()
+    await asyncio.sleep(0.01)
+    assert not t.done()  # still waiting for the open that cannot be withdrawn
+    gate.set()
+    cancel = await t
+    assert calls == [1] and isinstance(cancel, asyncio.CancelledError)
+
+
+async def test_second_cancel_during_close_retry_does_not_skip_close(
+    app: FastAPI, client: object
+) -> None:
+    svc = make(app, [0.0])
+    gate, reached, calls = asyncio.Event(), asyncio.Event(), []
+
+    async def set_bulb(v: int) -> None:
+        calls.append(v)
+        if len(calls) == 1:
+            raise CameraOperationFailed("flaky")
+
+    async def sleep(_: float) -> None:
+        reached.set()
+        await gate.wait()
+
+    svc._set_bulb = set_bulb  # type: ignore[method-assign,assignment]
+    svc._sleep = sleep
+    run = _Run("j", 5.0)
+    t = asyncio.create_task(svc._close_shielded(run))
+    await reached.wait()
+    t.cancel()  # cancel lands in the retry sleep
+    await asyncio.sleep(0.01)
+    gate.set()
+    cancel = await t
+    assert calls == [0, 0] and run.ended is not None
+    assert isinstance(cancel, asyncio.CancelledError)

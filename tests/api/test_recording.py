@@ -65,13 +65,13 @@ async def test_max_seconds_validated(connected_client: httpx.AsyncClient) -> Non
         assert r.status_code == 422
 
 
-async def test_internal_ram_capture_target_refused(
+async def test_internal_ram_capture_target_is_warning_not_refusal(
     app: FastAPI, connected_client: httpx.AsyncClient
 ) -> None:
     await app.state.camera_service.set_setting("capturetarget", "Internal RAM")
     r = await connected_client.post(f"{R}/start", json={})
-    assert r.status_code == 409 and "memory card" in r.json()["error"]["message"]
-    assert await _state(connected_client) == "idle"
+    assert r.status_code == 200 and "Internal RAM" in r.json()["warning"]
+    assert (await connected_client.post(f"{R}/stop")).status_code == 200
 
 
 async def test_start_rejected_by_camera_is_clear_and_rolls_back(

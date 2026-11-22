@@ -25,7 +25,8 @@ from backend.services.presets import PresetService
 from backend.services.settings import SettingsService
 
 get_presets = service_dep(
-    "presets", lambda s: PresetService(s.data_dir, SettingsService(s.camera_service))
+    "presets",
+    lambda s: PresetService(s.data_dir, SettingsService(s.camera_service), bus=s.event_bus),
 )
 Svc = Annotated[PresetService, Depends(get_presets)]
 PresetId = Annotated[str, Path(pattern=ID_PATTERN, description="Preset id.")]

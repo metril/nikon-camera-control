@@ -16,7 +16,7 @@ from backend.core.camera_service import CameraService
 from backend.core.config_store import ConfigStore
 from backend.core.errors import CameraBusy, CameraNotConnected, ConfigInvalid
 from backend.core.events import EventBus
-from backend.core.jobs import Job, JobContext, JobManager
+from backend.core.jobs import HeldContext, Job, JobContext, JobManager
 from backend.services.capture import CaptureService, sanitize_prefix
 from backend.services.settings import SettingsService
 from backend.services.timelapse.brackets import SETTLE_S, touched_settings
@@ -69,18 +69,27 @@ class BracketCaptureService:
         if st.leased_by is not None:
             raise CameraBusy(details={"leased_by": st.leased_by})
         steps = await self.resolve(req)
-        return self._jobs.submit(
-            "bracket", lambda ctx: self._job(ctx, req, steps), exclusive_key="bracket"
-        )
+        held = HeldContext(self._camera.lease(OWNER))
+        await held.enter()  # 409 now, not inside the job
+        try:
+            return self._jobs.submit(
+                "bracket",
+                lambda ctx: self._job(ctx, req, steps, held),
+                exclusive_key="bracket",
+                release=held.release,
+            )
+        except BaseException:
+            await held.release()
+            raise
 
     async def _job(
-        self, ctx: JobContext, req: BracketRequest, steps: list[BracketStep]
+        self, ctx: JobContext, req: BracketRequest, steps: list[BracketStep], held: HeldContext
     ) -> dict[str, Any]:
         out_root = self._capture.output_dir
         dest = out_root / "brackets" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         prefix = sanitize_prefix(req.filename_prefix)
         shots: list[BracketShot] = []
-        async with self._camera.lease(OWNER):
+        try:
             snapshot = await self._settings.snapshot(touched_settings(steps))
             try:
                 for i, step in enumerate(steps):
@@ -106,6 +115,8 @@ class BracketCaptureService:
                     shots.append(shot)
             finally:
                 await self._restore(snapshot)
+        finally:
+            await held.release()
         return {
             "directory": _rel(dest, out_root) if req.download else None,
             "shots": [s.model_dump() for s in shots],

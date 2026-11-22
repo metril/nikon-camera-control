@@ -55,6 +55,8 @@ def _out(i: RecordingInfo) -> RecordingStatus:
         job_id=i.job_id,
         ended_reason=i.reason,
         warning=i.warning,
+        segments=i.segments,
+        note=i.note,
     )
 
 

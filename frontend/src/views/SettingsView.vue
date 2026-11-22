@@ -1,0 +1,185 @@
+<script setup>
+import { ref, computed, watch, onMounted } from 'vue'
+import { useConfigStore } from '@/stores/config'
+import { useToastsStore } from '@/stores/toasts'
+import UiCard from '@/components/ui/UiCard.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
+import UiEmpty from '@/components/ui/UiEmpty.vue'
+import SchemaField from '@/components/settings/SchemaField.vue'
+import ApiKeySection from '@/components/settings/ApiKeySection.vue'
+import DemoCameraSection from '@/components/settings/DemoCameraSection.vue'
+import AboutSection from '@/components/settings/AboutSection.vue'
+import {
+  buildSections,
+  buildPatch,
+  dirtyPaths,
+  fieldErrors,
+  getPath,
+  setPath,
+} from '@/components/settings/schemaForm'
+
+const config = useConfigStore()
+const toasts = useToastsStore()
+
+const draft = ref({})
+const errors = ref({})
+const saving = ref(false)
+const resetting = ref(false)
+const loadError = ref('')
+
+const sections = computed(() => buildSections(config.schema))
+const dirty = computed(() =>
+  config.config ? dirtyPaths(sections.value, config.config, draft.value, ['demo_camera']) : [],
+)
+const isDirty = computed(() => dirty.value.length > 0)
+const clone = (o) => JSON.parse(JSON.stringify(o ?? {}))
+
+// Follow server-side changes (config_changed events) unless the user has unsaved edits.
+watch(
+  () => config.config,
+  (c) => {
+    if (c && !isDirty.value) draft.value = clone(c)
+  },
+  { deep: true },
+)
+
+async function load() {
+  loadError.value = ''
+  try {
+    await Promise.all([config.fetch(), config.schema ? null : config.fetchSchema()])
+    draft.value = clone(config.config)
+  } catch (e) {
+    loadError.value = e?.message || 'Could not load settings'
+  }
+}
+onMounted(load)
+
+const value = (s, f) => getPath(draft.value, s.path(f))
+const setValue = (s, f, v) => {
+  setPath(draft.value, s.path(f), v)
+  delete errors.value[s.path(f)]
+}
+const isFieldDirty = (path) => dirty.value.includes(path)
+
+async function save() {
+  saving.value = true
+  errors.value = {}
+  try {
+    await config.patch(buildPatch(dirty.value, draft.value))
+    draft.value = clone(config.config)
+    toasts.success('Settings saved')
+  } catch (e) {
+    const fe = e?.status === 422 ? fieldErrors(e.details) : {}
+    errors.value = fe
+    if (Object.keys(fe).length)
+      toasts.error('Some settings are invalid. See the highlighted fields.')
+    else toasts.error(e)
+  } finally {
+    saving.value = false
+  }
+}
+function discard() {
+  draft.value = clone(config.config)
+  errors.value = {}
+}
+async function resetDefaults() {
+  resetting.value = true
+  try {
+    await config.reset()
+    draft.value = clone(config.config)
+    errors.value = {}
+    toasts.success('Settings reset to defaults')
+  } catch (e) {
+    toasts.error(e)
+  } finally {
+    resetting.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="mx-auto flex max-w-3xl flex-col gap-4">
+    <h2 class="text-xl font-semibold">Settings</h2>
+
+    <div
+      v-if="config.restartRequired.length"
+      role="status"
+      class="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 text-sm"
+      data-test="restart"
+    >
+      Restart required for: <strong>{{ config.restartRequired.join(', ') }}</strong>
+    </div>
+
+    <UiEmpty v-if="loadError" title="Settings could not be loaded" :hint="loadError">
+      <template #actions><UiButton variant="primary" @click="load">Retry</UiButton></template>
+    </UiEmpty>
+
+    <template v-else-if="config.config && sections.length">
+      <ApiKeySection />
+      <DemoCameraSection
+        :model-value="!!draft.demo_camera"
+        :dirty="isFieldDirty('demo_camera')"
+        @update:model-value="draft.demo_camera = $event"
+      />
+      <UiCard
+        v-for="s in sections"
+        :key="s.key"
+        :title="s.title"
+        :subtitle="s.description"
+        :data-section="s.key"
+      >
+        <div class="grid gap-4 sm:grid-cols-2">
+          <SchemaField
+            v-for="f in s.fields"
+            :key="s.path(f)"
+            :field="f"
+            :model-value="value(s, f)"
+            :dirty="isFieldDirty(s.path(f))"
+            :error="errors[s.path(f)] || ''"
+            :class="f.kind === 'strings' ? 'sm:col-span-2' : ''"
+            @update:model-value="setValue(s, f, $event)"
+          />
+        </div>
+      </UiCard>
+
+      <div
+        class="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-lg border border-camera-border bg-camera-surface p-3"
+      >
+        <UiButton
+          variant="primary"
+          :loading="saving"
+          :disabled="!isDirty"
+          data-test="save"
+          @click="save"
+        >
+          Save changes
+        </UiButton>
+        <UiButton
+          variant="ghost"
+          :disabled="!isDirty || saving"
+          data-test="discard"
+          @click="discard"
+        >
+          Discard
+        </UiButton>
+        <span v-if="isDirty" class="text-xs text-camera-muted" aria-live="polite">
+          {{ dirty.length }} unsaved change{{ dirty.length === 1 ? '' : 's' }}
+        </span>
+        <UiConfirmButton
+          class="ml-auto"
+          variant="danger"
+          confirm-text="Reset all?"
+          :loading="resetting"
+          data-test="reset"
+          @confirm="resetDefaults"
+        >
+          Reset to defaults
+        </UiConfirmButton>
+      </div>
+    </template>
+    <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings...</p>
+
+    <AboutSection />
+  </div>
+</template>

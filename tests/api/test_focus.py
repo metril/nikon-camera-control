@@ -220,3 +220,77 @@ async def test_stack_body_validation(connected_client: httpx.AsyncClient) -> Non
     for bad in ({"shots": 1}, {"shots": 201}, {"steps_per_shot": 0}, {"direction": "x"}):
         r = await connected_client.post(f"{F}/stack", json=STACK | bad)
         assert r.status_code == 422
+
+
+async def test_stack_step_outside_drive_range_refused_at_request_time(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    svc = install(app)
+    r = await connected_client.post(f"{F}/stack", json=STACK | {"steps_per_shot": 2000})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "SETTING_INVALID"
+    assert app.state.camera_service.status().leased_by is None
+    assert svc.relative_position == 0
+    assert (await connected_client.get("/api/v1/jobs")).json() == []
+    assert (
+        await connected_client.post(f"{F}/stack", json=STACK | {"steps_per_shot": 40_000})
+    ).status_code == 422  # schema cap
+
+
+async def test_stack_holds_lease_from_request_so_second_exposure_job_gets_409(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    svc = install(app)
+    svc._sleep = lambda _: asyncio.sleep(30)
+    jid = (await c.post(f"{F}/stack", json=STACK)).json()["id"]
+    assert app.state.camera_service.status().leased_by == "focus-stack"
+    r = await c.post("/api/v1/capture/bulb", json={"seconds": 2})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "CAMERA_BUSY"
+    await c.delete(f"/api/v1/jobs/{jid}")
+    await wait_job(c, jid)
+    assert app.state.camera_service.status().leased_by is None
+
+
+async def test_cancel_during_move_still_counts_the_drive_that_ran(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = install(app)
+    fake_camera.set_latency("set_config", 0.15)
+    t = asyncio.create_task(svc.move(10))
+    deadline = time.monotonic() + 5
+    while fake_camera.calls.get("set_config", 0) < 1:
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0.005)
+    t.cancel()
+    try:
+        await t
+    except asyncio.CancelledError:
+        pass
+    assert svc.relative_position == 10  # drive completed on the camera and is accounted
+    assert app.state.camera_service.state == "idle"
+
+
+async def test_failed_move_leaves_position_unchanged(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = install(app)
+    fake_camera.fail_next("set_config", 2, CameraOperationFailed("busy"))
+    r = await connected_client.post(f"{F}/mf", json={"steps": 10})
+    assert r.status_code == 502
+    assert svc.relative_position == 0
+
+
+async def test_move_does_not_re_enable_viewfinder_already_on(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    from backend.core.state import CameraState
+
+    svc = install(app)
+    await app.state.camera_service.transition(CameraState.LIVEVIEW)
+    fake_camera._values["viewfinder"] = True
+    before = fake_camera.calls.get("set_config", 0)
+    await svc.move(5)
+    assert fake_camera.calls["set_config"] - before == 1  # only manualfocusdrive
+    fake_camera._values["viewfinder"] = False  # e.g. a capture switched it off
+    await svc.move(5)
+    assert fake_camera.viewfinder_on

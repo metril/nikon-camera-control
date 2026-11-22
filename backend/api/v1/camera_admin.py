@@ -38,9 +38,14 @@ async def get_camera_datetime(svc: Svc) -> CameraDateTimeOut:
 
 @router.put("/datetime", operation_id="set_camera_datetime", response_model=CameraDateTimeOut)
 async def set_camera_datetime(body: CameraDateTimeIn, svc: Svc) -> CameraDateTimeOut:
-    """Set the camera clock to the server clock (`host`) or to `time` (`explicit`); returns
-    the offset read back afterwards. 409 while another owner holds the camera."""
-    return await svc.set_datetime(explicit=body.time if body.mode == "explicit" else None)
+    """Set the camera clock to the server clock (`host`) or to `time` (`explicit`), showing
+    wall-clock time in `utc_offset_minutes` (default: the server's local zone; pass the
+    browser's offset to get the photographer's local time). Returns the clock read back.
+    409 while another owner holds the camera."""
+    return await svc.set_datetime(
+        explicit=body.time if body.mode == "explicit" else None,
+        utc_offset_minutes=body.utc_offset_minutes,
+    )
 
 
 @router.get("/capture-target", operation_id="get_capture_target", response_model=CaptureTargetOut)

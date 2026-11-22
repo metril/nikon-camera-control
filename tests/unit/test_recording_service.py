@@ -17,6 +17,7 @@ from backend.core.errors import (
     CameraBusy,
     CameraNotConnected,
     CameraOperationFailed,
+    CameraTimeout,
     InvalidState,
 )
 from backend.core.events import EventBus
@@ -163,11 +164,11 @@ async def test_start_twice_and_stop_without_start_are_invalid_state(rig: Rig) ->
     await rig.rec.stop()
 
 
-async def test_start_refused_when_capture_target_is_internal_ram(rig: Rig) -> None:
+async def test_internal_ram_capture_target_is_only_a_warning(rig: Rig) -> None:
     await rig.cam.set_setting("capturetarget", "Internal RAM")
-    with pytest.raises(InvalidState, match="memory card"):
-        await rig.rec.start(max_seconds=None, download_after=False)
-    assert rig.cam.state == S.IDLE and rig.cam.status().leased_by is None
+    info = await rig.rec.start(max_seconds=None, download_after=False)
+    assert info.active and info.warning and "Internal RAM" in info.warning
+    await rig.rec.stop()
 
 
 async def test_start_failure_surfaces_movie_mode_hint_and_rolls_back(rig: Rig) -> None:
@@ -226,14 +227,89 @@ async def test_unplug_mid_recording_marks_ended_and_releases_lease(rig: Rig) -> 
     await task
 
 
-async def test_camera_stopping_by_itself_is_noticed_and_clip_kept(rig: Rig) -> None:
+async def test_movie_readback_off_does_not_end_a_healthy_recording(rig: Rig) -> None:
+    """The movie getter is an action toggle; its readback must never end a recording."""
     await rig.rec.start(max_seconds=None, download_after=False)
-    rig.fake.set_config("movie", False)  # e.g. card full / 29:59 limit on the body
+    rig.fake._values["movie"] = False  # readback off, no event
+    rig.clock.thaw()
+    await until(lambda: rig.clock.t >= 30)  # well past the old 2-poll detection
+    assert rig.rec.info().active and rig.cam.state == S.RECORDING
+    await rig.rec.stop()
+
+
+async def test_segment_event_mid_recording_does_not_stop_it(rig: Rig) -> None:
+    """A 4 GB split yields a FILE_ADDED while the camera keeps recording."""
+    await rig.rec.start(max_seconds=None, download_after=False)
+    rig.fake.set_config("movie", False)  # emits a movie file event
+    rig.fake.set_config("movie", True)
+    rig.clock.thaw()
+    await until(lambda: rig.rec.info().segments == 1)
+    await until(lambda: rig.clock.t >= 30)  # far past any quiet window
+    info = rig.rec.info()
+    assert info.active and rig.cam.state == S.RECORDING and info.note is None
+    await rig.rec.stop()
+
+
+async def test_note_after_camera_clip_limit_and_stop_still_runs(rig: Rig) -> None:
+    await rig.rec.start(max_seconds=None, download_after=False)
+    rig.clock.t = 1799 - 2
     rig.clock.thaw()
     await until(lambda: not rig.rec.info().active)
     info = rig.rec.info()
-    assert info.reason == "camera_stopped" and info.last_clip is not None
-    assert rig.cam.state == S.IDLE and rig.cam.status().leased_by is None
+    assert info.reason == "max_seconds" and info.note and "probably stopped" in info.note
+    assert not rig.fake.get_config("movie").value
+
+
+async def _reset_camera(rig: Rig) -> None:
+    """Escalating timeout (as a slow live view preview would cause): RECORDING -> ERROR -> IDLE."""
+    rig.fake.hang("get_config")
+    with pytest.raises(CameraTimeout):
+        await rig.cam.call(lambda b: b.get_config("iso"), owner="recording", timeout=0.05)
+    assert rig.cam.state == S.ERROR
+    rig.fake.release_all()
+    await until(lambda: rig.cam.state == S.IDLE)
+
+
+async def test_camera_reset_mid_recording_still_sends_movie_stop(rig: Rig) -> None:
+    await rig.rec.start(max_seconds=None, download_after=False)
+    await _reset_camera(rig)
+    assert rig.fake.get_config("movie").value  # camera is still recording
+    rig.clock.thaw()
+    await until(lambda: not rig.rec.info().active)
+    info = rig.rec.info()
+    assert info.reason == "camera_reset" and info.last_clip is not None
+    assert not rig.fake.get_config("movie").value
+    assert rig.cam.status().leased_by is None
+
+
+async def test_camera_reset_with_failing_stop_keeps_recording_active_and_stop_retries(
+    rig: Rig,
+) -> None:
+    await rig.rec.start(max_seconds=None, download_after=False)
+    await _reset_camera(rig)
+    rig.fake.fail_next("set_config", 3, exc=CameraOperationFailed("x"))
+    rig.clock.thaw()
+    await until(lambda: rig.rec.info().warning is not None)
+    info = rig.rec.info()
+    assert info.active and info.reason == "camera_reset" and "Retry" in (info.warning or "")
+    assert rig.cam.status().leased_by == "recording"
+    done = await rig.rec.stop()
+    assert not done.active and done.last_clip is not None
+    assert not rig.fake.get_config("movie").value
+
+
+async def test_cancelled_start_after_movie_command_sends_movie_stop(rig: Rig) -> None:
+    rig.fake.hang("set_config")
+    task = asyncio.create_task(rig.rec.start(max_seconds=None, download_after=False))
+    await until(lambda: rig.fake.calls.get("set_config", 0) >= 1)
+    task.cancel()
+    await asyncio.sleep(0.01)
+    rig.fake.release_all()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not rig.fake.get_config("movie").value  # undone, not left recording untracked
+    assert rig.fake.calls["set_config"] >= 2
+    assert rig.cam.status().leased_by is None and not rig.rec.info().active
 
 
 async def test_download_after_submits_job_into_recordings_dir(rig: Rig) -> None:

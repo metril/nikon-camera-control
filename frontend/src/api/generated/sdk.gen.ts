@@ -83,8 +83,10 @@ export const getCameraDatetime = <ThrowOnError extends boolean = false>(options?
 /**
  * Set Camera Datetime
  *
- * Set the camera clock to the server clock (`host`) or to `time` (`explicit`); returns
- * the offset read back afterwards. 409 while another owner holds the camera.
+ * Set the camera clock to the server clock (`host`) or to `time` (`explicit`), showing
+ * wall-clock time in `utc_offset_minutes` (default: the server's local zone; pass the
+ * browser's offset to get the photographer's local time). Returns the clock read back.
+ * 409 while another owner holds the camera.
  */
 export const setCameraDatetime = <ThrowOnError extends boolean = false>(options: Options<SetCameraDatetimeData, ThrowOnError>): RequestResult<SetCameraDatetimeResponses, SetCameraDatetimeErrors, ThrowOnError> => (options.client ?? client).put<SetCameraDatetimeResponses, SetCameraDatetimeErrors, ThrowOnError>({
     security: [{ name: 'X-API-Key', type: 'apiKey' }],

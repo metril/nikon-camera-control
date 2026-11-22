@@ -9,9 +9,25 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class CameraDateTimeOut(BaseModel):
-    camera_time: datetime = Field(description="Camera clock (UTC epoch as the camera reports).")
-    host_time: datetime = Field(description="Server clock when the camera was read.")
-    offset_s: float = Field(description="camera_time - host_time in seconds.")
+    camera_time: datetime = Field(
+        description="The camera's raw epoch read as UTC. The camera stores wall-clock time with "
+        "no zone and libgphoto2 converts it with the SERVER's zone, so this is only a true UTC "
+        "instant if the camera was set from a UTC server; prefer camera_wall_time."
+    )
+    camera_epoch: int = Field(description="Raw epoch seconds as gphoto2 reports the clock.")
+    camera_wall_time: datetime = Field(
+        description="What the camera's clock face shows (no timezone): the raw epoch rendered "
+        "in the server's zone."
+    )
+    host_time: datetime = Field(description="Server clock (UTC) when the camera was read.")
+    host_utc_offset_minutes: int = Field(
+        description="The server's UTC offset (minutes east) at that moment; `host` mode without "
+        "an explicit offset sets the camera to the server's local wall time."
+    )
+    offset_s: float = Field(
+        description="camera_epoch - server epoch in seconds: clock drift when the camera was "
+        "set in `host` mode without an offset."
+    )
 
 
 class CameraDateTimeIn(BaseModel):
@@ -20,6 +36,13 @@ class CameraDateTimeIn(BaseModel):
     )
     time: datetime | None = Field(
         default=None, description="Required for explicit; a naive value is taken as UTC."
+    )
+    utc_offset_minutes: int | None = Field(
+        default=None,
+        ge=-840,
+        le=840,
+        description="Minutes east of UTC of the wall-clock time the camera should show "
+        "(browsers: -new Date().getTimezoneOffset()). Omitted: the server's local zone.",
     )
 
     @model_validator(mode="after")

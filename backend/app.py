@@ -30,6 +30,7 @@ from backend.services.storage import cleanup_stale
 log = logging.getLogger(__name__)
 
 API_PREFIX = "/api/v1"
+JOB_SHUTDOWN_WAIT_S = 20.0
 
 
 def _default_backend_factory(store: ConfigStore) -> Callable[[], CameraBackend]:
@@ -151,9 +152,14 @@ def create_app(
             for task in list(bg):
                 task.cancel()
             await asyncio.gather(*bg, return_exceptions=True)
+            # Jobs first (bulb must close the shutter, brackets restore settings, focus returns):
+            # they need the camera. Bounded so cleanup can run but shutdown cannot hang.
+            try:
+                await jobs.shutdown(wait_s=JOB_SHUTDOWN_WAIT_S)
+            except Exception:
+                log.exception("job shutdown failed")
             await registry.aclose()
             await service.stop()
-            await jobs.shutdown()
             bus.close()
 
     app = FastAPI(

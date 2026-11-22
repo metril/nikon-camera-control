@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from typing import Any, Literal
 
 from pydantic import TypeAdapter, ValidationError
 
+from backend.api.schemas.common import EventType
 from backend.api.schemas.presets import (
     SCHEMA_VERSION,
     AppliedSetting,
@@ -49,11 +51,13 @@ from backend.api.schemas.timelapse import (
 from backend.core.errors import (
     AppError,
     ConfigInvalid,
+    Forbidden,
     InvalidState,
     PresetNotFound,
     SettingNotAllowed,
     SettingNotFound,
 )
+from backend.core.events import EventBus
 from backend.services.settings import COMMON, WRITABLE, SettingsService, resolve_name
 from backend.services.timelapse.brackets import (
     PRESETS,
@@ -119,6 +123,7 @@ class PresetService:
         settings: SettingsService,
         *,
         clock: Callable[[], datetime] | None = None,
+        bus: EventBus | None = None,
     ) -> None:
         self._path = data_dir / FILE_NAME
         self._settings = settings
@@ -126,15 +131,21 @@ class PresetService:
         self._lock = asyncio.Lock()
         self._items: dict[str, Preset] | None = None
         self._warning: str | None = None
+        self._bus = bus
+        self._unreadable = False  # file exists but could not be read: never overwrite it
+        self._backup_pending = False  # entries were skipped on load: keep the original aside
 
     # persistence ------------------------------------------------------------------------
     def _read(self) -> tuple[dict[str, Preset], str | None]:
+        """Sets ``_unreadable`` / ``_backup_pending`` (called under the lock)."""
+        self._unreadable = self._backup_pending = False
         try:
             raw = self._path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return {}, None
         except OSError as e:
-            return {}, f"presets file unreadable: {e}"
+            self._unreadable = True
+            return {}, f"presets file unreadable ({e}); changes are refused until it is readable"
         try:
             doc = json.loads(raw)
             if not isinstance(doc, dict) or not isinstance(doc.get("presets"), list):
@@ -158,9 +169,17 @@ class PresetService:
                 items[p.id] = p
             except (ValidationError, ValueError):
                 skipped += 1
+        self._backup_pending = skipped > 0
         return items, (f"{skipped} invalid preset(s) skipped" if skipped else None)
 
-    def _write(self, items: dict[str, Preset]) -> None:
+    def _write(self, items: dict[str, Preset]) -> str | None:
+        """Atomic write; returns the backup file name if the original was copied aside."""
+        bak: str | None = None
+        if self._backup_pending:
+            dest = self._path.with_name(f"{FILE_NAME}.bak-{int(time.time() * 1000)}")
+            shutil.copy2(self._path, dest)  # raises (nothing lost) if the copy fails
+            bak = dest.name
+            self._backup_pending = False
         doc = {
             "schema_version": SCHEMA_VERSION,
             "presets": [p.model_dump(mode="json") for p in items.values()],
@@ -175,18 +194,38 @@ class PresetService:
         finally:
             with contextlib.suppress(OSError):
                 tmp.unlink()
+        return bak
 
     async def _load(self) -> dict[str, Preset]:
-        """Call with the lock held."""
-        if self._items is None:
+        """Call with the lock held. An unreadable file is re-read on every call."""
+        if self._items is None or self._unreadable:
             items, self._warning = await asyncio.to_thread(self._read)
             self._items = items
             return items
         return self._items
 
     async def _commit(self, items: dict[str, Preset]) -> None:
-        await asyncio.to_thread(self._write, items)
+        if self._unreadable:
+            raise InvalidState(
+                "The presets file exists but cannot be read; changes are refused so that "
+                "nothing is overwritten. Fix the file or its permissions and retry.",
+                details={"file": FILE_NAME},
+            )
+        bak = await asyncio.to_thread(self._write, items)
         self._items = items
+        if bak:
+            self._warning = f"{self._warning or 'invalid presets skipped'}; original kept as {bak}"
+
+    def _changed(self, action: str, preset: Preset | None = None) -> None:
+        if self._bus is not None:
+            self._bus.publish(
+                EventType.PRESETS_CHANGED,
+                {
+                    "action": action,
+                    "id": preset.id if preset else None,
+                    "kind": preset.kind if preset else None,
+                },
+            )
 
     # helpers ----------------------------------------------------------------------------
     @staticmethod
@@ -262,6 +301,7 @@ class PresetService:
         }
         p = _PRESET.validate_python(data)
         await self._commit({**items, p.id: p})
+        self._changed("created", p)
         return p
 
     async def update(self, preset_id: str, body: SettingsPresetIn | BracketPresetIn) -> Preset:
@@ -270,13 +310,14 @@ class PresetService:
             items = await self._load()
             cur = self._find(items, preset_id)
             if cur.builtin:
-                raise SettingNotAllowed("Built-in presets are read-only", details={"id": preset_id})
+                raise Forbidden("Built-in presets are read-only", details={"id": preset_id})
             if cur.kind != body.kind:
                 raise ConfigInvalid("A preset's kind cannot change", details={"id": preset_id})
             self._check_name_free(items, body.kind, body.name, ignore=preset_id)
             data = {**body.model_dump(), "id": cur.id, "created": cur.created}
             p = _PRESET.validate_python({**data, "updated": self._clock()})
             await self._commit({**items, p.id: p})
+            self._changed("updated", p)
             return p
 
     async def delete(self, preset_id: str) -> None:
@@ -284,8 +325,9 @@ class PresetService:
             items = await self._load()
             cur = self._find(items, preset_id)
             if cur.builtin:
-                raise SettingNotAllowed("Built-in presets are read-only", details={"id": preset_id})
+                raise Forbidden("Built-in presets are read-only", details={"id": preset_id})
             await self._commit({k: v for k, v in items.items() if k != preset_id})
+            self._changed("deleted", cur)
 
     # apply ------------------------------------------------------------------------------
     async def apply(self, preset_id: str) -> ApplyResult:
@@ -376,6 +418,7 @@ class PresetService:
                 results.append(ImportItemResult(index=i, name=p.name, id=p.id, status="created"))
             if any(r.status == "created" for r in results) or (doc.replace and items):
                 await self._commit(base)
+                self._changed("imported")
             return PresetImportResult(
                 created=sum(r.status == "created" for r in results),
                 skipped=sum(r.status == "skipped" for r in results),

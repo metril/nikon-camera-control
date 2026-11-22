@@ -59,6 +59,7 @@ class EventType(StrEnum):
     JOB_FAILED = "job_failed"
     JOB_CANCELLED = "job_cancelled"
     CONFIG_CHANGED = "config_changed"
+    PRESETS_CHANGED = "presets_changed"
     ERROR = "error"
 
 

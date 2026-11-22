@@ -236,3 +236,26 @@ async def test_bracket_exclusive_second_job_conflicts(
     assert r2.status_code == 409  # lease held by the running bracket job
     gate.set()
     assert (await wait_job(c, r.json()["id"]))["status"] == "completed"
+
+
+async def test_bracket_holds_lease_from_request_so_concurrent_job_gets_409(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    sl = install(app, settle_s=0.01)
+    gate, reached = asyncio.Event(), asyncio.Event()
+
+    async def hook(n: int) -> None:
+        reached.set()
+        await gate.wait()
+
+    sl.hook = hook
+    r = await c.post(P, json={"bracketing": MODES["preset"][0]})
+    assert r.status_code == 202
+    assert app.state.camera_service.status().leased_by == "bracket"
+    r2 = await c.post("/api/v1/capture/bulb", json={"seconds": 2})
+    assert r2.status_code == 409 and r2.json()["error"]["code"] == "CAMERA_BUSY"
+    await asyncio.wait_for(reached.wait(), 5)
+    gate.set()
+    assert (await wait_job(c, r.json()["id"]))["status"] == "completed"
+    assert app.state.camera_service.status().leased_by is None

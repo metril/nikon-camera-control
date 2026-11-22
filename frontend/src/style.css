@@ -4,7 +4,11 @@
 
 /* Base styles for photography UI */
 :root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
@@ -36,7 +40,7 @@ body {
 
 /* Focus styles for accessibility */
 *:focus-visible {
-  outline: 2px solid #f97316;
+  outline: 2px solid theme('colors.camera.accent');
   outline-offset: 2px;
 }
 
@@ -48,8 +52,13 @@ body {
 
 /* Capture button animation */
 @keyframes capture-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 .capture-btn:active {
@@ -58,8 +67,15 @@ body {
 
 /* Recording indicator blink */
 @keyframes blink {
-  0%, 49%, 100% { opacity: 1; }
-  50%, 99% { opacity: 0.3; }
+  0%,
+  49%,
+  100% {
+    opacity: 1;
+  }
+  50%,
+  99% {
+    opacity: 0.3;
+  }
 }
 
 .recording-dot {
@@ -67,29 +83,41 @@ body {
 }
 
 /* Slider styling */
-input[type="range"] {
+input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
   cursor: pointer;
 }
 
-input[type="range"]::-webkit-slider-runnable-track {
+input[type='range']::-webkit-slider-runnable-track {
   background: #2a2a2a;
   height: 6px;
   border-radius: 3px;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   margin-top: -5px;
-  background-color: #f97316;
+  background-color: theme('colors.camera.accent');
   height: 16px;
   width: 16px;
   border-radius: 50%;
 }
 
-input[type="range"]:focus::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.3);
+input[type='range']:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px theme('colors.camera.accent / 0.3');
+}
+
+/* Respect reduced-motion preferences globally */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

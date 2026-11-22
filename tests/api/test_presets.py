@@ -78,7 +78,8 @@ async def test_builtins_listed_and_immutable(client: httpx.AsyncClient) -> None:
     b = next(i for i in items if i["id"] == "builtin-exposure_3")
     assert b["builtin"] is True and b["bracketing"] == {"mode": "preset", "preset": "exposure_3"}
     assert (await client.get(P, params={"kind": "settings"})).json()["items"] == []
-    assert (await client.delete(f"{P}/builtin-exposure_3")).status_code == 403
+    r = await client.delete(f"{P}/builtin-exposure_3")
+    assert r.status_code == 403 and r.json()["error"]["code"] == "FORBIDDEN"
     r = await client.put(
         f"{P}/builtin-exposure_3",
         json={

@@ -1,11 +1,12 @@
 import asyncio
+import time
 
 import pytest
 
 from backend.api.schemas.common import EventType
 from backend.core.errors import CameraBusy, JobNotFound, SettingInvalid
 from backend.core.events import EventBus
-from backend.core.jobs import JobManager, JobStatus
+from backend.core.jobs import HeldContext, JobManager, JobStatus
 
 
 @pytest.fixture
@@ -214,3 +215,77 @@ async def test_shutdown_cancels_all(bus):
     await asyncio.sleep(0)
     await mgr.shutdown()
     assert all(mgr.get(i).status == JobStatus.CANCELLED for i in ids)
+
+
+def _stubborn():
+    stop = asyncio.Event()
+
+    async def work(ctx):
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), 10)
+            except asyncio.CancelledError:
+                pass  # swallows cancellation
+        return {}
+
+    return stop, work
+
+
+async def test_cancel_is_bounded_when_task_swallows_cancellation(bus):
+    mgr = JobManager(bus)
+    stop, work = _stubborn()
+    j = mgr.submit("v", work, exclusive_key="k")
+    await asyncio.sleep(0)
+    t0 = time.monotonic()
+    out = await mgr.cancel(j.id, wait_s=0.05)
+    assert time.monotonic() - t0 < 1
+    assert out.status == JobStatus.CANCELLED and "cancelling" in out.message
+    stop.set()
+    await asyncio.sleep(0.05)
+    assert mgr.get(j.id).status == JobStatus.CANCELLED and mgr.get(j.id).result is None
+
+
+async def test_shutdown_is_bounded_when_task_swallows_cancellation(bus):
+    mgr = JobManager(bus)
+    stop, work = _stubborn()
+    ids = [mgr.submit("v", work).id for _ in range(2)]
+    await asyncio.sleep(0)
+    t0 = time.monotonic()
+    await mgr.shutdown(wait_s=0.05)
+    assert time.monotonic() - t0 < 1
+    assert all(mgr.get(i).status == JobStatus.CANCELLED for i in ids)
+    stop.set()
+    await asyncio.sleep(0.05)
+
+
+async def test_cancel_before_start_runs_release_hook(bus):
+    mgr = JobManager(bus)
+    released: list[int] = []
+
+    async def release():
+        released.append(1)
+
+    async def work(ctx):
+        return {}
+
+    j = mgr.submit("v", work, release=release)
+    await mgr.cancel(j.id)  # task never got a step: the factory's finally cannot run
+    assert released == [1] and mgr.get(j.id).status == JobStatus.CANCELLED
+
+
+async def test_held_context_release_is_idempotent():
+    log: list[str] = []
+
+    class CM:
+        async def __aenter__(self):
+            log.append("in")
+
+        async def __aexit__(self, *a):
+            log.append("out")
+
+    h = HeldContext(CM())
+    await h.release()  # not entered: no-op
+    await h.enter()
+    await h.release()
+    await h.release()
+    assert log == ["in", "out"]

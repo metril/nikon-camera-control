@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import logging
 import time
 import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -21,6 +23,7 @@ from backend.core.events import EventBus
 log = logging.getLogger(__name__)
 
 _PROGRESS_INTERVAL = 0.2  # seconds; ~5 progress events/s per job
+CANCEL_WAIT_S = 10.0  # default bound for cancel() / shutdown() awaiting job cleanup
 
 
 class JobStatus(StrEnum):
@@ -79,6 +82,24 @@ class JobContext:
         return self._cancel_requested
 
 
+class HeldContext:
+    """An async context manager (e.g. ``CameraService.lease``) entered by one coroutine and
+    exited, once, by another (the job). ``release`` is idempotent."""
+
+    def __init__(self, cm: AbstractAsyncContextManager[Any]) -> None:
+        self._cm = cm
+        self._entered = False
+
+    async def enter(self) -> None:
+        await self._cm.__aenter__()
+        self._entered = True
+
+    async def release(self) -> None:
+        if self._entered:
+            self._entered = False
+            await self._cm.__aexit__(None, None, None)
+
+
 JobFactory = Callable[[JobContext], Awaitable[dict[str, Any]]]
 
 
@@ -93,7 +114,11 @@ class JobManager:
       the same key raises CameraBusy (HTTP 409).
     - ``cancel`` returns the updated Job; cancelling a finished job is a no-op.
     - Only the newest ``max_finished`` finished jobs are retained.
-    - ``shutdown`` cancels and awaits all unfinished jobs.
+    - ``cancel`` / ``shutdown`` wait at most ``wait_s`` for the task's cleanup. A task that
+      has not finished by then is reported ``cancelled`` ("cancelling" message), keeps
+      cleaning up in the background and is logged loudly; it is never awaited forever.
+    - ``release`` (submit): async hook run only if the job is cancelled before its task ever
+      started (the factory's own ``finally`` cannot run then), e.g. to free a lease.
     """
 
     def __init__(
@@ -111,13 +136,20 @@ class JobManager:
         self._ctxs: dict[str, JobContext] = {}
         self._keys: dict[str, str] = {}  # exclusive_key -> job id
         self._job_keys: dict[str, str] = {}  # job id -> exclusive_key
+        self._releases: dict[str, Callable[[], Awaitable[None]]] = {}
+        self._lingering: set[asyncio.Task[None]] = set()
         self._finished: deque[str] = deque()
 
     def _publish(self, type: EventType, job: Job) -> None:
         self._bus.publish(type, {"job": job.model_dump(mode="json")})
 
     def submit(
-        self, kind: str, coro_factory: JobFactory, *, exclusive_key: str | None = None
+        self,
+        kind: str,
+        coro_factory: JobFactory,
+        *,
+        exclusive_key: str | None = None,
+        release: Callable[[], Awaitable[None]] | None = None,
     ) -> Job:
         if exclusive_key is not None and exclusive_key in self._keys:
             raise CameraBusy(
@@ -131,6 +163,8 @@ class JobManager:
         if exclusive_key is not None:
             self._keys[exclusive_key] = job.id
             self._job_keys[job.id] = exclusive_key
+        if release is not None:
+            self._releases[job.id] = release
         self._tasks[job.id] = asyncio.get_running_loop().create_task(
             self._run(job, ctx, coro_factory)
         )
@@ -145,15 +179,18 @@ class JobManager:
         except asyncio.CancelledError:
             self._finish(job, JobStatus.CANCELLED, EventType.JOB_CANCELLED)
         except AppError as exc:
-            job.error, job.error_code = exc.message, str(exc.code)
+            if job.status not in _FINISHED:
+                job.error, job.error_code = exc.message, str(exc.code)
             self._finish(job, JobStatus.FAILED, EventType.JOB_FAILED)
         except Exception as exc:
             log.exception("job %s (%s) failed", job.id, job.kind)
-            job.error = str(exc) or type(exc).__name__
+            if job.status not in _FINISHED:
+                job.error = str(exc) or type(exc).__name__
             self._finish(job, JobStatus.FAILED, EventType.JOB_FAILED)
         else:
-            job.result = result
-            job.progress = 1.0
+            if job.status not in _FINISHED:  # not already reported cancelled
+                job.result = result
+                job.progress = 1.0
             self._finish(job, JobStatus.COMPLETED, EventType.JOB_COMPLETED)
 
     def _finish(self, job: Job, status: JobStatus, event: EventType) -> None:
@@ -163,6 +200,7 @@ class JobManager:
         job.finished = datetime.now(UTC)
         self._tasks.pop(job.id, None)
         self._ctxs.pop(job.id, None)
+        self._releases.pop(job.id, None)
         key = self._job_keys.pop(job.id, None)
         if key is not None:
             self._keys.pop(key, None)
@@ -186,26 +224,57 @@ class JobManager:
         jobs.sort(key=lambda j: j.created, reverse=True)
         return jobs
 
-    async def cancel(self, job_id: str) -> Job:
+    async def cancel(self, job_id: str, *, wait_s: float = CANCEL_WAIT_S) -> Job:
         job = self._jobs.get(job_id)
         if job is None:
             raise JobNotFound(details={"job_id": job_id})
         if job.status in _FINISHED:
             return job.model_copy()
-        await self._cancel_task(job)
+        await self._cancel_jobs([job], wait_s)
         return job.model_copy()
 
-    async def _cancel_task(self, job: Job) -> None:
-        ctx = self._ctxs.get(job.id)
-        task = self._tasks.get(job.id)
-        if ctx is not None:
-            ctx._cancel_requested = True
-        if task is not None:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-        # task cancelled before its first step never ran its handler
-        self._finish(job, JobStatus.CANCELLED, EventType.JOB_CANCELLED)
+    async def _cancel_jobs(self, jobs: builtins.list[Job], wait_s: float) -> None:
+        tasks: dict[str, asyncio.Task[None]] = {}
+        unstarted: builtins.list[Job] = []
+        for job in jobs:
+            ctx = self._ctxs.get(job.id)
+            task = self._tasks.get(job.id)
+            if ctx is not None:
+                ctx._cancel_requested = True
+            if task is not None:
+                if job.status == JobStatus.QUEUED:
+                    unstarted.append(job)  # the factory will never run its own cleanup
+                task.cancel()
+                tasks[job.id] = task
+        if tasks:
+            _, pending = await asyncio.wait(set(tasks.values()), timeout=wait_s)
+            for job in jobs:
+                task = tasks.get(job.id)
+                if task is not None and task in pending:
+                    log.error(
+                        "job %s (%s) did not finish %.1fs after cancel; reporting it cancelled "
+                        "while its cleanup continues in the background",
+                        job.id,
+                        job.kind,
+                        wait_s,
+                    )
+                    job.message = "cancelling: cleanup still running"
+                    self._lingering.add(task)
+                    task.add_done_callback(self._lingering.discard)
+        for job in unstarted:
+            release = self._releases.get(job.id)
+            if release is not None:
+                try:
+                    await release()
+                except Exception:
+                    log.exception("releasing resources of unstarted job %s failed", job.id)
+        for job in jobs:
+            # a task cancelled before its first step never ran its handler
+            self._finish(job, JobStatus.CANCELLED, EventType.JOB_CANCELLED)
 
-    async def shutdown(self) -> None:
-        for job in [j for j in self._jobs.values() if j.status not in _FINISHED]:
-            await self._cancel_task(job)
+    async def shutdown(self, *, wait_s: float = CANCEL_WAIT_S) -> None:
+        await self._cancel_jobs(
+            [j for j in self._jobs.values() if j.status not in _FINISHED], wait_s
+        )
+        for task in self._lingering:
+            log.error("task %s is still running after job shutdown", task.get_name())

@@ -3,8 +3,11 @@
 Flow: start takes ``camera.lease("recording")`` for the whole recording, makes sure live view
 is on (remembering whether it already was), moves the camera to RECORDING and sets
 ``movie``=1. A watchdog task stops it at the time limit and notices a camera that stopped by
-itself or went away. Stop sets ``movie``=0 (retried), waits a bounded time for the FILE_ADDED
-event of the clip, restores the prior state and releases the lease.
+itself or went away. If the camera was reset (timeout -> ERROR -> IDLE) mid-recording the
+watchdog waits for it to be usable again and still sends the real stop; only a real
+disconnect ends the session without a stop command. Stop sets ``movie``=0 (retried), waits a
+bounded time for the FILE_ADDED event of the clip, restores the prior state and releases the
+lease.
 
 Camera access only through ``CameraService.call(..., owner="recording")``.
 """
@@ -31,6 +34,7 @@ from backend.core.errors import (
     CameraOperationFailed,
     InvalidState,
     SettingNotFound,
+    StorageFull,
 )
 from backend.core.events import EventBus
 from backend.core.jobs import Job, JobContext, JobManager
@@ -46,6 +50,8 @@ STOP_ATTEMPTS = 3
 FILE_WAIT_ATTEMPTS = 20  # x _EVENT_WAIT_S = bounded wait for the clip's FILE_ADDED
 _EVENT_WAIT_S = 0.25
 _POLL_S = 1.0
+RECOVER_POLLS = 30  # bounded wait for a reset camera to become usable again
+START_UNDO_S = 10.0  # bound for the best-effort movie=0 after a failed start
 _RETRY_DELAY_S = 0.3
 _OFF_VALUES = frozenset({"", "0", "false", "off", "none"})
 RECORDINGS_DIR = "recordings"
@@ -60,6 +66,12 @@ def _wrong_target(value: object) -> bool:
     return "ram" in v or "sdram" in v
 
 
+_TARGET_WARNING = (
+    "Capture target is {value!r}; D500? Nikon movie recording normally goes to the memory "
+    "card regardless, but check the card if no clip appears."
+)
+
+
 @dataclass(slots=True)
 class _Active:
     started_at: datetime
@@ -69,7 +81,6 @@ class _Active:
     was_liveview: bool
     stack: AsyncExitStack
     clips: list[CameraFilePath] = field(default_factory=list)
-    off_polls: int = 0
 
 
 @dataclass(slots=True)
@@ -94,6 +105,8 @@ class RecordingInfo:
     job_id: str | None
     reason: str | None
     warning: str | None
+    segments: int = 0
+    note: str | None = None
 
 
 def _drain(b: CameraBackend, wait_s: float) -> list[CameraFilePath]:
@@ -156,8 +169,10 @@ class RecordingService:
                 self._camera.state,
                 last.clips[-1] if last.clips else None,
                 None,
-                None,
+                last.reason,
                 last.warning,
+                len(a.clips),
+                self._note(max(0.0, self._clock() - a.t0)),
             )
         return RecordingInfo(
             False,
@@ -169,7 +184,15 @@ class RecordingService:
             last.job_id,
             last.reason,
             last.warning,
+            len(last.clips),
+            self._note(last.elapsed_s),
         )
+
+    @staticmethod
+    def _note(elapsed_s: float) -> str | None:
+        if elapsed_s >= MAX_CLIP_S:
+            return "Past the camera's 29:59 clip limit: the camera has probably stopped by itself"
+        return None
 
     async def start(self, *, max_seconds: int | None, download_after: bool) -> RecordingInfo:
         async with self._lock:
@@ -189,8 +212,10 @@ class RecordingService:
             stack = AsyncExitStack()
             await stack.enter_async_context(self._camera.lease(OWNER))  # CameraBusy if taken
             restore: CameraState | None = None
+            issued: asyncio.Future[None] | None = None
+            warning: str | None = None
             try:
-                await self._check_capture_target()
+                warning = await self._check_capture_target()
                 was_lv = st == _S.LIVEVIEW
                 if not was_lv:
                     await self._camera.transition(_S.LIVEVIEW)
@@ -198,8 +223,12 @@ class RecordingService:
                 await self._camera.preview_frame()  # switches the viewfinder on if needed
                 await self._camera.transition(_S.RECORDING)
                 restore = _S.LIVEVIEW if was_lv else _S.IDLE
+                # Shielded: a cancelled request must not leave a queued movie=1 untracked.
+                issued = asyncio.ensure_future(
+                    self._camera.call(lambda b: b.set_config("movie", 1), owner=OWNER)
+                )
                 try:
-                    await self._camera.call(lambda b: b.set_config("movie", 1), owner=OWNER)
+                    await asyncio.shield(issued)
                 except (CameraNotConnected, InvalidState):
                     raise
                 except AppError as e:
@@ -209,13 +238,17 @@ class RecordingService:
                         details={"cause": e.message},
                     ) from e
             except BaseException:
+                if issued is not None:
+                    await self._undo_start(issued)
                 await self._rollback(restore, was_lv=st == _S.LIVEVIEW)
                 await stack.aclose()
                 raise
             self._active = _Active(
                 datetime.now(UTC), self._clock(), limit, download_after, st == _S.LIVEVIEW, stack
             )
-            self._last = _Last(started_at=self._active.started_at, max_seconds=limit)
+            self._last = _Last(
+                started_at=self._active.started_at, max_seconds=limit, warning=warning
+            )
             self._bus.publish(
                 EventType.RECORDING_STARTED,
                 {"max_seconds": limit, "download_after": download_after},
@@ -224,6 +257,12 @@ class RecordingService:
             return self.info()
 
     async def stop(self) -> RecordingInfo:
+        # Runs as its own task so a cancelled request cannot abort the stop half way.
+        task = asyncio.ensure_future(self._stop_locked())
+        task.add_done_callback(lambda t: t.cancelled() or t.exception())
+        return await asyncio.shield(task)
+
+    async def _stop_locked(self) -> RecordingInfo:
         async with self._lock:
             if self._active is None:
                 raise InvalidState("No recording is in progress")
@@ -258,17 +297,33 @@ class RecordingService:
                 await a.stack.aclose()
 
     # internals --------------------------------------------------------------------------
-    async def _check_capture_target(self) -> None:
+    async def _check_capture_target(self) -> str | None:
+        """Non-blocking: libgphoto2 defaults to Internal RAM and the body records to the card
+        anyway, so a RAM target only yields a warning."""
         try:
             w = await self._camera.call(lambda b: b.get_config("capturetarget"), owner=OWNER)
         except SettingNotFound:
-            return  # body without the widget: assume the card
-        if _wrong_target(w.value):
-            raise InvalidState(
-                f"Capture target is {w.value!r}; recording needs the memory card. Set "
-                "capturetarget to the memory card first.",
-                details={"capturetarget": str(w.value)},
+            return None  # body without the widget: assume the card
+        return _TARGET_WARNING.format(value=str(w.value)) if _wrong_target(w.value) else None
+
+    async def _undo_start(self, issued: asyncio.Future[None]) -> None:
+        """movie=1 was sent but the start failed: make sure the camera is not left recording."""
+        await asyncio.wait({issued}, timeout=START_UNDO_S)  # never cancels it
+        if issued.done() and not issued.cancelled():
+            exc = issued.exception()
+            if isinstance(exc, CameraNotConnected):
+                return
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(
+                    self._camera.call(
+                        lambda b: b.set_config("movie", 0), owner=OWNER, timeout=START_UNDO_S
+                    )
+                ),
+                START_UNDO_S + 1,
             )
+        except (AppError, TimeoutError):
+            log.warning("could not undo a failed recording start; camera may be recording")
 
     async def _rollback(self, restore: CameraState | None, *, was_lv: bool) -> None:
         """Undo a failed start (best effort)."""
@@ -286,53 +341,80 @@ class RecordingService:
                 await self._sleep(self._poll_s)
                 if self._active is not a:
                     return
-                if self._camera.state != _S.RECORDING:
-                    await self._ended_without_us(a)
+                if (st := self._camera.state) != _S.RECORDING:
+                    if st in (_S.DISCONNECTED, _S.CONNECTING):
+                        await self._ended_without_us(a)
+                    else:
+                        await self._recover(a)
                     return
                 if self._clock() - a.t0 >= a.max_seconds:
                     await self._auto("max_seconds")
                     return
                 try:
                     new = await self._camera.call(lambda b: _drain(b, 0.0), owner=OWNER)
-                    on = await self._camera.call(
-                        lambda b: _is_on(b.get_config("movie").value), owner=OWNER
-                    )
                 except CameraNotConnected:
                     continue  # state check above handles it on the next round
+                except StorageFull:
+                    await self._auto("camera_stopped")  # explicit error from the camera
+                    return
                 except AppError:
                     log.debug("recording poll failed", exc_info=True)
                     continue
+                # A movie FILE_ADDED mid-recording is only a segment (the body splits files
+                # and keeps recording); it never means the camera stopped.
                 a.clips.extend(f for f in new if f not in a.clips)
-                a.off_polls = 0 if on else a.off_polls + 1
-                if a.off_polls >= 2:
-                    await self._auto("camera_stopped")
-                    return
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("recording watchdog crashed")
 
-    async def _auto(self, reason: str) -> None:
+    async def _recover(self, a: _Active) -> None:
+        """Camera left RECORDING but is still connected (timeout -> ERROR -> reset -> IDLE):
+        it may still be recording, so wait (bounded) until it is usable and send the stop."""
+        for _ in range(RECOVER_POLLS):
+            st = self._camera.state
+            if st in (_S.DISCONNECTED, _S.CONNECTING):
+                await self._ended_without_us(a)
+                return
+            if st != _S.ERROR:
+                break
+            await self._sleep(self._poll_s)
+            if self._active is not a:
+                return
+        await self._auto("camera_reset", retry=False)
+
+    async def _auto(self, reason: str, *, retry: bool = True) -> None:
         async with self._lock:
             if self._active is None:
                 return
             self._watchdog = None
             try:
                 await self._finish(reason)
-            except Exception:
-                log.critical("AUTOMATIC STOP OF THE RECORDING FAILED; retrying")
+            except Exception as e:
+                log.critical("AUTOMATIC STOP OF THE RECORDING FAILED (%s)", reason)
                 if self._active is not None:
-                    self._watchdog = asyncio.create_task(self._watch(), name="recording-watchdog")
+                    msg = e.message if isinstance(e, AppError) else str(e)
+                    self._last.reason = reason
+                    self._last.warning = (
+                        f"Automatic stop failed ({msg}); the camera may still be recording. "
+                        "Retry POST /recording/stop."
+                    )
+                    if retry:
+                        self._watchdog = asyncio.create_task(
+                            self._watch(), name="recording-watchdog"
+                        )
 
     async def _ended_without_us(self, a: _Active) -> None:
-        """Camera left RECORDING on its own (unplugged / reset): clean up what we own."""
+        """Camera disconnected: clean up what we own (no stop command can be sent)."""
         async with self._lock:
             if self._active is not a:
                 return
             self._watchdog = None
-            state = self._camera.state
             reason = "camera_disconnected"
-            warning = f"Camera left recording state ({state.value}); the clip may be incomplete"
+            warning = (
+                "Camera disconnected during recording; the clip may be incomplete, and if it "
+                "was only a USB drop the camera may still be recording"
+            )
             self._record_end(a, reason, warning)
             self._active = None
             await a.stack.aclose()

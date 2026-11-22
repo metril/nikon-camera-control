@@ -681,6 +681,20 @@
             ],
             "description": "Required for explicit; a naive value is taken as UTC.",
             "title": "Time"
+          },
+          "utc_offset_minutes": {
+            "anyOf": [
+              {
+                "maximum": 840.0,
+                "minimum": -840.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minutes east of UTC of the wall-clock time the camera should show (browsers: -new Date().getTimezoneOffset()). Omitted: the server's local zone.",
+            "title": "Utc Offset Minutes"
           }
         },
         "required": [
@@ -691,27 +705,46 @@
       },
       "CameraDateTimeOut": {
         "properties": {
+          "camera_epoch": {
+            "description": "Raw epoch seconds as gphoto2 reports the clock.",
+            "title": "Camera Epoch",
+            "type": "integer"
+          },
           "camera_time": {
-            "description": "Camera clock (UTC epoch as the camera reports).",
+            "description": "The camera's raw epoch read as UTC. The camera stores wall-clock time with no zone and libgphoto2 converts it with the SERVER's zone, so this is only a true UTC instant if the camera was set from a UTC server; prefer camera_wall_time.",
             "format": "date-time",
             "title": "Camera Time",
             "type": "string"
           },
+          "camera_wall_time": {
+            "description": "What the camera's clock face shows (no timezone): the raw epoch rendered in the server's zone.",
+            "format": "date-time",
+            "title": "Camera Wall Time",
+            "type": "string"
+          },
           "host_time": {
-            "description": "Server clock when the camera was read.",
+            "description": "Server clock (UTC) when the camera was read.",
             "format": "date-time",
             "title": "Host Time",
             "type": "string"
           },
+          "host_utc_offset_minutes": {
+            "description": "The server's UTC offset (minutes east) at that moment; `host` mode without an explicit offset sets the camera to the server's local wall time.",
+            "title": "Host Utc Offset Minutes",
+            "type": "integer"
+          },
           "offset_s": {
-            "description": "camera_time - host_time in seconds.",
+            "description": "camera_epoch - server epoch in seconds: clock drift when the camera was set in `host` mode without an offset.",
             "title": "Offset S",
             "type": "number"
           }
         },
         "required": [
           "camera_time",
+          "camera_epoch",
+          "camera_wall_time",
           "host_time",
+          "host_utc_offset_minutes",
           "offset_s"
         ],
         "title": "CameraDateTimeOut",
@@ -2774,7 +2807,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why the last recording ended: user, max_seconds, camera_stopped, camera_disconnected, shutdown",
+            "description": "Why the last recording ended: user, max_seconds, camera_stopped, camera_reset, camera_disconnected, shutdown. Also set while still active if an automatic stop failed (POST /recording/stop retries it)",
             "title": "Ended Reason"
           },
           "job_id": {
@@ -2810,6 +2843,25 @@
             ],
             "description": "Auto-stop limit of this recording",
             "title": "Max Seconds"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set once elapsed time passes the camera's 29:59 limit: the camera has probably stopped by itself (it cannot be told apart otherwise)",
+            "title": "Note"
+          },
+          "segments": {
+            "default": 0,
+            "description": "Movie files (segments) the camera has reported so far",
+            "minimum": 0.0,
+            "title": "Segments",
+            "type": "integer"
           },
           "started": {
             "anyOf": [
@@ -3759,8 +3811,8 @@
             "type": "integer"
           },
           "steps_per_shot": {
-            "description": "Focus steps between shots",
-            "maximum": 100000.0,
+            "description": "Focus steps between shots (within the camera's drive range)",
+            "maximum": 32767.0,
             "minimum": 1.0,
             "title": "Steps Per Shot",
             "type": "integer"
@@ -4982,7 +5034,7 @@
         ]
       },
       "put": {
-        "description": "Set the camera clock to the server clock (`host`) or to `time` (`explicit`); returns\nthe offset read back afterwards. 409 while another owner holds the camera.",
+        "description": "Set the camera clock to the server clock (`host`) or to `time` (`explicit`), showing\nwall-clock time in `utc_offset_minutes` (default: the server's local zone; pass the\nbrowser's offset to get the photographer's local time). Returns the clock read back.\n409 while another owner holds the camera.",
         "operationId": "set_camera_datetime",
         "requestBody": {
           "content": {

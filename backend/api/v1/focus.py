@@ -69,5 +69,5 @@ async def reset_focus_position(svc: FocusDep) -> FocusResetResult:
 @router.post("/stack", operation_id="start_focus_stack", response_model=JobOut, status_code=202)
 async def start_focus_stack(body: StackRequest, svc: FocusDep) -> JobOut:
     """Capture N shots, moving focus between them; returns the job (kind ``focus-stack``)."""
-    job = svc.start_stack(**body.model_dump())
+    job = await svc.start_stack(**body.model_dump())
     return JobOut.model_validate(job.model_dump())

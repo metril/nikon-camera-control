@@ -36,6 +36,7 @@ class ErrorCode(StrEnum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
     NOT_FOUND = "NOT_FOUND"
     UNSUPPORTED_MEDIA = "UNSUPPORTED_MEDIA"
+    FORBIDDEN = "FORBIDDEN"
 
 
 class AppError(Exception):
@@ -169,6 +170,12 @@ class SessionNotFound(AppError):
     code = ErrorCode.SESSION_NOT_FOUND
     http_status = 404
     default_message = "Session not found"
+
+
+class Forbidden(AppError):
+    code = ErrorCode.FORBIDDEN
+    http_status = 403
+    default_message = "This operation is not allowed"
 
 
 class Unauthorized(AppError):

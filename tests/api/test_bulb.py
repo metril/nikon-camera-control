@@ -128,17 +128,124 @@ async def test_bulb_reports_progress_and_status(
     assert st["elapsed_s"] == 2.0 and st["remaining_s"] == 2.0
 
 
-async def test_bulb_refused_outside_manual_mode(
+async def test_bulb_outside_manual_mode_only_warns(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     install(app)
     fake_camera._values["expprogram"] = "A"
     r = await connected_client.post(B, json={"seconds": 2})
-    assert r.status_code == 409
-    assert r.json()["error"]["code"] == "INVALID_STATE"
-    assert "M" in r.json()["error"]["message"]
+    assert r.status_code == 202
+    j = await wait_job(connected_client, r.json()["id"])
+    assert j["status"] == "completed", j
+    assert any("not M" in w for w in j["result"]["warnings"])
     assert fake_camera._values["bulb"] is False
-    assert app.state.camera_service.state == CameraState.IDLE
+
+
+async def test_bulb_open_failure_names_camera_error_and_mode_hint(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    ft = install(app)
+    fake_camera._values["expprogram"] = "A"
+    fake_camera.fail_next("set_config", 3, CameraOperationFailed("Bulb not available"))
+    ft.hook = None
+    j = await wait_job(
+        connected_client, (await connected_client.post(B, json={"seconds": 2})).json()["id"]
+    )
+    assert j["status"] == "failed"
+    assert "Bulb not available" in j["error"] and "M" in j["error"]
+    assert fake_camera._values["bulb"] is False
+
+
+async def test_bulb_without_bulb_choice_still_runs(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    import dataclasses
+
+    spec = fake_camera._specs["shutterspeed"]
+    fake_camera._specs["shutterspeed"] = dataclasses.replace(
+        spec, choices=tuple(c for c in spec.choices if c != "Bulb")
+    )
+    j = await wait_job(
+        connected_client, (await connected_client.post(B, json={"seconds": 2})).json()["id"]
+    )
+    assert j["status"] == "completed", j
+    assert fake_camera._values["shutterspeed"] == "1/250"
+
+
+async def test_cancel_while_open_in_flight_still_closes_shutter(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    c = connected_client
+    install(app)
+    svc = app.state.services.get("bulb", lambda: None)
+    real = svc._set_bulb
+    gate, reached = asyncio.Event(), asyncio.Event()
+
+    async def slow(v: int) -> None:
+        if v == 1:
+            reached.set()
+            await gate.wait()
+        await real(v)
+
+    svc._set_bulb = slow
+    job = (await c.post(B, json={"seconds": 600})).json()
+    await asyncio.wait_for(reached.wait(), 5)
+    d = asyncio.create_task(c.delete(f"/api/v1/jobs/{job['id']}"))
+    await asyncio.sleep(0.05)
+    gate.set()  # the open lands after the cancel
+    r = await d
+    assert r.json()["status"] == "cancelled", r.text
+    assert fake_camera._values["bulb"] is False
+    assert app.state.camera_service.status().leased_by is None
+
+
+async def test_cancel_while_waiting_for_missing_file_returns_promptly(
+    app: FastAPI,
+    connected_client: httpx.AsyncClient,
+    fake_camera: FakeCamera,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    c = connected_client
+    install(app)
+    monkeypatch.setattr(bulb_mod, "CANCEL_COLLECT_GRACE_S", 0.1)
+    monkeypatch.setattr(
+        BulbService, "_poll", staticmethod(lambda b: None)
+    )  # FILE_ADDED never comes
+    job = (await c.post(B, json={"seconds": 2})).json()
+    deadline = time.monotonic() + 5
+    while not (  # shutter closed, now stuck collecting
+        fake_camera._values["bulb"] is False and fake_camera.calls.get("set_config", 0) >= 3
+    ):
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0.01)
+    t0 = time.monotonic()
+    r = await c.delete(f"/api/v1/jobs/{job['id']}")
+    assert time.monotonic() - t0 < 3
+    assert r.json()["status"] == "cancelled"
+    assert app.state.camera_service.status().leased_by is None
+
+
+async def test_second_exposure_job_gets_409_at_request_time_when_lease_taken(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    ft = install(app)
+    gate, reached = asyncio.Event(), asyncio.Event()
+
+    async def hook(n: int) -> None:
+        if n == 2:
+            reached.set()
+            await gate.wait()
+
+    ft.hook = hook
+    job = (await c.post(B, json={"seconds": 5})).json()
+    await asyncio.wait_for(reached.wait(), 5)
+    br = {"bracketing": {"mode": "preset", "preset": "exposure_3"}}
+    r = await c.post("/api/v1/capture/bracket", json=br)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "CAMERA_BUSY"
+    gate.set()
+    await wait_job(c, job["id"])
 
 
 async def test_bulb_refused_under_other_lease(

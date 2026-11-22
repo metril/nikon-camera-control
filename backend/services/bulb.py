@@ -1,8 +1,9 @@
 """Bulb (long exposure): shutterspeed=Bulb, bulb=1 ... wait ... bulb=0, collect and download.
 
 D500-UNVERIFIED assumptions (developed against FakeCamera):
-- ``expprogram`` reads "M" in manual mode (also accepts "Manual").
-- ``shutterspeed`` has a "Bulb" choice and ``bulb`` is a toggle writable as 1/0 over PTP.
+- ``bulb`` is a toggle writable as 1/0 over PTP. libgphoto2's ``_put_Nikon_Bulb`` may itself
+  switch to M / bulb time, so the M-mode and "Bulb" shutter-speed checks are best effort:
+  a non-M mode only adds a warning (and a hint if the open then fails).
 - Closing the shutter makes the image arrive as a FILE_ADDED event (not from ``capture()``).
 - Long-exposure noise reduction delays that event by about the exposure time.
 """
@@ -28,11 +29,10 @@ from backend.core.errors import (
     CameraBusy,
     CameraNotConnected,
     CameraOperationFailed,
-    FeatureUnsupported,
     InvalidState,
 )
 from backend.core.events import EventBus
-from backend.core.jobs import Job, JobContext, JobManager
+from backend.core.jobs import HeldContext, Job, JobContext, JobManager
 from backend.core.state import CameraState
 from backend.services.capture import sanitize_prefix
 from backend.services.storage import download_files
@@ -42,6 +42,8 @@ log = logging.getLogger(__name__)
 OWNER = "bulb"
 CLOSE_ATTEMPTS = 4
 CLOSE_RETRY_DELAY_S = 0.25
+CLOSE_WAIT_S = 90.0  # bound on a shielded close sequence
+CANCEL_COLLECT_GRACE_S = 5.0  # after a cancel, how long to wait for a frame still in flight
 _MANUAL = frozenset({"M", "MANUAL"})
 
 
@@ -94,7 +96,7 @@ class BulbService:
         )
 
     async def start(self, req: BulbRequest) -> Job:
-        """Preflight (connected, IDLE, not leased, M mode), then submit the job."""
+        """Preflight (connected, IDLE, not leased), take the lease, then submit the job."""
         st = self._camera.status()
         if not st.connected:
             raise CameraNotConnected()
@@ -105,69 +107,117 @@ class BulbService:
                 f"Bulb needs an idle camera (state is {st.state.value}); stop live view first",
                 details={"state": st.state.value},
             )
-        await self._check_manual()
-        return self._jobs.submit("bulb", lambda ctx: self._job(ctx, req), exclusive_key="bulb")
+        held = HeldContext(self._camera.lease(OWNER))
+        await held.enter()  # 409 now, not inside the job
+        try:
+            return self._jobs.submit(
+                "bulb",
+                lambda ctx: self._job(ctx, req, held),
+                exclusive_key="bulb",
+                release=held.release,
+            )
+        except BaseException:
+            await held.release()
+            raise
 
     # ---- job ----
-    async def _check_manual(self) -> None:
-        prog = await self._camera.refresh_setting("expprogram")
-        if str(prog.value).strip().upper() not in _MANUAL:
-            raise InvalidState(
-                f"Bulb needs exposure program M; the camera is in {prog.value!r}. "
-                "Turn the mode dial to M (it cannot be set remotely).",
-                details={"expprogram": prog.value},
-            )
+    async def _expprogram_warning(self) -> str | None:
+        try:
+            prog = await self._camera.refresh_setting("expprogram")
+        except AppError as e:
+            log.info("could not read expprogram: %s", e.message)
+            return None
+        if str(prog.value).strip().upper() in _MANUAL:
+            return None
+        return (
+            f"Exposure program is {prog.value!r}, not M; bulb usually needs M "
+            "(turn the mode dial to M, it cannot be set remotely)."
+        )
 
-    async def _job(self, ctx: JobContext, req: BulbRequest) -> dict[str, Any]:
+    async def _prepare_speed(self) -> str | None:
+        """Best effort: select shutterspeed 'Bulb' if offered. Returns the value to restore."""
+        try:
+            speed = await self._camera.refresh_setting("shutterspeed")
+            prior = str(speed.value)
+            if "Bulb" not in speed.choices or prior == "Bulb":
+                return None
+            await self._camera.set_setting("shutterspeed", "Bulb", owner=OWNER)
+            return prior
+        except AppError as e:
+            log.info("could not pre-select Bulb shutter speed: %s", e.message)
+            return None
+
+    async def _open(self, run: _Run) -> asyncio.CancelledError | None:
+        """bulb=1, shielded: a cancelled camera.call does not withdraw its queued item, so we
+        always let it finish and let the caller close. Returns a cancellation, if any."""
+        task = asyncio.ensure_future(self._set_bulb(1))
+        cancel: asyncio.CancelledError | None = None
+        while True:
+            try:
+                await asyncio.shield(task)
+                break
+            except asyncio.CancelledError as e:
+                if task.cancelled():
+                    raise
+                cancel = e  # ours: keep waiting for the in-flight open
+        run.started = self._clock()
+        return cancel
+
+    async def _job(self, ctx: JobContext, req: BulbRequest, held: HeldContext) -> dict[str, Any]:
         run = self._run = _Run(ctx.job_id, req.seconds)
         cam = self._camera
         prior_speed: str | None = None
         opened = False
         cancel: asyncio.CancelledError | None = None
         result: dict[str, Any] = {}
+        warnings: list[str] = []
         try:
-            async with cam.lease(OWNER):
-                prior_state = await cam.transition(CameraState.BULB)
+            prior_state = await cam.transition(CameraState.BULB)
+            try:
+                if (w := await self._expprogram_warning()) is not None:
+                    warnings.append(w)
+                prior_speed = await self._prepare_speed()
+                self._bus.publish(
+                    EventType.CAPTURE_STARTED,
+                    {"bulb": True, "seconds": req.seconds, "warnings": warnings},
+                )
+                opened = True  # before issuing: a redundant close is harmless, a missed one is not
                 try:
-                    await self._check_manual()
-                    speed = await cam.refresh_setting("shutterspeed")
-                    if "Bulb" not in speed.choices:
-                        raise FeatureUnsupported(
-                            "Camera offers no 'Bulb' shutter speed",
-                            details={"choices": list(speed.choices)[:40]},
-                        )
-                    prior_speed = str(speed.value)
-                    if prior_speed != "Bulb":
-                        await cam.set_setting("shutterspeed", "Bulb", owner=OWNER)
-                    self._bus.publish(
-                        EventType.CAPTURE_STARTED, {"bulb": True, "seconds": req.seconds}
-                    )
-                    await self._set_bulb(1)
-                    opened = True
-                    run.started = self._clock()
+                    cancel = await self._open(run)
+                except AppError as e:
+                    hint = " Bulb usually needs exposure program M." if warnings else ""
+                    raise CameraOperationFailed(
+                        f"Could not open the shutter: {e.message.rstrip('.')}.{hint}",
+                        details={"cause": e.message, "warnings": warnings},
+                    ) from e
+                if cancel is None:
                     cancel = await self._wait_exposure(ctx, run)
-                    try:
-                        await self._close(run)
-                    finally:
-                        opened = False  # _close already retried and raised loudly
-                    files = await self._collect(req.seconds)
-                    run.files = files
-                    result = await self._finish_files(files, req)
-                    self._bus.publish(
-                        EventType.CAPTURE_COMPLETE,
-                        {
-                            "bulb": True,
-                            "files": [{"folder": f.folder, "name": f.name} for f in files],
-                        },
-                    )
-                finally:
-                    if opened:
-                        await self._emergency_close(run)
-                    await self._restore(prior_speed)
-                    if cam.state == CameraState.BULB:
-                        await cam.transition(prior_state)
+                if (recancel := await self._close_shielded(run)) is not None:
+                    cancel = cancel or recancel
+                opened = False  # only after a close succeeded
+                files, collect_cancel = await self._collect(ctx, req.seconds, cancel is not None)
+                cancel = cancel or collect_cancel
+                run.files = files
+                if not files and cancel is not None:
+                    raise cancel
+                result = await self._finish_files(files, req)
+                result["warnings"] = warnings
+                self._bus.publish(
+                    EventType.CAPTURE_COMPLETE,
+                    {
+                        "bulb": True,
+                        "files": [{"folder": f.folder, "name": f.name} for f in files],
+                    },
+                )
+            finally:
+                if opened:
+                    await self._emergency_close(run)
+                await self._restore(prior_speed)
+                if cam.state == CameraState.BULB:
+                    await cam.transition(prior_state)
         finally:
             self._run = None
+            await held.release()
         if cancel is not None:
             raise cancel
         return result
@@ -218,31 +268,66 @@ class BulbService:
             await self._camera.transition(CameraState.ERROR)
         raise CameraOperationFailed(msg, details={"cause": last.message if last else ""})
 
+    async def _close_shielded(self, run: _Run) -> asyncio.CancelledError | None:
+        """Run the close sequence to completion even if this task is cancelled again (bounded
+        by CLOSE_WAIT_S). Returns the cancellation, if any; raises if the close failed."""
+        task = asyncio.ensure_future(self._close(run))
+        cancel: asyncio.CancelledError | None = None
+        while not task.done():
+            try:
+                await asyncio.wait({task}, timeout=CLOSE_WAIT_S)
+                break
+            except asyncio.CancelledError as e:
+                cancel = e
+        if not task.done():
+            log.error("bulb close did not finish within %.0fs", CLOSE_WAIT_S)
+            raise CameraOperationFailed("COULD NOT CONFIRM THE SHUTTER CLOSED: check the camera.")
+        task.result()
+        return cancel
+
     async def _emergency_close(self, run: _Run) -> None:
-        """Cleanup close while an error propagates; shielded against a second cancel."""
+        """Cleanup close while an error propagates; shielded against further cancels."""
         try:
-            await asyncio.shield(self._close(run))
+            await self._close_shielded(run)
         except Exception:
             log.exception("emergency bulb close failed")
 
-    async def _collect(self, seconds: float) -> list[CameraFilePath]:
+    async def _collect(
+        self, ctx: JobContext, seconds: float, cancelled: bool
+    ) -> tuple[list[CameraFilePath], asyncio.CancelledError | None]:
         """Drain camera events until a FILE_ADDED has been followed by a quiet window, or the
-        generous deadline (exposure + noise reduction) passes. Empty list on timeout."""
-        deadline = time.monotonic() + seconds * 1.5 + 30.0
+        deadline (exposure + noise reduction) passes. After a cancel, give a frame that is
+        still in flight only CANCEL_COLLECT_GRACE_S. Cancellation never loses a frame that
+        already arrived."""
+        started = time.monotonic()
+        deadline = started + seconds + 60.0
         files: list[CameraFilePath] = []
         last: float | None = None
+        cancel: asyncio.CancelledError | None = None
+        if cancelled or ctx.cancelled:
+            deadline = min(deadline, started + CANCEL_COLLECT_GRACE_S)
         while True:
             now = time.monotonic()
             if now >= deadline or (last is not None and now - last >= self._quiet):
                 break
-            ev = await self._camera.call(
-                lambda b: self._poll(b), priority=Priority.CAPTURE, owner=OWNER, timeout=10.0
-            )
+            if cancel is None and ctx.cancelled:
+                deadline = min(deadline, now + CANCEL_COLLECT_GRACE_S)
+            try:
+                ev = await self._camera.call(
+                    lambda b: self._poll(b), priority=Priority.CAPTURE, owner=OWNER, timeout=10.0
+                )
+            except asyncio.CancelledError as e:
+                cancel = e
+                deadline = min(deadline, time.monotonic() + CANCEL_COLLECT_GRACE_S)
+                continue
+            except AppError as e:
+                log.warning("bulb collect poll failed: %s", e.message)
+                break
             if ev is not None:
                 last = time.monotonic()
                 if ev not in files:
                     files.append(ev)
-        return files
+        return files, cancel
 
     @staticmethod
     def _poll(b: CameraBackend) -> CameraFilePath | None:

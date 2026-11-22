@@ -416,6 +416,12 @@ export type CameraDateTimeIn = {
      * Required for explicit; a naive value is taken as UTC.
      */
     time?: string | null;
+    /**
+     * Utc Offset Minutes
+     *
+     * Minutes east of UTC of the wall-clock time the camera should show (browsers: -new Date().getTimezoneOffset()). Omitted: the server's local zone.
+     */
+    utc_offset_minutes?: number | null;
 };
 
 /**
@@ -423,21 +429,39 @@ export type CameraDateTimeIn = {
  */
 export type CameraDateTimeOut = {
     /**
+     * Camera Epoch
+     *
+     * Raw epoch seconds as gphoto2 reports the clock.
+     */
+    camera_epoch: number;
+    /**
      * Camera Time
      *
-     * Camera clock (UTC epoch as the camera reports).
+     * The camera's raw epoch read as UTC. The camera stores wall-clock time with no zone and libgphoto2 converts it with the SERVER's zone, so this is only a true UTC instant if the camera was set from a UTC server; prefer camera_wall_time.
      */
     camera_time: string;
     /**
+     * Camera Wall Time
+     *
+     * What the camera's clock face shows (no timezone): the raw epoch rendered in the server's zone.
+     */
+    camera_wall_time: string;
+    /**
      * Host Time
      *
-     * Server clock when the camera was read.
+     * Server clock (UTC) when the camera was read.
      */
     host_time: string;
     /**
+     * Host Utc Offset Minutes
+     *
+     * The server's UTC offset (minutes east) at that moment; `host` mode without an explicit offset sets the camera to the server's local wall time.
+     */
+    host_utc_offset_minutes: number;
+    /**
      * Offset S
      *
-     * camera_time - host_time in seconds.
+     * camera_epoch - server epoch in seconds: clock drift when the camera was set in `host` mode without an offset.
      */
     offset_s: number;
 };
@@ -1718,7 +1742,7 @@ export type RecordingStatus = {
     /**
      * Ended Reason
      *
-     * Why the last recording ended: user, max_seconds, camera_stopped, camera_disconnected, shutdown
+     * Why the last recording ended: user, max_seconds, camera_stopped, camera_reset, camera_disconnected, shutdown. Also set while still active if an automatic stop failed (POST /recording/stop retries it)
      */
     ended_reason?: string | null;
     /**
@@ -1734,6 +1758,18 @@ export type RecordingStatus = {
      * Auto-stop limit of this recording
      */
     max_seconds?: number | null;
+    /**
+     * Note
+     *
+     * Set once elapsed time passes the camera's 29:59 limit: the camera has probably stopped by itself (it cannot be told apart otherwise)
+     */
+    note?: string | null;
+    /**
+     * Segments
+     *
+     * Movie files (segments) the camera has reported so far
+     */
+    segments?: number;
     /**
      * Started
      *
@@ -2259,7 +2295,7 @@ export type StackRequest = {
     /**
      * Steps Per Shot
      *
-     * Focus steps between shots
+     * Focus steps between shots (within the camera's drive range)
      */
     steps_per_shot: number;
 };

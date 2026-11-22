@@ -1,0 +1,35 @@
+import { describe, it, expect } from 'vitest'
+import { sortValues, toggleValue, parseNumeric, quickShots, formatBytes } from './bracketUtils'
+
+describe('bracketUtils', () => {
+  it('orders shutter speeds by real duration, Bulb last', () => {
+    const shuffled = ['30', 'Bulb', '0.5', '1/250', '2', '1/4000']
+    expect(sortValues(shuffled)).toEqual(['1/4000', '1/250', '0.5', '2', '30', 'Bulb'])
+  })
+  it('parses fractions, f-numbers and signed EV', () => {
+    expect(parseNumeric('1/250')).toBeCloseTo(0.004)
+    expect(parseNumeric('f/2.8')).toBe(2.8)
+    expect(parseNumeric('+0.7')).toBe(0.7)
+    expect(parseNumeric('1/0')).toBeNaN()
+    expect(sortValues(['1', '-1', '0', '-2'])).toEqual(['-2', '-1', '0', '1'])
+  })
+  it('toggles and keeps the list sorted', () => {
+    expect(toggleValue(['1/250', '2'], '1/4000')).toEqual(['1/4000', '1/250', '2'])
+    expect(toggleValue(['1/250', '2'], '2')).toEqual(['1/250'])
+  })
+  it('counts shots per combine mode', () => {
+    const q = {
+      exposure: [],
+      iso: ['100', '200'],
+      aperture: ['4', '8', '11'],
+      shutter: [],
+      combine: 'sequence',
+    }
+    expect(quickShots(q)).toBe(5)
+    expect(quickShots({ ...q, combine: 'paired' })).toBe(3)
+  })
+  it('formats bytes safely', () => {
+    expect(formatBytes(NaN)).toBe('0 B')
+    expect(formatBytes(1536)).toBe('1.5 KB')
+  })
+})

@@ -43,6 +43,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `VALIDATION_ERROR` | by handler | - | Produced by the framework error handlers |
 | `NOT_FOUND` | by handler | - | Produced by the framework error handlers |
 | `UNSUPPORTED_MEDIA` | 415 | `UnsupportedMedia` | No thumbnail can be generated for this file type |
+| `FORBIDDEN` | 403 | `Forbidden` | This operation is not allowed |
 
 ## Endpoints
 
@@ -319,8 +320,10 @@ Camera clock, server clock and their offset.
 
 operation_id: `set_camera_datetime`
 
-Set the camera clock to the server clock (`host`) or to `time` (`explicit`); returns
-the offset read back afterwards. 409 while another owner holds the camera.
+Set the camera clock to the server clock (`host`) or to `time` (`explicit`), showing
+wall-clock time in `utc_offset_minutes` (default: the server's local zone; pass the
+browser's offset to get the photographer's local time). Returns the clock read back.
+409 while another owner holds the camera.
 
 **Request body** (`application/json`): `CameraDateTimeIn`
 
@@ -328,6 +331,7 @@ the offset read back afterwards. 409 while another owner holds the camera.
 |---|---|---|---|---|---|
 | `mode` | enum("host", "explicit") | yes |  |  | host: set the camera to the server clock; explicit: set `time`. |
 | `time` | string(date-time) \| null | no |  |  | Required for explicit; a naive value is taken as UTC. |
+| `utc_offset_minutes` | integer \| null | no |  | `>=-840.0`, `<=840.0` | Minutes east of UTC of the wall-clock time the camera should show (browsers: -new Date().getTimezoneOffset()). Omitted: the server's local zone. |
 
 **Responses**
 
@@ -904,7 +908,7 @@ Capture N shots, moving focus between them; returns the job (kind ``focus-stack`
 
 | Field | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| `steps_per_shot` | integer | yes |  | `>=1.0`, `<=100000.0` | Focus steps between shots |
+| `steps_per_shot` | integer | yes |  | `>=1.0`, `<=32767.0` | Focus steps between shots (within the camera's drive range) |
 | `shots` | integer | yes |  | `>=2.0`, `<=200.0` |  |
 | `direction` | enum("near_to_far", "far_to_near") | no | `"near_to_far"` |  |  |
 | `settle_ms` | integer | no | `500` | `>=0.0`, `<=60000.0` | Wait after each move |
@@ -1885,7 +1889,7 @@ Payload keys are found by a static scan of `publish(...)` call sites; `(dynamic)
 | `camera_disconnected` | `reason` |
 | `setting_changed` | `name`, `value` |
 | `battery` | `level` |
-| `capture_started` | `bulb`, `seconds` |
+| `capture_started` | `bulb`, `seconds`, `warnings` |
 | `capture_complete` | `bulb`, `files` |
 | `liveview_started` | (empty) |
 | `liveview_stopped` | `frames` |
@@ -1905,6 +1909,7 @@ Payload keys are found by a static scan of `publish(...)` call sites; `(dynamic)
 | `job_failed` | `job` |
 | `job_cancelled` | `job` |
 | `config_changed` | `config`, `restart_required` |
+| `presets_changed` | `action`, `id`, `kind` |
 | `error` | `cause`, `code`, `message` |
 
 ## Configuration reference

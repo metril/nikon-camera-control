@@ -39,7 +39,16 @@ class RecordingStatus(BaseModel):
     ended_reason: str | None = Field(
         default=None,
         description="Why the last recording ended: user, max_seconds, camera_stopped, "
-        "camera_disconnected, shutdown",
+        "camera_reset, camera_disconnected, shutdown. Also set while still active if an automatic "
+        "stop failed (POST /recording/stop retries it)",
+    )
+    segments: int = Field(
+        default=0, ge=0, description="Movie files (segments) the camera has reported so far"
+    )
+    note: str | None = Field(
+        default=None,
+        description="Set once elapsed time passes the camera's 29:59 limit: the camera has "
+        "probably stopped by itself (it cannot be told apart otherwise)",
     )
     warning: str | None = Field(
         default=None, description="Problem noticed while recording/stopping"

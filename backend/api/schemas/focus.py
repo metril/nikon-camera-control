@@ -55,7 +55,9 @@ class FocusResetResult(BaseModel):
 
 
 class StackRequest(BaseModel):
-    steps_per_shot: int = Field(ge=1, le=100_000, description="Focus steps between shots")
+    steps_per_shot: int = Field(
+        ge=1, le=32_767, description="Focus steps between shots (within the camera's drive range)"
+    )
     shots: int = Field(ge=2, le=200)
     direction: Literal["near_to_far", "far_to_near"] = "near_to_far"
     settle_ms: int = Field(default=500, ge=0, le=60_000, description="Wait after each move")
