@@ -2,7 +2,7 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
-addopts = "-n auto -q --import-mode=importlib"
+addopts = "-n auto -q --import-mode=importlib --timeout=60"
 markers = [
     "ffmpeg: requires ffmpeg binary",
     "hardware: requires a physical camera",

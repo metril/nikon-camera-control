@@ -1,0 +1,454 @@
+"""In-camera video recording (``movie`` widget) on top of CameraService.
+
+Flow: start takes ``camera.lease("recording")`` for the whole recording, makes sure live view
+is on (remembering whether it already was), moves the camera to RECORDING and sets
+``movie``=1. A watchdog task stops it at the time limit and notices a camera that stopped by
+itself or went away. Stop sets ``movie``=0 (retried), waits a bounded time for the FILE_ADDED
+event of the clip, restores the prior state and releases the lease.
+
+Camera access only through ``CameraService.call(..., owner="recording")``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import time
+from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+
+from backend.api.schemas.common import EventType
+from backend.camera.backend import CameraBackend, CameraFileInfo, CameraFilePath
+from backend.camera.backend import EventType as CamEventType
+from backend.core.camera_service import CameraService
+from backend.core.errors import (
+    AppError,
+    CameraNotConnected,
+    CameraOperationFailed,
+    InvalidState,
+    SettingNotFound,
+)
+from backend.core.events import EventBus
+from backend.core.jobs import Job, JobContext, JobManager
+from backend.core.state import CameraState
+from backend.services.storage import classify, download_files
+
+log = logging.getLogger(__name__)
+
+_S = CameraState
+OWNER = "recording"
+MAX_CLIP_S = 1799  # D500: 29 min 59 s per clip
+STOP_ATTEMPTS = 3
+FILE_WAIT_ATTEMPTS = 20  # x _EVENT_WAIT_S = bounded wait for the clip's FILE_ADDED
+_EVENT_WAIT_S = 0.25
+_POLL_S = 1.0
+_RETRY_DELAY_S = 0.3
+_OFF_VALUES = frozenset({"", "0", "false", "off", "none"})
+RECORDINGS_DIR = "recordings"
+
+
+def _is_on(value: object) -> bool:
+    return str(value).strip().lower() not in _OFF_VALUES
+
+
+def _wrong_target(value: object) -> bool:
+    v = str(value).lower()
+    return "ram" in v or "sdram" in v
+
+
+@dataclass(slots=True)
+class _Active:
+    started_at: datetime
+    t0: float
+    max_seconds: int
+    download_after: bool
+    was_liveview: bool
+    stack: AsyncExitStack
+    clips: list[CameraFilePath] = field(default_factory=list)
+    off_polls: int = 0
+
+
+@dataclass(slots=True)
+class _Last:
+    started_at: datetime | None = None
+    elapsed_s: float = 0.0
+    max_seconds: int | None = None
+    clips: list[tuple[CameraFilePath, int]] = field(default_factory=list)
+    job_id: str | None = None
+    reason: str | None = None
+    warning: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecordingInfo:
+    active: bool
+    started: datetime | None
+    elapsed_s: float
+    max_seconds: int | None
+    state: CameraState
+    last_clip: tuple[CameraFilePath, int] | None
+    job_id: str | None
+    reason: str | None
+    warning: str | None
+
+
+def _drain(b: CameraBackend, wait_s: float) -> list[CameraFilePath]:
+    """New movie files from the camera event queue (worker thread)."""
+    out: list[CameraFilePath] = []
+    first = True
+    while True:
+        ev = b.wait_for_event(wait_s if first else 0.0)
+        first = False
+        if ev.type == CamEventType.TIMEOUT:
+            return out
+        if ev.type == CamEventType.FILE_ADDED and ev.file and classify(ev.file.name) == "video":
+            out.append(ev.file)
+
+
+def _lister(folder: str) -> Callable[[CameraBackend], list[CameraFileInfo]]:
+    return lambda b: b.list_files(folder)
+
+
+class RecordingService:
+    def __init__(
+        self,
+        camera: CameraService,
+        bus: EventBus,
+        jobs: JobManager,
+        output_dir: Path,
+        *,
+        liveview_running: Callable[[], bool] = lambda: False,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+        poll_s: float = _POLL_S,
+        retry_delay_s: float = _RETRY_DELAY_S,
+    ) -> None:
+        """``clock``/``sleep``/``poll_s`` are injectable so the watchdog runs on virtual time
+        in tests. ``liveview_running``: True if the live view service wants the stream."""
+        self._camera = camera
+        self._bus = bus
+        self._jobs = jobs
+        self._output = output_dir
+        self._lv_running = liveview_running
+        self._clock = clock
+        self._sleep = sleep
+        self._poll_s = poll_s
+        self._retry_delay_s = retry_delay_s
+        self._lock = asyncio.Lock()
+        self._active: _Active | None = None
+        self._last = _Last()
+        self._watchdog: asyncio.Task[None] | None = None
+        self._closed = False
+
+    # public API -------------------------------------------------------------------------
+    def info(self) -> RecordingInfo:
+        a, last = self._active, self._last
+        if a is not None:
+            return RecordingInfo(
+                True,
+                a.started_at,
+                max(0.0, self._clock() - a.t0),
+                a.max_seconds,
+                self._camera.state,
+                last.clips[-1] if last.clips else None,
+                None,
+                None,
+                last.warning,
+            )
+        return RecordingInfo(
+            False,
+            last.started_at,
+            last.elapsed_s,
+            last.max_seconds,
+            self._camera.state,
+            last.clips[-1] if last.clips else None,
+            last.job_id,
+            last.reason,
+            last.warning,
+        )
+
+    async def start(self, *, max_seconds: int | None, download_after: bool) -> RecordingInfo:
+        async with self._lock:
+            if self._closed:
+                raise InvalidState("Recording service is shutting down")
+            if self._active is not None:
+                raise InvalidState("A recording is already in progress")
+            st = self._camera.state
+            if st in (_S.DISCONNECTED, _S.CONNECTING):
+                raise CameraNotConnected()
+            if st not in (_S.IDLE, _S.LIVEVIEW):
+                raise InvalidState(
+                    f"Cannot start recording while the camera is {st.value}",
+                    details={"state": st.value},
+                )
+            limit = min(max_seconds or MAX_CLIP_S, MAX_CLIP_S)
+            stack = AsyncExitStack()
+            await stack.enter_async_context(self._camera.lease(OWNER))  # CameraBusy if taken
+            restore: CameraState | None = None
+            try:
+                await self._check_capture_target()
+                was_lv = st == _S.LIVEVIEW
+                if not was_lv:
+                    await self._camera.transition(_S.LIVEVIEW)
+                    restore = _S.IDLE
+                await self._camera.preview_frame()  # switches the viewfinder on if needed
+                await self._camera.transition(_S.RECORDING)
+                restore = _S.LIVEVIEW if was_lv else _S.IDLE
+                try:
+                    await self._camera.call(lambda b: b.set_config("movie", 1), owner=OWNER)
+                except (CameraNotConnected, InvalidState):
+                    raise
+                except AppError as e:
+                    raise CameraOperationFailed(
+                        f"The camera refused to start recording ({e.message}). On Nikon bodies "
+                        "the live view selector must be set to movie mode.",
+                        details={"cause": e.message},
+                    ) from e
+            except BaseException:
+                await self._rollback(restore, was_lv=st == _S.LIVEVIEW)
+                await stack.aclose()
+                raise
+            self._active = _Active(
+                datetime.now(UTC), self._clock(), limit, download_after, st == _S.LIVEVIEW, stack
+            )
+            self._last = _Last(started_at=self._active.started_at, max_seconds=limit)
+            self._bus.publish(
+                EventType.RECORDING_STARTED,
+                {"max_seconds": limit, "download_after": download_after},
+            )
+            self._watchdog = asyncio.create_task(self._watch(), name="recording-watchdog")
+            return self.info()
+
+    async def stop(self) -> RecordingInfo:
+        async with self._lock:
+            if self._active is None:
+                raise InvalidState("No recording is in progress")
+            wd, self._watchdog = self._watchdog, None
+            if wd is not None and wd is not asyncio.current_task():
+                wd.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await wd
+            try:
+                await self._finish("user")
+            except BaseException:
+                self._watchdog = asyncio.create_task(self._watch(), name="recording-watchdog")
+                raise
+            return self.info()
+
+    async def aclose(self) -> None:
+        """Shutdown: stop an active recording (never raises)."""
+        self._closed = True
+        wd, self._watchdog = self._watchdog, None
+        if wd is not None:
+            wd.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await wd
+        async with self._lock:
+            if self._active is None:
+                return
+            try:
+                await self._finish("shutdown")
+            except Exception:
+                log.critical("COULD NOT STOP RECORDING AT SHUTDOWN; camera may still be recording")
+                a, self._active = self._active, None
+                await a.stack.aclose()
+
+    # internals --------------------------------------------------------------------------
+    async def _check_capture_target(self) -> None:
+        try:
+            w = await self._camera.call(lambda b: b.get_config("capturetarget"), owner=OWNER)
+        except SettingNotFound:
+            return  # body without the widget: assume the card
+        if _wrong_target(w.value):
+            raise InvalidState(
+                f"Capture target is {w.value!r}; recording needs the memory card. Set "
+                "capturetarget to the memory card first.",
+                details={"capturetarget": str(w.value)},
+            )
+
+    async def _rollback(self, restore: CameraState | None, *, was_lv: bool) -> None:
+        """Undo a failed start (best effort)."""
+        with contextlib.suppress(AppError):
+            if self._camera.state == _S.RECORDING:
+                await self._camera.transition(_S.LIVEVIEW)
+        if restore == _S.IDLE or (restore is None and not was_lv):
+            with contextlib.suppress(AppError):
+                if self._camera.state == _S.LIVEVIEW:
+                    await self._camera.transition(_S.IDLE)
+
+    async def _watch(self) -> None:
+        try:
+            while (a := self._active) is not None:
+                await self._sleep(self._poll_s)
+                if self._active is not a:
+                    return
+                if self._camera.state != _S.RECORDING:
+                    await self._ended_without_us(a)
+                    return
+                if self._clock() - a.t0 >= a.max_seconds:
+                    await self._auto("max_seconds")
+                    return
+                try:
+                    new = await self._camera.call(lambda b: _drain(b, 0.0), owner=OWNER)
+                    on = await self._camera.call(
+                        lambda b: _is_on(b.get_config("movie").value), owner=OWNER
+                    )
+                except CameraNotConnected:
+                    continue  # state check above handles it on the next round
+                except AppError:
+                    log.debug("recording poll failed", exc_info=True)
+                    continue
+                a.clips.extend(f for f in new if f not in a.clips)
+                a.off_polls = 0 if on else a.off_polls + 1
+                if a.off_polls >= 2:
+                    await self._auto("camera_stopped")
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("recording watchdog crashed")
+
+    async def _auto(self, reason: str) -> None:
+        async with self._lock:
+            if self._active is None:
+                return
+            self._watchdog = None
+            try:
+                await self._finish(reason)
+            except Exception:
+                log.critical("AUTOMATIC STOP OF THE RECORDING FAILED; retrying")
+                if self._active is not None:
+                    self._watchdog = asyncio.create_task(self._watch(), name="recording-watchdog")
+
+    async def _ended_without_us(self, a: _Active) -> None:
+        """Camera left RECORDING on its own (unplugged / reset): clean up what we own."""
+        async with self._lock:
+            if self._active is not a:
+                return
+            self._watchdog = None
+            state = self._camera.state
+            reason = "camera_disconnected"
+            warning = f"Camera left recording state ({state.value}); the clip may be incomplete"
+            self._record_end(a, reason, warning)
+            self._active = None
+            await a.stack.aclose()
+            self._bus.publish(
+                EventType.RECORDING_STOPPED,
+                {"reason": reason, "duration_s": self._last.elapsed_s, "warning": warning,
+                 "clips": [], "job_id": None},
+            )  # fmt: skip
+            log.warning("recording ended: %s", warning)
+
+    def _record_end(self, a: _Active, reason: str, warning: str | None) -> None:
+        self._last.elapsed_s = max(0.0, self._clock() - a.t0)
+        self._last.reason = reason
+        self._last.warning = warning
+
+    async def _stop_camera(self) -> None:
+        err: AppError | None = None
+        for attempt in range(STOP_ATTEMPTS):
+            try:
+                await self._camera.call(lambda b: b.set_config("movie", 0), owner=OWNER)
+                return
+            except AppError as e:
+                err = e
+                log.error("stop recording failed (attempt %d): %s", attempt + 1, e.message)
+                if isinstance(e, CameraNotConnected):
+                    raise
+                await asyncio.sleep(self._retry_delay_s)
+        cause = err.message if err else "unknown"
+        raise CameraOperationFailed(
+            f"FAILED TO STOP RECORDING after {STOP_ATTEMPTS} attempts ({cause}); the camera "
+            "may still be recording. Retry POST /recording/stop or stop it on the body.",
+            details={"cause": cause},
+        )
+
+    async def _finish(self, reason: str) -> None:
+        """Stop the camera, wait for the clip, restore state, release the lease, announce.
+        Caller holds the lock. Raises (keeping the recording active) if the stop failed."""
+        a = self._active
+        if a is None:
+            raise InvalidState("No recording is in progress")
+        warning: str | None = None
+        try:
+            await self._stop_camera()
+        except CameraNotConnected:
+            warning = "Camera disconnected while stopping; the clip may be incomplete"
+        attempts = 1 if reason == "camera_stopped" else FILE_WAIT_ATTEMPTS
+        for _ in range(attempts if warning is None else 0):
+            try:
+                got = await self._camera.call(lambda b: _drain(b, _EVENT_WAIT_S), owner=OWNER)
+            except AppError:
+                break
+            a.clips.extend(f for f in got if f not in a.clips)
+            if got and a.clips:
+                break
+        if warning is None and not a.clips:
+            warning = "No clip file event received; find the movie on the card"
+        self._record_end(a, reason, warning)
+        sized: list[tuple[CameraFilePath, int]] = []
+        job_id: str | None = None
+        try:
+            await self._restore(a)
+            sized = await self._sizes(a.clips)
+            self._last.clips = sized
+            if a.download_after and sized:
+                try:
+                    job_id = self._submit_download([c for c, _ in sized]).id
+                except AppError as e:
+                    warning = (
+                        f"{warning + '; ' if warning else ''}download not started: {e.message}"
+                    )
+                    self._last.warning = warning
+            self._last.job_id = job_id
+        finally:
+            await a.stack.aclose()
+            self._active = None
+        self._bus.publish(
+            EventType.RECORDING_STOPPED,
+            {
+                "reason": reason,
+                "duration_s": self._last.elapsed_s,
+                "warning": warning,
+                "clips": [{"folder": c.folder, "name": c.name, "size": n} for c, n in sized[:20]],
+                "job_id": job_id,
+            },
+        )
+
+    async def _restore(self, a: _Active) -> None:
+        cam = self._camera
+        with contextlib.suppress(AppError):
+            if cam.state == _S.RECORDING:
+                await cam.transition(_S.LIVEVIEW)
+        if not a.was_liveview and not self._lv_running():
+            with contextlib.suppress(AppError):
+                if cam.state == _S.LIVEVIEW:
+                    await cam.transition(_S.IDLE)  # also switches the viewfinder off
+
+    async def _sizes(self, clips: list[CameraFilePath]) -> list[tuple[CameraFilePath, int]]:
+        out: list[tuple[CameraFilePath, int]] = []
+        for c in clips:
+            size = 0
+            try:
+                infos = await self._camera.call(_lister(c.folder), owner=OWNER)
+                size = next((i.size for i in infos if i.name == c.name), 0)
+            except AppError:
+                log.debug("could not size %s", c.name, exc_info=True)
+            out.append((c, size))
+        return out
+
+    def _submit_download(self, clips: list[CameraFilePath]) -> Job:
+        dest = self._output / RECORDINGS_DIR
+        camera = self._camera
+
+        async def run(ctx: JobContext) -> dict[str, object]:
+            ctx.report(0.0, "Downloading recording")
+            paths = await download_files(camera, clips, dest)
+            ctx.report(1.0, "Done")
+            return {"files": [p.relative_to(self._output).as_posix() for p in paths]}
+
+        return self._jobs.submit("recording_download", run)

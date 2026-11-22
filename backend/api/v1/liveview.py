@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Response, WebSocket
 
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
+from backend.api.schemas.files import binary_response
 from backend.api.schemas.liveview import LiveViewStatusOut
 from backend.core.security import require_api_key, ws_authorize, ws_subprotocol
 from backend.services.liveview import LiveViewService, Subscriber
@@ -74,7 +75,7 @@ async def stop_liveview(svc: LiveViewDep) -> LiveViewStatusOut:
     "/snapshot",
     operation_id="get_liveview_snapshot",
     response_class=Response,
-    responses={200: {"content": {"image/jpeg": {}}, "description": "One live view JPEG"}},
+    responses=binary_response("image/jpeg", "One live view JPEG"),
 )
 async def get_liveview_snapshot(svc: LiveViewDep) -> Response:
     return Response(content=await svc.snapshot(), media_type="image/jpeg")

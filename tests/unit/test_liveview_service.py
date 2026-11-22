@@ -117,17 +117,6 @@ async def test_disconnect_makes_inactive_and_reconnect_resumes_without_stale_bac
     await r.cam.stop()
 
 
-async def test_recording_pauses_then_resumes_without_swallowed_error(rig: Rig) -> None:
-    sub = rig.lv.subscribe()
-    await until(lambda: rig.cam.state == S.LIVEVIEW)
-    await rig.cam.transition(S.RECORDING)
-    await until(lambda: rig.lv.stats().reason == "camera_recording")
-    assert rig.lv.running and not rig.lv.stats().active
-    await rig.cam.transition(S.LIVEVIEW)
-    await until(lambda: rig.lv.stats().active)
-    rig.lv.unsubscribe(sub)
-
-
 async def test_events_published(rig: Rig) -> None:
     ev = rig.bus.subscribe()
     await rig.lv.start()
@@ -160,3 +149,16 @@ def test_process_frame_skips_when_not_needed_and_downscales_when_wider() -> None
     out = process_frame(_jpeg(2000), 640, 70)
     assert Image.open(io.BytesIO(out)).width == 640
     assert process_frame(b"not a jpeg", 640, 70) == b"not a jpeg"
+
+
+async def test_stream_continues_while_camera_is_recording(rig: Rig) -> None:
+    """LV1: the D500 keeps streaming previews during a movie; the producer must not pause."""
+    sub = rig.lv.subscribe()
+    await until(lambda: rig.cam.state == S.LIVEVIEW)
+    await rig.cam.transition(S.RECORDING)
+    n0 = rig.lv.stats().frames_produced
+    await until(lambda: rig.lv.stats().frames_produced >= n0 + 3)
+    assert rig.lv.stats().active and rig.cam.state == S.RECORDING
+    assert (await rig.lv.snapshot())[:3] == b"\xff\xd8\xff"
+    await rig.cam.transition(S.LIVEVIEW)
+    rig.lv.unsubscribe(sub)

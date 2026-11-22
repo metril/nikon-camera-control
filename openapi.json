@@ -31,6 +31,106 @@
         "title": "ApiKeyOut",
         "type": "object"
       },
+      "AppliedSetting": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Value read back from the camera.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "AppliedSetting",
+        "type": "object"
+      },
+      "ApplyResult": {
+        "properties": {
+          "applied": {
+            "description": "Settings preset: what the camera now reports.",
+            "items": {
+              "$ref": "#/components/schemas/AppliedSetting"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "settings",
+              "bracket"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "preset_id": {
+            "title": "Preset Id",
+            "type": "string"
+          },
+          "steps": {
+            "description": "Bracket preset: steps resolved against the camera (nothing was started).",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "preset_id"
+        ],
+        "title": "ApplyResult",
+        "type": "object"
+      },
+      "AutofocusResult": {
+        "properties": {
+          "focused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True when the camera reported a successful drive; null if unknown",
+            "title": "Focused"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "focused"
+        ],
+        "title": "AutofocusResult",
+        "type": "object"
+      },
       "BatteryOut": {
         "properties": {
           "level": {
@@ -90,6 +190,195 @@
         "title": "BracketInfo",
         "type": "object"
       },
+      "BracketPreset": {
+        "properties": {
+          "bracketing": {
+            "discriminator": {
+              "mapping": {
+                "preset": "#/components/schemas/PresetBracketing",
+                "quick": "#/components/schemas/QuickBracketing",
+                "steps": "#/components/schemas/StepsBracketing"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StepsBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/QuickBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/PresetBracketing"
+              }
+            ],
+            "title": "Bracketing"
+          },
+          "builtin": {
+            "default": false,
+            "description": "Built-in presets are read-only.",
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "bracket",
+            "default": "bracket",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "description": "Unique per kind.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
+          }
+        },
+        "required": [
+          "name",
+          "bracketing",
+          "id"
+        ],
+        "title": "BracketPreset",
+        "type": "object"
+      },
+      "BracketPresetIn": {
+        "properties": {
+          "bracketing": {
+            "discriminator": {
+              "mapping": {
+                "preset": "#/components/schemas/PresetBracketing",
+                "quick": "#/components/schemas/QuickBracketing",
+                "steps": "#/components/schemas/StepsBracketing"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StepsBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/QuickBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/PresetBracketing"
+              }
+            ],
+            "title": "Bracketing"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "const": "bracket",
+            "default": "bracket",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "description": "Unique per kind.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "bracketing"
+        ],
+        "title": "BracketPresetIn",
+        "type": "object"
+      },
+      "BracketRequest": {
+        "properties": {
+          "bracketing": {
+            "description": "Same union as the time-lapse; must resolve to at least 2 steps.",
+            "discriminator": {
+              "mapping": {
+                "none": "#/components/schemas/NoBracketing",
+                "preset": "#/components/schemas/PresetBracketing",
+                "quick": "#/components/schemas/QuickBracketing",
+                "steps": "#/components/schemas/StepsBracketing"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NoBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/StepsBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/QuickBracketing"
+              },
+              {
+                "$ref": "#/components/schemas/PresetBracketing"
+              }
+            ],
+            "title": "Bracketing"
+          },
+          "download": {
+            "default": true,
+            "description": "Download the frames to the output dir.",
+            "title": "Download",
+            "type": "boolean"
+          },
+          "filename_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename Prefix"
+          }
+        },
+        "title": "BracketRequest",
+        "type": "object"
+      },
       "BracketStep": {
         "properties": {
           "delay_ms": {
@@ -133,6 +422,88 @@
           "settings"
         ],
         "title": "BracketStep",
+        "type": "object"
+      },
+      "BulbRequest": {
+        "properties": {
+          "download": {
+            "default": true,
+            "description": "Download the frame(s) to the output dir.",
+            "title": "Download",
+            "type": "boolean"
+          },
+          "filename_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename Prefix"
+          },
+          "seconds": {
+            "description": "Exposure time in seconds.",
+            "maximum": 3600.0,
+            "minimum": 1.0,
+            "title": "Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "seconds"
+        ],
+        "title": "BulbRequest",
+        "type": "object"
+      },
+      "BulbStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "elapsed_s": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Elapsed S",
+            "type": "number"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "remaining_s": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Remaining S",
+            "type": "number"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Requested exposure time.",
+            "title": "Seconds"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "title": "BulbStatus",
         "type": "object"
       },
       "CameraConfig": {
@@ -285,6 +656,65 @@
           }
         },
         "title": "CameraConfigPatch",
+        "type": "object"
+      },
+      "CameraDateTimeIn": {
+        "properties": {
+          "mode": {
+            "description": "host: set the camera to the server clock; explicit: set `time`.",
+            "enum": [
+              "host",
+              "explicit"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for explicit; a naive value is taken as UTC.",
+            "title": "Time"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "CameraDateTimeIn",
+        "type": "object"
+      },
+      "CameraDateTimeOut": {
+        "properties": {
+          "camera_time": {
+            "description": "Camera clock (UTC epoch as the camera reports).",
+            "format": "date-time",
+            "title": "Camera Time",
+            "type": "string"
+          },
+          "host_time": {
+            "description": "Server clock when the camera was read.",
+            "format": "date-time",
+            "title": "Host Time",
+            "type": "string"
+          },
+          "offset_s": {
+            "description": "camera_time - host_time in seconds.",
+            "title": "Offset S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "camera_time",
+          "host_time",
+          "offset_s"
+        ],
+        "title": "CameraDateTimeOut",
         "type": "object"
       },
       "CameraFileEntry": {
@@ -512,6 +942,51 @@
         "title": "CaptureRequest",
         "type": "object"
       },
+      "CaptureTargetIn": {
+        "properties": {
+          "value": {
+            "description": "'card', 'ram' or one of the camera's raw choices.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "CaptureTargetIn",
+        "type": "object"
+      },
+      "CaptureTargetOut": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current raw choice, e.g. 'Memory card'.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "choices"
+        ],
+        "title": "CaptureTargetOut",
+        "type": "object"
+      },
       "CapturedFile": {
         "properties": {
           "kind": {
@@ -546,6 +1021,31 @@
           "kind"
         ],
         "title": "CapturedFile",
+        "type": "object"
+      },
+      "ClipOut": {
+        "properties": {
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "description": "Bytes on the card; 0 if unknown",
+            "minimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "folder",
+          "name",
+          "size"
+        ],
+        "title": "ClipOut",
         "type": "object"
       },
       "ConfigOut": {
@@ -967,6 +1467,85 @@
         "title": "FilePage",
         "type": "object"
       },
+      "FocusRange": {
+        "properties": {
+          "max": {
+            "description": "Most positive accepted step count",
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "description": "Most negative accepted step count",
+            "title": "Min",
+            "type": "integer"
+          },
+          "step": {
+            "description": "Step granularity",
+            "minimum": 1.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "step"
+        ],
+        "title": "FocusRange",
+        "type": "object"
+      },
+      "FocusResetResult": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "relative_position": {
+            "default": 0,
+            "title": "Relative Position",
+            "type": "integer"
+          }
+        },
+        "title": "FocusResetResult",
+        "type": "object"
+      },
+      "FocusStatus": {
+        "properties": {
+          "last_af_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Af At"
+          },
+          "liveview_required": {
+            "const": true,
+            "default": true,
+            "title": "Liveview Required",
+            "type": "boolean"
+          },
+          "range": {
+            "$ref": "#/components/schemas/FocusRange"
+          },
+          "relative_position": {
+            "title": "Relative Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "relative_position",
+          "range"
+        ],
+        "title": "FocusStatus",
+        "type": "object"
+      },
       "FolderEntry": {
         "properties": {
           "name": {
@@ -1025,6 +1604,43 @@
         "title": "FolderOut",
         "type": "object"
       },
+      "FromCameraIn": {
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 40,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Setting names to capture; null = the common writable settings.",
+            "title": "Names"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FromCameraIn",
+        "type": "object"
+      },
       "HealthOut": {
         "properties": {
           "camera_connected": {
@@ -1055,6 +1671,62 @@
           "version"
         ],
         "title": "HealthOut",
+        "type": "object"
+      },
+      "ImportItemResult": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "enum": [
+              "created",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "status"
+        ],
+        "title": "ImportItemResult",
         "type": "object"
       },
       "InfoOut": {
@@ -1519,6 +2191,47 @@
         "title": "MediaConfigPatch",
         "type": "object"
       },
+      "MfRequest": {
+        "properties": {
+          "steps": {
+            "description": "Signed motor steps (sign = direction); checked against the camera's range",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "title": "MfRequest",
+        "type": "object"
+      },
+      "MfResult": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "relative_position": {
+            "description": "Tracked position relative to the user-set origin",
+            "title": "Relative Position",
+            "type": "integer"
+          },
+          "steps": {
+            "title": "Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "steps",
+          "relative_position"
+        ],
+        "title": "MfResult",
+        "type": "object"
+      },
       "NoBracketing": {
         "properties": {
           "mode": {
@@ -1701,6 +2414,171 @@
         "title": "PresetBracketing",
         "type": "object"
       },
+      "PresetCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bracket": "#/components/schemas/BracketPreset",
+                  "settings": "#/components/schemas/SettingsPreset"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SettingsPreset"
+                },
+                {
+                  "$ref": "#/components/schemas/BracketPreset"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the presets file was corrupt (moved aside) or had skipped items.",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PresetCollection",
+        "type": "object"
+      },
+      "PresetExport": {
+        "properties": {
+          "exported": {
+            "format": "date-time",
+            "title": "Exported",
+            "type": "string"
+          },
+          "presets": {
+            "description": "User presets only (built-ins are not exported).",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bracket": "#/components/schemas/BracketPreset",
+                  "settings": "#/components/schemas/SettingsPreset"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SettingsPreset"
+                },
+                {
+                  "$ref": "#/components/schemas/BracketPreset"
+                }
+              ]
+            },
+            "title": "Presets",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "exported",
+          "presets"
+        ],
+        "title": "PresetExport",
+        "type": "object"
+      },
+      "PresetImportIn": {
+        "properties": {
+          "presets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 500,
+            "title": "Presets",
+            "type": "array"
+          },
+          "replace": {
+            "default": false,
+            "description": "true: replace ALL user presets with the valid imported ones. false: merge; a name that already exists is skipped.",
+            "title": "Replace",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "presets"
+        ],
+        "title": "PresetImportIn",
+        "type": "object"
+      },
+      "PresetImportResult": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImportItemResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "skipped",
+          "failed",
+          "items"
+        ],
+        "title": "PresetImportResult",
+        "type": "object"
+      },
+      "PresetItem": {
+        "description": "One preset (SettingsPreset or BracketPreset, discriminated on `kind`).",
+        "discriminator": {
+          "mapping": {
+            "bracket": "#/components/schemas/BracketPreset",
+            "settings": "#/components/schemas/SettingsPreset"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SettingsPreset"
+          },
+          {
+            "$ref": "#/components/schemas/BracketPreset"
+          }
+        ],
+        "title": "PresetItem"
+      },
       "PresetList": {
         "properties": {
           "items": {
@@ -1847,6 +2725,127 @@
           "step"
         ],
         "title": "RangeOut",
+        "type": "object"
+      },
+      "RecordingStartRequest": {
+        "properties": {
+          "download_after": {
+            "default": false,
+            "description": "After stopping, download the clip(s) into <output>/recordings/",
+            "title": "Download After",
+            "type": "boolean"
+          },
+          "max_seconds": {
+            "anyOf": [
+              {
+                "maximum": 1799.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stop automatically after this many seconds (default and maximum 1799, the D500's 29 min 59 s clip limit)",
+            "title": "Max Seconds"
+          }
+        },
+        "title": "RecordingStartRequest",
+        "type": "object"
+      },
+      "RecordingStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "elapsed_s": {
+            "description": "Seconds recorded (final value once ended)",
+            "minimum": 0.0,
+            "title": "Elapsed S",
+            "type": "number"
+          },
+          "ended_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the last recording ended: user, max_seconds, camera_stopped, camera_disconnected, shutdown",
+            "title": "Ended Reason"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Download job, if requested",
+            "title": "Job Id"
+          },
+          "last_clip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClipOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Auto-stop limit of this recording",
+            "title": "Max Seconds"
+          },
+          "started": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the recording began",
+            "title": "Started"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CameraState"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Problem noticed while recording/stopping",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "active",
+          "elapsed_s",
+          "state"
+        ],
+        "title": "RecordingStatus",
         "type": "object"
       },
       "RenderRequest": {
@@ -2575,6 +3574,203 @@
           "results"
         ],
         "title": "SettingsPatchOut",
+        "type": "object"
+      },
+      "SettingsPreset": {
+        "properties": {
+          "builtin": {
+            "default": false,
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "settings",
+            "default": "settings",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "description": "Unique per kind.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Camera setting name (or alias) -> value, e.g. {'iso': 3200}.",
+            "maxProperties": 40,
+            "minProperties": 1,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "values",
+          "id"
+        ],
+        "title": "SettingsPreset",
+        "type": "object"
+      },
+      "SettingsPresetIn": {
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "const": "settings",
+            "default": "settings",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "description": "Unique per kind.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Camera setting name (or alias) -> value, e.g. {'iso': 3200}.",
+            "maxProperties": 40,
+            "minProperties": 1,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "values"
+        ],
+        "title": "SettingsPresetIn",
+        "type": "object"
+      },
+      "StackRequest": {
+        "properties": {
+          "direction": {
+            "default": "near_to_far",
+            "enum": [
+              "near_to_far",
+              "far_to_near"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Folder name suffix",
+            "title": "Name"
+          },
+          "return_to_start": {
+            "default": true,
+            "title": "Return To Start",
+            "type": "boolean"
+          },
+          "settle_ms": {
+            "default": 500,
+            "description": "Wait after each move",
+            "maximum": 60000.0,
+            "minimum": 0.0,
+            "title": "Settle Ms",
+            "type": "integer"
+          },
+          "shots": {
+            "maximum": 200.0,
+            "minimum": 2.0,
+            "title": "Shots",
+            "type": "integer"
+          },
+          "steps_per_shot": {
+            "description": "Focus steps between shots",
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Steps Per Shot",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "steps_per_shot",
+          "shots"
+        ],
+        "title": "StackRequest",
         "type": "object"
       },
       "StepsBracketing": {
@@ -3432,6 +4628,187 @@
         ]
       }
     },
+    "/api/v1/camera/capture-target": {
+      "get": {
+        "operationId": "get_capture_target",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureTargetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Capture Target",
+        "tags": [
+          "camera"
+        ]
+      },
+      "put": {
+        "description": "`card`, `ram` or a raw choice. 409 during a recording or time-lapse.",
+        "operationId": "set_capture_target",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureTargetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureTargetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Set Capture Target",
+        "tags": [
+          "camera"
+        ]
+      }
+    },
     "/api/v1/camera/connect": {
       "post": {
         "operationId": "connect_camera",
@@ -3513,6 +4890,188 @@
           }
         ],
         "summary": "Connect Camera",
+        "tags": [
+          "camera"
+        ]
+      }
+    },
+    "/api/v1/camera/datetime": {
+      "get": {
+        "description": "Camera clock, server clock and their offset.",
+        "operationId": "get_camera_datetime",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraDateTimeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Camera Datetime",
+        "tags": [
+          "camera"
+        ]
+      },
+      "put": {
+        "description": "Set the camera clock to the server clock (`host`) or to `time` (`explicit`); returns\nthe offset read back afterwards. 409 while another owner holds the camera.",
+        "operationId": "set_camera_datetime",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraDateTimeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraDateTimeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Set Camera Datetime",
         "tags": [
           "camera"
         ]
@@ -4404,6 +5963,284 @@
           }
         ],
         "summary": "Capture Photo",
+        "tags": [
+          "capture"
+        ]
+      }
+    },
+    "/api/v1/capture/bracket": {
+      "post": {
+        "description": "Capture one bracket set (every step applied and shot), then restore the settings.",
+        "operationId": "start_bracket_capture",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BracketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Start Bracket Capture",
+        "tags": [
+          "capture"
+        ]
+      }
+    },
+    "/api/v1/capture/bulb": {
+      "get": {
+        "operationId": "get_bulb_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulbStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Bulb Status",
+        "tags": [
+          "capture"
+        ]
+      },
+      "post": {
+        "description": "Open the shutter for ``seconds`` (body must be in M mode). Returns the job; cancelling\nit closes the shutter at once and still keeps the frame.",
+        "operationId": "start_bulb_capture",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulbRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Start Bulb Capture",
         "tags": [
           "capture"
         ]
@@ -5365,6 +7202,457 @@
         ]
       }
     },
+    "/api/v1/focus": {
+      "get": {
+        "operationId": "get_focus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FocusStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Focus Status",
+        "tags": [
+          "focus"
+        ]
+      }
+    },
+    "/api/v1/focus/af": {
+      "post": {
+        "operationId": "autofocus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutofocusResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Autofocus",
+        "tags": [
+          "focus"
+        ]
+      }
+    },
+    "/api/v1/focus/mf": {
+      "post": {
+        "operationId": "manual_focus",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Manual Focus",
+        "tags": [
+          "focus"
+        ]
+      }
+    },
+    "/api/v1/focus/reset": {
+      "post": {
+        "operationId": "reset_focus_position",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FocusResetResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Reset Focus Position",
+        "tags": [
+          "focus"
+        ]
+      }
+    },
+    "/api/v1/focus/stack": {
+      "post": {
+        "description": "Capture N shots, moving focus between them; returns the job (kind ``focus-stack``).",
+        "operationId": "start_focus_stack",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Start Focus Stack",
+        "tags": [
+          "focus"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "description": "Open liveness probe. Always 200 while the server is up; 'degraded' on camera ERROR.",
@@ -5882,7 +8170,12 @@
         "responses": {
           "200": {
             "content": {
-              "image/jpeg": {}
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
             },
             "description": "One live view JPEG"
           },
@@ -6128,6 +8421,1200 @@
         "summary": "Stop Liveview",
         "tags": [
           "liveview"
+        ]
+      }
+    },
+    "/api/v1/presets": {
+      "get": {
+        "description": "User presets plus the read-only built-in bracket presets (`builtin: true`).",
+        "operationId": "list_presets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "settings",
+                    "bracket"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List Presets",
+        "tags": [
+          "presets"
+        ]
+      },
+      "post": {
+        "description": "Create a preset. Names are unique per kind (case-insensitive), 1-80 characters.",
+        "operationId": "create_preset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "bracket": "#/components/schemas/BracketPresetIn",
+                    "settings": "#/components/schemas/SettingsPresetIn"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SettingsPresetIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BracketPresetIn"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Create Preset",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/v1/presets/export": {
+      "get": {
+        "description": "All user presets as a JSON document (built-ins excluded) for backup or transfer.",
+        "operationId": "export_presets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Export Presets",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/v1/presets/from-camera": {
+      "post": {
+        "description": "Snapshot the camera's current values into a new settings preset (default: the common\nwritable settings).",
+        "operationId": "create_preset_from_camera",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FromCameraIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Create Preset From Camera",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/v1/presets/import": {
+      "post": {
+        "description": "Validate and import presets from an export; every item gets its own result.\n`replace=true` swaps the whole user set for the valid items.",
+        "operationId": "import_presets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresetImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Import Presets",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/v1/presets/{preset_id}": {
+      "delete": {
+        "description": "Delete a user preset. Built-ins answer 403.",
+        "operationId": "delete_preset",
+        "parameters": [
+          {
+            "description": "Preset id.",
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "description": "Preset id.",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Delete Preset",
+        "tags": [
+          "presets"
+        ]
+      },
+      "get": {
+        "operationId": "get_preset",
+        "parameters": [
+          {
+            "description": "Preset id.",
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "description": "Preset id.",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Preset",
+        "tags": [
+          "presets"
+        ]
+      },
+      "put": {
+        "description": "Replace a user preset (same kind). Built-ins answer 403.",
+        "operationId": "update_preset",
+        "parameters": [
+          {
+            "description": "Preset id.",
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "description": "Preset id.",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "bracket": "#/components/schemas/BracketPresetIn",
+                    "settings": "#/components/schemas/SettingsPresetIn"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SettingsPresetIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BracketPresetIn"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Update Preset",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/v1/presets/{preset_id}/apply": {
+      "post": {
+        "description": "Settings preset: validate every value against the connected camera (all or nothing),\nthen apply and return what the camera now reports. Bracket preset: nothing is started; the\nresolved steps are returned, and the UI then passes the preset's `bracketing` object to the\ntime-lapse config or one-shot bracket endpoint.",
+        "operationId": "apply_preset",
+        "parameters": [
+          {
+            "description": "Preset id.",
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "description": "Preset id.",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Apply Preset",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/v1/recording": {
+      "get": {
+        "operationId": "get_recording",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordingStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Recording Status",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/v1/recording/start": {
+      "post": {
+        "description": "Start recording a movie to the card. Holds the camera lease until stopped; live view\nis switched on if needed.",
+        "operationId": "start_recording",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordingStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordingStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Start Recording",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/v1/recording/stop": {
+      "post": {
+        "description": "Stop the recording; returns the clip and the download job id, if requested.",
+        "operationId": "stop_recording",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordingStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Stop Recording",
+        "tags": [
+          "recording"
         ]
       }
     },

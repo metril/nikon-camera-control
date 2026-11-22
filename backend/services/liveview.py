@@ -8,8 +8,9 @@
   moves it back to IDLE when the last subscriber leaves (and it is not sticky) or on ``stop()``;
   ``CameraService.transition(IDLE)`` out of LIVEVIEW also switches the camera's viewfinder off.
 - Camera state is polled/awaited every iteration, never cached: the producer pauses (keeping
-  subscribers) while the camera is CAPTURING/BULB/RECORDING/BUSY/ERROR or disconnected, and
-  resumes by itself. ``preview_frame`` only works in LIVEVIEW, so RECORDING pauses the stream.
+  subscribers) while the camera is CAPTURING/BULB/BUSY/ERROR or disconnected, and
+  resumes by itself. ``preview_frame`` works in LIVEVIEW and RECORDING (the D500 keeps
+  streaming previews while recording a movie), so the stream continues during a recording.
 """
 
 from __future__ import annotations
@@ -224,7 +225,7 @@ class LiveViewService:
         st = self._camera.state
         if st in (_S.DISCONNECTED, _S.CONNECTING):
             raise CameraNotConnected()
-        if st == _S.LIVEVIEW:
+        if st in (_S.LIVEVIEW, _S.RECORDING):
             return await self._processed(await self._camera.preview_frame())
         async with self._snap_lock:
             prior = await self._camera.transition(_S.LIVEVIEW)  # InvalidState if not allowed
@@ -300,7 +301,7 @@ class LiveViewService:
                 except InvalidState:
                     continue
                 cam = _S.LIVEVIEW
-            if cam != _S.LIVEVIEW:
+            if cam not in (_S.LIVEVIEW, _S.RECORDING):
                 self._set_phase("waiting", f"camera_{cam.value}")
                 await self._sleep(_POLL_S)
                 continue

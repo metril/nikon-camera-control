@@ -56,6 +56,10 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/camera/battery` | `get_camera_battery` | Get Camera Battery |
 | GET | `/api/v1/camera/storage` | `get_camera_storage` | Get Camera Storage |
 | GET | `/api/v1/camera/summary` | `get_camera_summary` | Get Camera Summary |
+| GET | `/api/v1/camera/datetime` | `get_camera_datetime` | Get Camera Datetime |
+| PUT | `/api/v1/camera/datetime` | `set_camera_datetime` | Set Camera Datetime |
+| GET | `/api/v1/camera/capture-target` | `get_capture_target` | Get Capture Target |
+| PUT | `/api/v1/camera/capture-target` | `set_capture_target` | Set Capture Target |
 
 ### camera-files
 
@@ -73,6 +77,9 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | POST | `/api/v1/capture` | `capture_photo` | Capture Photo |
 | POST | `/api/v1/capture/trigger` | `trigger_capture` | Trigger Capture |
+| GET | `/api/v1/capture/bulb` | `get_bulb_status` | Get Bulb Status |
+| POST | `/api/v1/capture/bulb` | `start_bulb_capture` | Start Bulb Capture |
+| POST | `/api/v1/capture/bracket` | `start_bracket_capture` | Start Bracket Capture |
 
 ### config
 
@@ -94,6 +101,16 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | DELETE | `/api/v1/files/{path}` | `delete_file` | Delete File |
 | GET | `/api/v1/thumbnails/{path}` | `get_thumbnail` | Get Thumbnail |
 
+### focus
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/focus` | `get_focus` | Get Focus Status |
+| POST | `/api/v1/focus/af` | `autofocus` | Autofocus |
+| POST | `/api/v1/focus/mf` | `manual_focus` | Manual Focus |
+| POST | `/api/v1/focus/reset` | `reset_focus_position` | Reset Focus Position |
+| POST | `/api/v1/focus/stack` | `start_focus_stack` | Start Focus Stack |
+
 ### jobs
 
 | Method | Path | operation_id | Summary |
@@ -110,6 +127,28 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | POST | `/api/v1/liveview/start` | `start_liveview` | Start Liveview |
 | POST | `/api/v1/liveview/stop` | `stop_liveview` | Stop Liveview |
 | GET | `/api/v1/liveview/snapshot` | `get_liveview_snapshot` | Get Liveview Snapshot |
+
+### presets
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/presets` | `list_presets` | List Presets |
+| POST | `/api/v1/presets` | `create_preset` | Create Preset |
+| GET | `/api/v1/presets/export` | `export_presets` | Export Presets |
+| POST | `/api/v1/presets/import` | `import_presets` | Import Presets |
+| POST | `/api/v1/presets/from-camera` | `create_preset_from_camera` | Create Preset From Camera |
+| GET | `/api/v1/presets/{preset_id}` | `get_preset` | Get Preset |
+| PUT | `/api/v1/presets/{preset_id}` | `update_preset` | Update Preset |
+| DELETE | `/api/v1/presets/{preset_id}` | `delete_preset` | Delete Preset |
+| POST | `/api/v1/presets/{preset_id}/apply` | `apply_preset` | Apply Preset |
+
+### recording
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/recording` | `get_recording` | Get Recording Status |
+| POST | `/api/v1/recording/start` | `start_recording` | Start Recording |
+| POST | `/api/v1/recording/stop` | `stop_recording` | Stop Recording |
 
 ### sessions
 
@@ -251,6 +290,90 @@ operation_id: `get_camera_summary`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `SummaryOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/camera/datetime`
+
+operation_id: `get_camera_datetime`
+
+Camera clock, server clock and their offset.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `CameraDateTimeOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `PUT /api/v1/camera/datetime`
+
+operation_id: `set_camera_datetime`
+
+Set the camera clock to the server clock (`host`) or to `time` (`explicit`); returns
+the offset read back afterwards. 409 while another owner holds the camera.
+
+**Request body** (`application/json`): `CameraDateTimeIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `mode` | enum("host", "explicit") | yes |  |  | host: set the camera to the server clock; explicit: set `time`. |
+| `time` | string(date-time) \| null | no |  |  | Required for explicit; a naive value is taken as UTC. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `CameraDateTimeOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/camera/capture-target`
+
+operation_id: `get_capture_target`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `CaptureTargetOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `PUT /api/v1/camera/capture-target`
+
+operation_id: `set_capture_target`
+
+`card`, `ram` or a raw choice. 409 during a recording or time-lapse.
+
+**Request body** (`application/json`): `CaptureTargetIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `value` | string | yes |  | `minLength=1`, `maxLength=64` | 'card', 'ram' or one of the camera's raw choices. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `CaptureTargetOut` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -414,6 +537,75 @@ operation_id: `trigger_capture`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `Ok` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/capture/bulb`
+
+operation_id: `get_bulb_status`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `BulbStatus` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/capture/bulb`
+
+operation_id: `start_bulb_capture`
+
+Open the shutter for ``seconds`` (body must be in M mode). Returns the job; cancelling
+it closes the shutter at once and still keeps the frame.
+
+**Request body** (`application/json`): `BulbRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `seconds` | number | yes |  | `>=1.0`, `<=3600.0` | Exposure time in seconds. |
+| `download` | boolean | no | `true` |  | Download the frame(s) to the output dir. |
+| `filename_prefix` | string \| null | no |  | `maxLength=80` |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/capture/bracket`
+
+operation_id: `start_bracket_capture`
+
+Capture one bracket set (every step applied and shot), then restore the settings.
+
+**Request body** (`application/json`): `BracketRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `bracketing` | NoBracketing \| StepsBracketing \| QuickBracketing \| PresetBracketing | no |  |  | Same union as the time-lapse; must resolve to at least 2 steps. |
+| `download` | boolean | no | `true` |  | Download the frames to the output dir. |
+| `filename_prefix` | string \| null | no |  | `maxLength=80` |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `JobOut` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -630,6 +822,107 @@ JPEG thumbnail of the file at ``path`` (relative to the output dir).
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
+## focus
+
+### `GET /api/v1/focus`
+
+operation_id: `get_focus`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `FocusStatus` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/focus/af`
+
+operation_id: `autofocus`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AutofocusResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/focus/mf`
+
+operation_id: `manual_focus`
+
+**Request body** (`application/json`): `MfRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `steps` | integer | yes |  | `>=-1000000.0`, `<=1000000.0` | Signed motor steps (sign = direction); checked against the camera's range |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `MfResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/focus/reset`
+
+operation_id: `reset_focus_position`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `FocusResetResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/focus/stack`
+
+operation_id: `start_focus_stack`
+
+Capture N shots, moving focus between them; returns the job (kind ``focus-stack``).
+
+**Request body** (`application/json`): `StackRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `steps_per_shot` | integer | yes |  | `>=1.0`, `<=100000.0` | Focus steps between shots |
+| `shots` | integer | yes |  | `>=2.0`, `<=200.0` |  |
+| `direction` | enum("near_to_far", "far_to_near") | no | `"near_to_far"` |  |  |
+| `settle_ms` | integer | no | `500` | `>=0.0`, `<=60000.0` | Wait after each move |
+| `return_to_start` | boolean | no | `true` |  |  |
+| `name` | string \| null | no |  | `maxLength=40` | Folder name suffix |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ## jobs
 
 ### `GET /api/v1/jobs`
@@ -761,7 +1054,290 @@ operation_id: `get_liveview_snapshot`
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | One live view JPEG | `image/jpeg`: `any` |
+| 200 | One live view JPEG | `image/jpeg`: `string(binary)` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+## presets
+
+### `GET /api/v1/presets`
+
+operation_id: `list_presets`
+
+User presets plus the read-only built-in bracket presets (`builtin: true`).
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `kind` | query | enum("settings", "bracket") \| null | no |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `PresetCollection` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/presets`
+
+operation_id: `create_preset`
+
+Create a preset. Names are unique per kind (case-insensitive), 1-80 characters.
+
+**Request body** (`application/json`): `SettingsPresetIn \| BracketPresetIn`
+
+Body: `SettingsPresetIn \| BracketPresetIn`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 201 | Successful Response | `application/json`: `PresetItem` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/presets/export`
+
+operation_id: `export_presets`
+
+All user presets as a JSON document (built-ins excluded) for backup or transfer.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `PresetExport` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/presets/import`
+
+operation_id: `import_presets`
+
+Validate and import presets from an export; every item gets its own result.
+`replace=true` swaps the whole user set for the valid items.
+
+**Request body** (`application/json`): `PresetImportIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `schema_version` | integer | no | `1` | `>=1.0`, `<=1.0` |  |
+| `replace` | boolean | no | `false` |  | true: replace ALL user presets with the valid imported ones. false: merge; a name that already exists is skipped. |
+| `presets` | list[object] | yes |  | `maxItems=500` |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `PresetImportResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/presets/from-camera`
+
+operation_id: `create_preset_from_camera`
+
+Snapshot the camera's current values into a new settings preset (default: the common
+writable settings).
+
+**Request body** (`application/json`): `FromCameraIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `name` | string | yes |  | `minLength=1`, `maxLength=80` |  |
+| `description` | string | no | `""` | `maxLength=500` |  |
+| `names` | list[string] \| null | no |  | `maxItems=40` | Setting names to capture; null = the common writable settings. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 201 | Successful Response | `application/json`: `PresetItem` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/presets/{preset_id}`
+
+operation_id: `get_preset`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `preset_id` | path | string | yes |  | `pattern=^[a-z0-9][a-z0-9_-]{0,63}$` | Preset id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `PresetItem` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `PUT /api/v1/presets/{preset_id}`
+
+operation_id: `update_preset`
+
+Replace a user preset (same kind). Built-ins answer 403.
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `preset_id` | path | string | yes |  | `pattern=^[a-z0-9][a-z0-9_-]{0,63}$` | Preset id. |
+
+**Request body** (`application/json`): `SettingsPresetIn \| BracketPresetIn`
+
+Body: `SettingsPresetIn \| BracketPresetIn`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `PresetItem` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `DELETE /api/v1/presets/{preset_id}`
+
+operation_id: `delete_preset`
+
+Delete a user preset. Built-ins answer 403.
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `preset_id` | path | string | yes |  | `pattern=^[a-z0-9][a-z0-9_-]{0,63}$` | Preset id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `Ok` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/presets/{preset_id}/apply`
+
+operation_id: `apply_preset`
+
+Settings preset: validate every value against the connected camera (all or nothing),
+then apply and return what the camera now reports. Bracket preset: nothing is started; the
+resolved steps are returned, and the UI then passes the preset's `bracketing` object to the
+time-lapse config or one-shot bracket endpoint.
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `preset_id` | path | string | yes |  | `pattern=^[a-z0-9][a-z0-9_-]{0,63}$` | Preset id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `ApplyResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+## recording
+
+### `GET /api/v1/recording`
+
+operation_id: `get_recording`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `RecordingStatus` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/recording/start`
+
+operation_id: `start_recording`
+
+Start recording a movie to the card. Holds the camera lease until stopped; live view
+is switched on if needed.
+
+**Request body** (`application/json`): `RecordingStartRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `max_seconds` | integer \| null | no |  | `>=1.0`, `<=1799.0` | Stop automatically after this many seconds (default and maximum 1799, the D500's 29 min 59 s clip limit) |
+| `download_after` | boolean | no | `false` |  | After stopping, download the clip(s) into <output>/recordings/ |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `RecordingStatus` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/recording/stop`
+
+operation_id: `stop_recording`
+
+Stop the recording; returns the clip and the download job id, if requested.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `RecordingStatus` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -1309,8 +1885,8 @@ Payload keys are found by a static scan of `publish(...)` call sites; `(dynamic)
 | `camera_disconnected` | `reason` |
 | `setting_changed` | `name`, `value` |
 | `battery` | `level` |
-| `capture_started` | (empty) |
-| `capture_complete` | `files` |
+| `capture_started` | `bulb`, `seconds` |
+| `capture_complete` | `bulb`, `files` |
 | `liveview_started` | (empty) |
 | `liveview_stopped` | `frames` |
 | `timelapse_started` | `failures`, `frames_done`, `planned_shots`, `session_id`, `sets_done` |
@@ -1321,15 +1897,15 @@ Payload keys are found by a static scan of `publish(...)` call sites; `(dynamic)
 | `timelapse_frame` | `failures`, `frames_done`, `index`, `session_id`, `set_index`, `sets_done`, `step` |
 | `timelapse_warning` | `code`, `failures`, `frames_done`, `message`, `session_id`, `sets_done` |
 | `timelapse_error` | `error`, `failures`, `frames_done`, `session_id`, `sets_done` |
-| `recording_started` | (not found) |
-| `recording_stopped` | (not found) |
+| `recording_started` | `download_after`, `max_seconds` |
+| `recording_stopped` | `clips`, `duration_s`, `job_id`, `reason`, `warning` |
 | `job_created` | `job` |
 | `job_progress` | `job` |
 | `job_completed` | `job` |
 | `job_failed` | `job` |
 | `job_cancelled` | `job` |
 | `config_changed` | `config`, `restart_required` |
-| `error` | (not found) |
+| `error` | `cause`, `code`, `message` |
 
 ## Configuration reference
 

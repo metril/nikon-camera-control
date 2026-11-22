@@ -108,6 +108,7 @@ MODE_LIKE_SETTINGS: frozenset[str] = frozenset(
 )
 _LIVE_STATES = frozenset({_S.IDLE, _S.LIVEVIEW, _S.CAPTURING, _S.RECORDING, _S.BULB, _S.BUSY})
 _KEEPALIVE_STATES = frozenset({_S.IDLE, _S.BUSY})
+_PREVIEW_STATES = frozenset({_S.LIVEVIEW, _S.RECORDING})
 _KEEPALIVE_FAILURES = 3
 _KEEPALIVE_TIMEOUT_S = 10.0
 _PREVIEW_TIMEOUT_S = 10.0
@@ -824,8 +825,9 @@ class CameraService:
 
     async def preview_frame(self) -> bytes:
         """One live-view JPEG at PREVIEW priority. Coalesced: at most one pending request;
-        concurrent callers await the same frame. Raises InvalidState unless LIVEVIEW."""
-        if self._state != _S.LIVEVIEW:
+        concurrent callers await the same frame. Raises InvalidState unless LIVEVIEW or
+        RECORDING (the D500 keeps streaming previews while recording a movie)."""
+        if self._state not in _PREVIEW_STATES:
             raise InvalidState("Live view is not active")
         worker = self._worker
         if worker is None:
@@ -840,7 +842,7 @@ class CameraService:
     def _preview_job(self, w: _Worker) -> bytes:
         # Runs on the worker thread. A frame queued before live view ended must not run after
         # end_preview (it would switch the viewfinder back on): state is already left by then.
-        if self._state != _S.LIVEVIEW:
+        if self._state not in _PREVIEW_STATES:
             raise InvalidState("Live view is not active")
         return w.require().capture_preview()
 

@@ -74,16 +74,12 @@ def test_routes_document_error_envelope(spec: dict[str, Any]) -> None:
     assert bad == []
 
 
-# TODO: GET /api/v1/liveview/snapshot (liveview agent) still has an empty binary schema.
-KNOWN_UNTYPED_BINARY = {"/api/v1/liveview/snapshot"}
-
-
 def test_binary_200_responses_declare_a_binary_schema(spec: dict[str, Any]) -> None:
     bad = []
     for path, m, op in _ops(spec):
         content = op["responses"].get("200", {}).get("content", {})
         for mime, body in content.items():
-            if mime == "application/json" or path in KNOWN_UNTYPED_BINARY:
+            if mime == "application/json":
                 continue
             if body.get("schema") != {"type": "string", "format": "binary"}:
                 bad.append(f"{m.upper()} {path} {mime}: {body}")
