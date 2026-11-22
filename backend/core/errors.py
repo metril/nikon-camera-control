@@ -35,6 +35,7 @@ class ErrorCode(StrEnum):
     FEATURE_UNSUPPORTED = "FEATURE_UNSUPPORTED"
     VALIDATION_ERROR = "VALIDATION_ERROR"
     NOT_FOUND = "NOT_FOUND"
+    UNSUPPORTED_MEDIA = "UNSUPPORTED_MEDIA"
 
 
 class AppError(Exception):
@@ -186,3 +187,9 @@ class FeatureUnsupported(AppError):
     code = ErrorCode.FEATURE_UNSUPPORTED
     http_status = 501
     default_message = "Feature not supported by this camera"
+
+
+class UnsupportedMedia(AppError):
+    code = ErrorCode.UNSUPPORTED_MEDIA
+    http_status = 415
+    default_message = "No thumbnail can be generated for this file type"

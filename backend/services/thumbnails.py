@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from backend.core.errors import AppError, FileNotFoundError_
+from backend.core.errors import FileNotFoundError_, UnsupportedMedia
 from backend.services.storage import classify
 
 MIN_SIZE = 64
@@ -23,12 +23,6 @@ _SUBIFDS = 0x014A
 _JPEG_OFFSET = 0x0201
 _JPEG_LENGTH = 0x0202
 _ORIENTATION = 0x0112
-
-
-class UnsupportedMedia(AppError):
-    code = "UNSUPPORTED_MEDIA"
-    http_status = 415
-    default_message = "No thumbnail can be generated for this file type"
 
 
 def clamp_size(size: int) -> int:

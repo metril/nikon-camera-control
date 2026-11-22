@@ -190,3 +190,19 @@ def test_public_dump_and_schema(tmp_path: Path) -> None:
     assert "api_key_hash" not in schema["properties"]
     assert schema["properties"]["api_key_set"]["readOnly"] is True
     assert "$defs" in schema
+
+
+def test_new_config_fields_and_bounds(tmp_path: Path) -> None:
+    cfg = AppConfig()
+    assert cfg.timelapse.failure_budget == 5
+    assert cfg.video.ffmpeg_path is None
+    assert cfg.liveview.max_width is None
+    assert cfg.camera.event_quiet_window_s == 1.0
+    store = ConfigStore(tmp_path / "c.json")
+    new, _ = store.update(
+        {"video": {"ffmpeg_path": "/usr/bin/ffmpeg"}, "liveview": {"max_width": 640}}
+    )
+    assert new.video.ffmpeg_path == "/usr/bin/ffmpeg" and new.liveview.max_width == 640
+    for bad in ({"timelapse": {"failure_budget": 0}}, {"timelapse": {"failure_budget": 101}}):
+        with pytest.raises(ConfigInvalid):
+            store.update(bad)

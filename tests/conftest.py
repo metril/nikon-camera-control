@@ -25,11 +25,32 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def _find_ffmpeg() -> str | None:
+    """System ffmpeg first, else the imageio-ffmpeg bundled binary, else None."""
+    system = shutil.which("ffmpeg")
+    if system:
+        return system
+    try:
+        import imageio_ffmpeg
+
+        return str(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return None
+
+
+@pytest.fixture(scope="session")
+def ffmpeg_exe() -> str:
+    exe = _find_ffmpeg()
+    if exe is None:
+        pytest.skip("ffmpeg not available (system or imageio-ffmpeg)")
+    return exe
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     skip_hw = pytest.mark.skip(reason="needs a physical camera (--real-camera)")
     skip_ff = pytest.mark.skip(reason="ffmpeg not installed")
     have_hw = config.getoption("--real-camera")
-    have_ff = shutil.which("ffmpeg") is not None
+    have_ff = _find_ffmpeg() is not None
     for item in items:
         if "hardware" in item.keywords and not have_hw:
             item.add_marker(skip_hw)
@@ -67,7 +88,7 @@ def app_config() -> AppConfig:
                 "connect_timeout_s": 1.0,
                 "connect_retries": 1,
                 "reconnect_interval_s": 0.5,
-                "capture_timeout_s": 1.0,
+                "capture_timeout_s": 0.3,
             },
             "liveview": {"frame_timeout_s": 0.1},
             "timelapse": {"min_interval_s": 0.1},
@@ -90,6 +111,8 @@ def app(tmp_dirs: TmpDirs, config_store: ConfigStore, fake_camera: FakeCamera) -
         output_dir=tmp_dirs.output_dir,
         backend_factory=lambda: fake_camera,
         auto_connect=False,
+        event_quiet_window_s=0.02,
+        disconnect_wait_s=0.5,
     )
 
 

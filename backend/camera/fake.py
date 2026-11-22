@@ -40,6 +40,7 @@ from backend.core.errors import (
     SettingInvalid,
     SettingNotAllowed,
     SettingNotFound,
+    StorageFull,
 )
 
 OPS = frozenset(
@@ -591,7 +592,7 @@ class FakeCamera:
         with self._flock:
             full = self._faults.card_full
         if full or self._free_kb() <= 0:
-            raise CameraIOError("Card full")
+            raise StorageFull("Card full")
 
     def _do_capture(self) -> CameraFilePath:
         self._check_space()

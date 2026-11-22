@@ -46,7 +46,13 @@ class CameraConfig(_Section):
     reconnect_interval_s: float = Field(
         default=2.0, ge=0.5, le=60.0, description="Delay between reconnects"
     )
-    capture_timeout_s: float = Field(default=30.0, ge=1.0, le=300.0, description="Capture timeout")
+    capture_timeout_s: float = Field(default=30.0, ge=0.1, le=300.0, description="Capture timeout")
+    event_quiet_window_s: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=10.0,
+        description="After a capture, stop draining camera events after this quiet period",
+    )
 
 
 class LiveViewConfig(_Section):
@@ -60,6 +66,12 @@ class LiveViewConfig(_Section):
     jpeg_quality: int = Field(
         default=75, ge=10, le=100, description="Re-encode quality for streamed frames"
     )
+    max_width: int | None = Field(
+        default=None,
+        ge=64,
+        le=8192,
+        description="Downscale frames wider than this (px); None = off",
+    )
 
 
 class TimelapseConfig(_Section):
@@ -70,11 +82,14 @@ class TimelapseConfig(_Section):
         default=86400, ge=60, le=30 * 86400, description="Maximum session length"
     )
     failure_budget: int = Field(
-        default=5, ge=1, le=1000, description="Consecutive failed frames before abort"
+        default=5, ge=1, le=100, description="Consecutive failed frames before abort"
     )
 
 
 class VideoConfig(_Section):
+    ffmpeg_path: str | None = Field(
+        default=None, description="Path to the ffmpeg binary; None = autodetect"
+    )
     codec: Literal["libx264", "libx265", "libvpx-vp9"] = Field(
         default="libx264", description="ffmpeg codec"
     )

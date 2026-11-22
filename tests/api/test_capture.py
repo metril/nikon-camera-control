@@ -81,18 +81,18 @@ async def test_capture_card_full_leaves_idle(
 ) -> None:
     fake_camera.card_full()
     r = await connected_client.post(C, json={})
-    assert r.status_code >= 400 and "code" in r.json()["error"]
+    assert r.status_code == 507 and r.json()["error"]["code"] == "STORAGE_FULL"
     state = (await connected_client.get("/api/v1/camera")).json()["state"]
-    assert state in ("idle", "disconnected"), state  # never stuck in capturing
-    print(r.json(), state)
+    assert state == "idle", state
 
 
 async def test_capture_hang_times_out(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
+    app.state.config_store.update({"camera": {"capture_timeout_s": 0.1}})
     fake_camera.hang("capture")
     try:
-        r = await asyncio.wait_for(connected_client.post(C, json={}), 10)
+        r = await asyncio.wait_for(connected_client.post(C, json={}), 5)
         assert r.status_code == 504 and r.json()["error"]["code"] == "CAMERA_TIMEOUT"
     finally:
         fake_camera.release_all()

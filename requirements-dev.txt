@@ -6,3 +6,4 @@ pytest-cov==7.1.0
 ruff==0.17.6
 mypy==2.4.1
 pip-audit==2.10.1
+imageio-ffmpeg==0.8.1

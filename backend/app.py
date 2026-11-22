@@ -77,10 +77,14 @@ def create_app(
     backend_factory: Callable[[], CameraBackend] | None = None,
     frontend_dist: Path | None = None,
     auto_connect: bool = True,
+    event_quiet_window_s: float | None = None,
+    disconnect_wait_s: float | None = None,
 ) -> FastAPI:
     """Build the app. ``frontend_dist`` None means no SPA is served.
 
     ``auto_connect`` starts a background connect attempt at startup (failures are logged).
+    ``event_quiet_window_s`` / ``disconnect_wait_s`` override CameraService tuning (tests);
+    the quiet window otherwise comes from ``config.camera.event_quiet_window_s``.
     """
     data = data_dir if data_dir is not None else paths.DATA_DIR
     output = output_dir if output_dir is not None else paths.OUTPUT_DIR
@@ -93,7 +97,17 @@ def create_app(
         bus = EventBus()
         bus.bind_loop(loop)
         jobs = JobManager(bus)
-        service = CameraService(factory, store, bus)
+        service = CameraService(
+            factory,
+            store,
+            bus,
+            event_quiet_window_s=(
+                event_quiet_window_s
+                if event_quiet_window_s is not None
+                else store.config.camera.event_quiet_window_s
+            ),
+            **({"disconnect_wait_s": disconnect_wait_s} if disconnect_wait_s is not None else {}),
+        )
         app.state.event_bus = bus
         app.state.job_manager = jobs
         app.state.camera_service = service

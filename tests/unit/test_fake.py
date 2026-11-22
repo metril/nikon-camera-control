@@ -19,6 +19,7 @@ from backend.core.errors import (
     SettingInvalid,
     SettingNotAllowed,
     SettingNotFound,
+    StorageFull,
 )
 
 
@@ -297,7 +298,7 @@ def test_latency(cam: FakeCamera) -> None:
 def test_card_full(cam: FakeCamera) -> None:
     cam.card_full()
     assert cam.storage_info()[0].free_kb == 0
-    with pytest.raises(CameraIOError):
+    with pytest.raises(StorageFull):
         cam.capture()
     cam.card_full(False)
     cam.capture()

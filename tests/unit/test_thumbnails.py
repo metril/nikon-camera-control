@@ -5,8 +5,8 @@ import pytest
 from PIL import Image
 
 from backend.camera.fake import _jpeg, _nef
-from backend.core.errors import AppError
-from backend.services.thumbnails import ThumbnailService, UnsupportedMedia
+from backend.core.errors import AppError, UnsupportedMedia
+from backend.services.thumbnails import ThumbnailService
 
 
 def _jpg(path: Path, size: tuple[int, int] = (800, 600), orientation: int | None = None) -> None:
