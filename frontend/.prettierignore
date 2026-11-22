@@ -1,3 +1,5 @@
 dist
 node_modules
 bun.lock
+src/api/generated
+src/api/.generated-check

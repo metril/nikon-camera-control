@@ -1,2 +1,3 @@
 openapi.json linguist-generated=true
 docs/API.md linguist-generated=true
+frontend/src/api/generated/** linguist-generated=true

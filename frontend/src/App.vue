@@ -1,6 +1,8 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
 import { useCameraStore } from './stores/camera'
+import { useCaptureStore } from './stores/capture'
+import { useToastsStore } from './stores/toasts'
+import { useHotkeys } from './composables/useHotkeys'
 import LiveView from './components/LiveView.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import CaptureControls from './components/CaptureControls.vue'
@@ -9,91 +11,16 @@ import ModeWarning from './components/ModeWarning.vue'
 import Gallery from './components/Gallery.vue'
 import Timelapse from './components/Timelapse.vue'
 
+// STUB (foundation pass): events/status are driven by stores/events.js (started in main.js);
+// the old inline WebSocket was removed. Components are rewritten separately.
 const camera = useCameraStore()
-const wsConnected = ref(false)
-let ws = null
-let reconnectTimeout = null
+const capture = useCaptureStore()
+const toasts = useToastsStore()
 
-// WebSocket connection for events
-function connectWebSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/ws/events`
-
-  ws = new WebSocket(wsUrl)
-
-  ws.onopen = () => {
-    wsConnected.value = true
-    console.log('WebSocket connected')
-  }
-
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data)
-      camera.updateFromWebSocket(data)
-    } catch (e) {
-      console.error('WebSocket message error:', e)
-    }
-  }
-
-  ws.onclose = () => {
-    wsConnected.value = false
-    console.log('WebSocket disconnected')
-    // Reconnect after 3 seconds
-    reconnectTimeout = setTimeout(connectWebSocket, 3000)
-  }
-
-  ws.onerror = (error) => {
-    console.error('WebSocket error:', error)
-  }
-}
-
-// Keyboard shortcuts
-function handleKeydown(event) {
-  // Ignore if typing in an input
-  if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') {
-    return
-  }
-
-  switch (event.code) {
-    case 'Space':
-      event.preventDefault()
-      if (camera.isReady) {
-        camera.capturePhoto()
-      }
-      break
-    case 'KeyH':
-      // Toggle histogram (future feature)
-      break
-    case 'KeyG':
-      // Toggle grid (future feature)
-      break
-  }
-}
-
-onMounted(async () => {
-  // Fetch initial status
-  await camera.fetchStatus()
-
-  // Connect WebSocket
-  connectWebSocket()
-
-  // Fetch settings if connected
-  if (camera.connected) {
-    await camera.fetchSettings()
-  }
-
-  // Add keyboard listener
-  window.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  if (ws) {
-    ws.close()
-  }
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout)
-  }
-  window.removeEventListener('keydown', handleKeydown)
+useHotkeys({
+  ' ': () => {
+    if (camera.isReady) capture.capture().catch((e) => toasts.error(e))
+  },
 })
 </script>
 
@@ -144,12 +71,12 @@ onUnmounted(() => {
 
     <!-- Error toast -->
     <div
-      v-if="camera.error"
+      v-if="camera.lastError"
       class="fixed bottom-4 right-4 bg-camera-error text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 max-w-md"
     >
-      <span class="flex-1">{{ camera.error }}</span>
+      <span class="flex-1">{{ camera.lastError.message }}</span>
       <button
-        @click="camera.clearError()"
+        @click="camera.lastError = null"
         class="text-white/80 hover:text-white"
       >
         &times;
