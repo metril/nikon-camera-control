@@ -29,12 +29,14 @@ sudo cp docker/udev/99-nikon.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger   # then replug the camera
 cd docker
 mkdir -p data output && sudo chown 1000:1000 data output
-docker compose up -d --build
+docker compose -f compose.yaml up -d   # pulls ghcr.io/metril/nikon-camera-control (amd64 and arm64)
 ```
+
+**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.2.0`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` and `output/` are kept.
 
 Open http://localhost:8000 and press Connect. Replugging or power-cycling the camera does not require a container restart (the compose file bind-mounts `/dev/bus/usb`, so the new device node is visible).
 
-`docker/data` and `docker/output` are bind-mounted (paths relative to the compose file). The container runs as uid/gid 1000 and gets USB access through `group_add`, which must be the **numeric gid that owns the camera node on the host** (default `"46"`, Debian/Ubuntu `plugdev`). With the camera plugged in, check `stat -c %g /dev/bus/usb/BBB/DDD` (BBB/DDD from `lsusb`); if it is not 46 (or `plugdev` does not exist, e.g. Fedora/Arch), edit `group_add` in `docker/docker-compose.yml`. The udev rule is what sets that group on the node. No privileged mode, no extra capabilities, no environment variables.
+`docker/data` and `docker/output` are bind-mounted (paths relative to the compose file). The container runs as uid/gid 1000 and gets USB access through `group_add`, which must be the **numeric gid that owns the camera node on the host** (default `"46"`, Debian/Ubuntu `plugdev`). With the camera plugged in, check `stat -c %g /dev/bus/usb/BBB/DDD` (BBB/DDD from `lsusb`); if it is not 46 (or `plugdev` does not exist, e.g. Fedora/Arch), edit `group_add` in `docker/compose.yaml`. The udev rule is what sets that group on the node. No privileged mode, no extra capabilities, no environment variables.
 
 ## First-run setup in the web UI
 
@@ -74,6 +76,7 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requi
 make lint test      # ruff, mypy, pytest (parallel)
 make api            # regenerate openapi.json, docs/API.md and the frontend client
 make ci             # everything CI runs, except the Docker build (make docker-build)
+make docker-build   # build the image locally from the Dockerfile
 ```
 
 Run with the demo camera: put `{"demo_camera": true}` in `data/config.json`, then
@@ -95,10 +98,16 @@ Hardware tests (skipped by default; one camera, so no xdist): `.venv/bin/pytest 
 ## Security notes
 
 - No authentication until a key is generated. Meant for a trusted LAN; do not expose it to the internet. Put it behind a reverse proxy with TLS if you need remote access.
-- The container is non-root, not privileged, and gets only the `/dev/bus/usb` tree and the USB character-device cgroup rule (see the trade-off comment in `docker/docker-compose.yml`).
+- The container is non-root, not privileged, and gets only the `/dev/bus/usb` tree and the USB character-device cgroup rule (see the trade-off comment in `docker/compose.yaml`).
 - `docker/udev/99-nikon.rules` grants the `plugdev` group (mode 0660), not everyone; `group_add` in the compose file must be that group's numeric gid on the host.
 - Cross-origin protection: POST/PUT/PATCH/DELETE requests and WebSocket handshakes that carry an `Origin` header must be same-origin (same host:port as `Host`, scheme ignored) or listed in `cors_origins` (read live), otherwise they get 403 `FORBIDDEN_ORIGIN` (WebSocket: close code 4403). This stops other web pages on the LAN from driving the camera in open mode. Requests without `Origin` (curl, scripts) are unaffected, so it is not a substitute for an API key. Behind a reverse proxy that rewrites `Host`, add the public origin to `cors_origins`.
 - Rotating, removing or creating the API key closes open WebSockets with code 4401.
+
+## Releases
+
+1. Bump `__version__` in `backend/__init__.py`, `version` in `frontend/package.json` and the image tag in `docker/compose.yaml` (check with `make release-check`).
+2. Commit, then `git tag vX.Y.Z && git push --tags`.
+3. CI (`.github/workflows/release.yml`) verifies the versions match the tag, publishes the multi-arch image to GHCR and creates the GitHub release.
 
 ## Known limitations
 

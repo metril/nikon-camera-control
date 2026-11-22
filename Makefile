@@ -1,6 +1,6 @@
 BIN := .venv/bin
 
-.PHONY: lint test api api-check ci frontend-install frontend-lint frontend-test frontend-build docker-build
+.PHONY: lint test api api-check ci frontend-install frontend-lint frontend-test frontend-build docker-build release-check
 
 lint:
 	$(BIN)/ruff check .
@@ -33,6 +33,9 @@ frontend-build: frontend-install
 
 docker-build:
 	docker build -f docker/Dockerfile -t nikon-camera-control:dev .
+
+release-check:
+	scripts/release_check.sh $(TAG)
 
 # Mirrors .github/workflows/ci.yml (lint, backend, frontend jobs). The docker job needs a
 # daemon, so run `make docker-build` separately.

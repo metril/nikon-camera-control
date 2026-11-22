@@ -1,11 +1,8 @@
-# Run from this directory:  docker compose up -d --build
+# Run from this directory:  docker compose up -d   (pulls the released image; upgrade: docker compose pull && docker compose up -d)
 # Everything is configured in the web UI (Settings); there is no environment configuration.
 services:
   nikon-camera-control:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: nikon-camera-control:latest
+    image: ghcr.io/metril/nikon-camera-control:0.2.0
     container_name: nikon-camera-control
     ports:
       - "8000:8000"

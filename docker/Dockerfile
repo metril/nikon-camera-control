@@ -3,7 +3,8 @@
 # No environment-based app configuration: everything is set in the web UI (data/config.json).
 
 # --- Stage 1: frontend bundle ------------------------------------------------
-FROM oven/bun:1.3.10-slim AS frontend
+# The bundle is arch-independent: always build it on the native build platform (no QEMU).
+FROM --platform=$BUILDPLATFORM oven/bun:1.3.10-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/bun.lock ./
 RUN bun install --frozen-lockfile
