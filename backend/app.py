@@ -23,17 +23,11 @@ from backend.core.camera_service import CameraService
 from backend.core.config_store import AppConfig, ConfigStore
 from backend.core.events import EventBus
 from backend.core.jobs import JobManager
+from backend.core.registry import ServiceRegistry
 
 log = logging.getLogger(__name__)
 
 API_PREFIX = "/api/v1"
-
-TAGS_METADATA: list[dict[str, str]] = [
-    {"name": "system", "description": "Health and server information"},
-    {"name": "camera", "description": "Camera connection and status"},
-    {"name": "config", "description": "Application configuration and API key"},
-    {"name": "events", "description": "WebSocket event stream"},
-]
 
 
 def _default_backend_factory(store: ConfigStore) -> Callable[[], CameraBackend]:
@@ -42,7 +36,7 @@ def _default_backend_factory(store: ConfigStore) -> Callable[[], CameraBackend]:
         if store.config.demo_camera:
             from backend.camera.fake import FakeCamera
 
-            return FakeCamera()
+            return FakeCamera(emit_capture_complete=True)
         from backend.camera.gphoto2_backend import Gphoto2Backend
 
         return Gphoto2Backend()
@@ -103,6 +97,8 @@ def create_app(
         app.state.event_bus = bus
         app.state.job_manager = jobs
         app.state.camera_service = service
+        registry = ServiceRegistry()
+        app.state.services = registry
         await service.start()
         bg: set[asyncio.Task[Any]] = set()
 
@@ -132,6 +128,7 @@ def create_app(
             for task in list(bg):
                 task.cancel()
             await asyncio.gather(*bg, return_exceptions=True)
+            await registry.aclose()
             await service.stop()
             await jobs.shutdown()
             bus.close()
@@ -142,7 +139,6 @@ def create_app(
         openapi_url=f"{API_PREFIX}/openapi.json",
         docs_url="/docs",
         redoc_url=None,
-        openapi_tags=TAGS_METADATA,
         lifespan=lifespan,
     )
     app.state.config_store = store
