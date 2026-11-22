@@ -68,6 +68,22 @@ describe('SettingsView', () => {
     expect(w.find('[data-test="key-status"]').text()).toBe('Not set')
   })
 
+  it('follows a server-side config change without showing unsaved changes', async () => {
+    const { w, config } = await setup()
+    config.config = { ...cfg(), video: { crf: 18, codec: 'b' } }
+    await flushPromises()
+    expect(w.find('[data-test="save"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-field="crf"] input').element.value).toBe('18')
+  })
+
+  it('keeps unsaved edits when the server config changes', async () => {
+    const { w, config } = await setup()
+    await w.find('[data-field="crf"] input').setValue('30')
+    config.config = { ...cfg(), video: { crf: 23, codec: 'b' } }
+    await flushPromises()
+    expect(w.find('[data-field="crf"] input').element.value).toBe('30')
+  })
+
   it('saves only changed fields', async () => {
     const { w, config } = await setup()
     config.patch = vi.fn(async () => (config.config = { ...cfg(), video: { crf: 20, codec: 'a' } }))

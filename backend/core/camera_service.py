@@ -324,6 +324,16 @@ class _Worker:
             backend.close()
 
 
+def drain_pending_events(b: CameraBackend, *, limit: int = 1000) -> int:
+    """Discard queued camera events without waiting (worker thread only). Called right before
+    a capture so only the files that capture produces are collected; the listing cache is
+    invalidated by the capture's own CAPTURE_COMPLETE. Returns the number dropped."""
+    n = 0
+    while n < limit and b.wait_for_event(0).type != CamEventType.TIMEOUT:
+        n += 1
+    return n
+
+
 class CameraService:
     def __init__(
         self,
@@ -792,6 +802,8 @@ class CameraService:
         self._bus.publish(EventType.CAPTURE_STARTED, {})
 
         def _do(b: CameraBackend) -> list[CameraFilePath]:
+            # Events left by trigger-only shots or the body's own shutter are not ours.
+            drain_pending_events(b)
             files = [b.capture()]
             b.invalidate_preview()  # a capture may drop the body out of live view
             deadline = last = time.monotonic()

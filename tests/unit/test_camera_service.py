@@ -80,6 +80,7 @@ class StubBackend:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.events: collections.deque[CameraEvent] = collections.deque()
+        self.on_capture: list[CameraEvent] = []  # events the capture itself produces
         self.values = {"iso": "100", "aperture": "5.6"}
 
     @property
@@ -127,6 +128,8 @@ class StubBackend:
         self.values[name] = str(value)
 
     def capture(self) -> CameraFilePath:
+        self.events.extend(self.on_capture)
+        self.on_capture.clear()
         return A_NEF
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
@@ -632,7 +635,7 @@ async def test_settings_cache_and_invalidation(env: Env) -> None:
 # 9. capture ----------------------------------------------------------------------------
 async def test_capture_collects_raw_and_jpeg_without_sleeping(env: Env) -> None:
     svc = await env.make()
-    env.backend.events.extend(
+    env.backend.on_capture.extend(
         [
             CameraEvent(CamEvent.FILE_ADDED, file=A_NEF),
             CameraEvent(CamEvent.FILE_ADDED, file=A_JPG),
@@ -652,22 +655,28 @@ async def test_capture_collects_raw_and_jpeg_without_sleeping(env: Env) -> None:
 
 async def test_capture_ends_on_quiet_window_when_camera_swallowed_complete(env: Env) -> None:
     svc = await env.make(quiet=0.05)
-    env.backend.events.append(CameraEvent(CamEvent.FILE_ADDED, file=A_JPG))
+    env.backend.on_capture.append(CameraEvent(CamEvent.FILE_ADDED, file=A_JPG))
     t0 = time.monotonic()
     files = await svc.capture(timeout=60)  # must not wait for the 60 s timeout
     assert time.monotonic() - t0 < 30
     assert files == [A_NEF, A_JPG] and svc.state == S.IDLE
 
 
+async def test_capture_drops_events_queued_before_it(env: Env) -> None:
+    svc = await env.make(quiet=0.05)
+    env.backend.events.append(CameraEvent(CamEvent.FILE_ADDED, file=A_JPG))  # stray body shot
+    assert await svc.capture(timeout=60) == [A_NEF]
+
+
 async def test_capture_dedupes_returned_path_with_file_added(env: Env) -> None:
     svc = await env.make()
-    env.backend.events.append(CameraEvent(CamEvent.FILE_ADDED, file=A_NEF))
+    env.backend.on_capture.append(CameraEvent(CamEvent.FILE_ADDED, file=A_NEF))
     assert await svc.capture(timeout=60) == [A_NEF]
 
 
 async def test_capture_complete_event_ends_drain_before_quiet_window(env: Env) -> None:
     svc = await env.make(quiet=60.0)
-    env.backend.events.extend(
+    env.backend.on_capture.extend(
         [CameraEvent(CamEvent.FILE_ADDED, file=A_JPG), CameraEvent(CamEvent.CAPTURE_COMPLETE)]
     )
     t0 = time.monotonic()

@@ -23,7 +23,7 @@ from backend.api.schemas.common import EventType
 from backend.api.schemas.exposure import BulbRequest, BulbStatus
 from backend.camera.backend import CameraBackend, CameraFilePath
 from backend.camera.backend import EventType as CamEventType
-from backend.core.camera_service import CameraService, Priority
+from backend.core.camera_service import CameraService, Priority, drain_pending_events
 from backend.core.errors import (
     AppError,
     CameraBusy,
@@ -181,6 +181,10 @@ class BulbService:
                 self._bus.publish(
                     EventType.CAPTURE_STARTED,
                     {"bulb": True, "seconds": req.seconds, "warnings": warnings},
+                )
+                # Strays from earlier trigger-only or body shots are not this exposure's frame.
+                await cam.call(
+                    lambda b: drain_pending_events(b), priority=Priority.CAPTURE, owner=OWNER
                 )
                 opened = True  # before issuing: a redundant close is harmless, a missed one is not
                 try:

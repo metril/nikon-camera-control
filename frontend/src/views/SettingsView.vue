@@ -23,6 +23,7 @@ const config = useConfigStore()
 const toasts = useToastsStore()
 
 const draft = ref({})
+let base = {} // server config the draft was last synced to
 const errors = ref({})
 const saving = ref(false)
 const resetting = ref(false)
@@ -34,12 +35,17 @@ const dirty = computed(() =>
 )
 const isDirty = computed(() => dirty.value.length > 0)
 const clone = (o) => JSON.parse(JSON.stringify(o ?? {}))
+function sync() {
+  base = clone(config.config)
+  draft.value = clone(config.config)
+}
 
 // Follow server-side changes (config_changed events) unless the user has unsaved edits.
 watch(
   () => config.config,
   (c) => {
-    if (c && !isDirty.value) draft.value = clone(c)
+    // Compare against the config the draft was synced to: `isDirty` already reflects `c`.
+    if (c && !dirtyPaths(sections.value, base, draft.value, ['demo_camera']).length) sync()
   },
   { deep: true },
 )
@@ -48,7 +54,7 @@ async function load() {
   loadError.value = ''
   try {
     await Promise.all([config.fetch(), config.schema ? null : config.fetchSchema()])
-    draft.value = clone(config.config)
+    sync()
   } catch (e) {
     loadError.value = e?.message || 'Could not load settings'
   }
@@ -67,7 +73,7 @@ async function save() {
   errors.value = {}
   try {
     await config.patch(buildPatch(dirty.value, draft.value))
-    draft.value = clone(config.config)
+    sync()
     toasts.success('Settings saved')
   } catch (e) {
     const fe = e?.status === 422 ? fieldErrors(e.details) : {}
@@ -80,14 +86,14 @@ async function save() {
   }
 }
 function discard() {
-  draft.value = clone(config.config)
+  sync()
   errors.value = {}
 }
 async function resetDefaults() {
   resetting.value = true
   try {
     await config.reset()
-    draft.value = clone(config.config)
+    sync()
     errors.value = {}
     toasts.success('Settings reset to defaults')
   } catch (e) {

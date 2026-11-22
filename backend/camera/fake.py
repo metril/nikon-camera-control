@@ -638,6 +638,13 @@ class FakeCamera:
         self._enter("capture")
         return self._do_capture()
 
+    def press_shutter(self) -> list[CameraFilePath]:
+        """Simulate a shot taken with the body's own shutter button: files plus FILE_ADDED
+        events appear outside any capture call (no fault injection, no call counting)."""
+        before = {f for fs in self._files.values() for f in fs}
+        self._do_capture()
+        return [CameraFilePath(CARD_FOLDER, n) for n in self._files[CARD_FOLDER] if n not in before]
+
     def trigger(self) -> None:
         self._enter("trigger")
         self._do_capture()

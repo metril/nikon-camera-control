@@ -127,3 +127,44 @@ async def test_openapi_ids(app: FastAPI) -> None:
     p = app.openapi()["paths"]
     assert p[C]["post"]["operationId"] == "capture_photo"
     assert p[f"{C}/trigger"]["post"]["operationId"] == "trigger_capture"
+
+
+async def test_trigger_twice_then_capture_returns_only_its_own_file(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    for _ in range(2):
+        assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    r = await connected_client.post(C, json={})
+    assert len(r.json()["camera_files"]) == 1 and len(r.json()["files"]) == 1
+    assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    await app.state.camera_service.set_setting("imagequality", "NEF+JPEG Fine")
+    r = await connected_client.post(C, json={"download": False})
+    assert len(r.json()["camera_files"]) == 2
+
+
+async def test_body_shot_before_capture_is_not_attributed_to_it(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    stray = fake_camera.press_shutter()
+    assert len(stray) == 1
+    r = await connected_client.post(C, json={"download": False})
+    names = [f["name"] for f in r.json()["camera_files"]]
+    assert len(names) == 1 and names[0] != stray[0].name
+
+
+async def test_stray_file_between_frames_is_not_part_of_a_frame(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    cam = app.state.camera_service
+    first = await cam.capture()
+    fake_camera.press_shutter()
+    second = await cam.capture()
+    assert len(first) == 1 and len(second) == 1 and first != second
+
+
+async def test_trigger_then_immediate_capture_and_trigger_in_live_view(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    await connected_client.post(f"{C}/trigger")
+    assert len(await app.state.camera_service.capture()) == 1
+    assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"
