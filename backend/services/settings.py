@@ -7,7 +7,9 @@ generically (``set_setting`` already publishes SETTING_CHANGED; this module does
 
 from __future__ import annotations
 
+import difflib
 import math
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -108,19 +110,91 @@ def _is_num(v: object) -> bool:
     return isinstance(v, int | float) and not isinstance(v, bool)
 
 
+_FRACTION = re.compile(r"^(-?\d+(?:\.\d+)?)/(\d+(?:\.\d+)?)$")
+
+
+def _parse_num(v: object) -> float | None:
+    """Number inside values like "+1", "f/2.8", "1/250", "0.0040s", "-0.667"; else None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int | float):
+        return float(v)
+    if not isinstance(v, str):
+        return None
+    t = v.strip().lower().replace(" ", "")
+    if t.startswith(("f/", "f")):
+        t = t[2:] if t.startswith("f/") else t[1:]
+    t = t.removeprefix("+").removesuffix("s")
+    m = _FRACTION.match(t)
+    try:
+        if m:
+            den = float(m.group(2))
+            return float(m.group(1)) / den if den else None
+        n = float(t)
+    except ValueError:
+        return None
+    return n if math.isfinite(n) else None
+
+
+def _nearby(widget: ConfigWidget, value: object, limit: int = 5) -> list[str]:
+    n = _parse_num(value)
+    if n is not None:
+        scored = [(abs(p - n), c) for c in widget.choices if (p := _parse_num(c)) is not None]
+        if scored:
+            return [c for _, c in sorted(scored)[:limit]]
+    return difflib.get_close_matches(str(value), widget.choices, n=limit, cutoff=0.0)
+
+
+def _numeric_matches(widget: ConfigWidget, n: float) -> list[str]:
+    """Choices numerically equal to ``n``. Integers must match exactly (ISO 999 is not 1000);
+    a non-integer only bridges rounding: the nearest choice within 5% that is also closer than
+    half the gap to the next-nearest choice (a midway value is ambiguous, so no match)."""
+    nums = [(p, c) for c in widget.choices if (p := _parse_num(c)) is not None]
+    if n.is_integer():
+        return [c for p, c in nums if math.isclose(p, n, rel_tol=0, abs_tol=1e-9)]
+    nums.sort(key=lambda pc: abs(pc[0] - n))
+    if not nums:
+        return []
+    d1 = abs(nums[0][0] - n)
+    if d1 > 0.05 * max(abs(n), abs(nums[0][0])):
+        return []
+    if len(nums) > 1 and not d1 < abs(nums[0][0] - nums[1][0]) / 2:
+        return []  # ambiguous (duplicates, or midway between two choices)
+    return [nums[0][1]]
+
+
+def _match_choice(widget: ConfigWidget, value: object) -> str:
+    """The camera's canonical choice string for ``value``: exact, then numeric equality within
+    a small tolerance ("+1" == "1", "2.8" == "f/2.8", "1/250" == "0.0040s"), then
+    case-insensitive. Ambiguous or no match raises SettingInvalid listing nearby choices."""
+    choices = widget.choices
+    cands = [str(value)]
+    if isinstance(value, float) and value.is_integer():
+        cands.append(str(int(value)))
+    for c in cands:
+        if c in choices:
+            return c
+    found: list[str] = []
+    n = _parse_num(value)
+    if n is not None:
+        found = _numeric_matches(widget, n)
+    if not found:
+        low = str(value).strip().lower()
+        found = [c for c in choices if c.lower() == low]
+    if len(found) == 1:
+        return found[0]
+    err = _fail(widget, value, "ambiguous" if found else "not one of the available choices")
+    err.details["nearby"] = found or _nearby(widget, value)
+    raise err
+
+
 def validate_value(widget: ConfigWidget, value: object) -> SettingValue:
     """Check ``value`` against the widget type and return the normalised value to send."""
     t = widget.type
     if t in (ConfigType.RADIO, ConfigType.MENU):
         if isinstance(value, bool) or not isinstance(value, str | int | float):
             raise _fail(widget, value, "string or number required")
-        cands = [str(value)]
-        if isinstance(value, float) and value.is_integer():
-            cands.append(str(int(value)))
-        for c in cands:
-            if c in widget.choices:
-                return c
-        raise _fail(widget, value, "not one of the available choices")
+        return _match_choice(widget, value)
     if t is ConfigType.RANGE:
         if not _is_num(value):
             raise _fail(widget, value, "number required")
@@ -204,6 +278,15 @@ class SettingsService:
     async def get(self, name: str) -> SettingView:
         return self._view(await self._cam.get_setting(resolve_name(name)))
 
+    async def refresh(self, group: Literal["common", "all"] = "common") -> list[SettingView]:
+        """Drop the settings cache and re-read the full config tree from the camera."""
+        self._cam.invalidate_settings()
+        leaves = self._leaves(await self._cam.list_settings(refresh=True))
+        if group == "all":
+            return [self._view(w) for w in leaves]
+        by_name = {w.name: w for w in leaves}
+        return [self._view(by_name[n]) for n in COMMON if n in by_name]
+
     # writes ---------------------------------------------------------------------------
     async def prepare(self, name: str, value: object) -> tuple[str, SettingValue]:
         wname = resolve_name(name)
@@ -266,10 +349,9 @@ class SettingsService:
     # snapshot / restore ----------------------------------------------------------------
     async def snapshot(self, names: list[str] | tuple[str, ...]) -> dict[str, SettingValue]:
         """The camera's CURRENT values (fresh read, not the cache), keyed by widget name."""
-        await self._cam.list_settings(refresh=True)
         out: dict[str, SettingValue] = {}
-        for n in names:
-            w = await self._cam.get_setting(resolve_name(n))
+        for n in names:  # one get_config per widget; never the whole tree
+            w = await self._cam.refresh_setting(resolve_name(n))
             if w.value is None:
                 raise SettingNotFound(f"Setting {w.name!r} has no value", details={"name": w.name})
             out[w.name] = w.value

@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from backend import __version__
 from backend.api.errors import install_error_handlers
 from backend.api.v1 import api_router
+from backend.api.v1.sessions import build_sessions_service
 from backend.camera.backend import CameraBackend
 from backend.core import paths
 from backend.core.camera_service import CameraService
@@ -24,6 +25,7 @@ from backend.core.config_store import AppConfig, ConfigStore
 from backend.core.events import EventBus
 from backend.core.jobs import JobManager
 from backend.core.registry import ServiceRegistry
+from backend.services.storage import cleanup_stale
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +115,13 @@ def create_app(
         app.state.camera_service = service
         registry = ServiceRegistry()
         app.state.services = registry
+        try:  # startup housekeeping off the event loop; never blocks startup on failure
+            await asyncio.to_thread(cleanup_stale, data, output)
+            if (output / "sessions").is_dir():  # nothing to recover otherwise
+                sessions = registry.get("sessions", lambda: build_sessions_service(app.state))
+                await asyncio.to_thread(sessions.recover_interrupted)
+        except Exception:
+            log.exception("startup cleanup failed")
         await service.start()
         bg: set[asyncio.Task[Any]] = set()
 

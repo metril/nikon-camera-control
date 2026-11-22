@@ -14,7 +14,9 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -35,6 +37,7 @@ log = logging.getLogger(__name__)
 _MAX_DEPTH = 8
 _LIST_TIMEOUT_S = 30.0
 _READ_TIMEOUT_S = 600.0
+_TMP_MAX_AGE_S = 3600.0  # single-file download temp dirs older than this are removed
 _NAME_CAP = 50  # max file names echoed in a job result
 _INVALIDATING = frozenset(
     {
@@ -84,40 +87,78 @@ _Key = tuple[str, str, int, float]
 
 
 class DownloadLedger:
-    """Persistent set of downloaded files keyed by (folder, name, size, mtime)."""
+    """Persistent set of downloaded files keyed by (folder, name, size, mtime).
+
+    Stored as append-only JSONL (one ``[folder, name, size, mtime]`` line per file), so
+    recording a download is O(1) on disk; lookups are O(1) in memory. A torn last line is
+    ignored (and repaired by the next append). A legacy ``downloaded.json`` next to the
+    ledger is migrated on first load.
+    """
 
     def __init__(self, path: Path) -> None:
         self._path = path
+        self._legacy = path.with_suffix(".json")
         self._keys: set[_Key] | None = None
 
-    def _load(self) -> set[_Key]:
-        if self._keys is None:
-            keys: set[_Key] = set()
-            try:
-                raw = json.loads(self._path.read_text())
-                for f, n, s, m in raw.get("entries", []):
-                    keys.add((str(f), str(n), int(s), float(m)))
-            except FileNotFoundError:
-                pass
-            except (ValueError, TypeError, AttributeError, OSError):
-                log.warning("download ledger %s unreadable; starting empty", self._path)
-            self._keys = keys
-        return self._keys
+    @staticmethod
+    def _parse(raw: Any) -> _Key:
+        f, n, s, m = raw
+        return (str(f), str(n), int(s), float(m))
 
-    def _save(self) -> None:
-        data = json.dumps({"version": 1, "entries": [list(k) for k in sorted(self._load())]})
+    def _load(self) -> set[_Key]:
+        if self._keys is not None:
+            return self._keys
+        keys: set[_Key] = set()
+        try:
+            with open(self._path, "rb") as fh:
+                for line in fh:
+                    try:
+                        keys.add(self._parse(json.loads(line)))
+                    except (ValueError, TypeError):
+                        log.warning("skipping unreadable line in download ledger %s", self._path)
+        except FileNotFoundError:
+            self._migrate_legacy(keys)
+        except OSError:
+            log.warning("download ledger %s unreadable; starting empty", self._path)
+        self._keys = keys
+        return keys
+
+    def _migrate_legacy(self, keys: set[_Key]) -> None:
+        if self._legacy == self._path:
+            return
+        try:
+            raw = json.loads(self._legacy.read_text())
+            entries = [self._parse(e) for e in raw.get("entries", [])]
+        except FileNotFoundError:
+            return
+        except (ValueError, TypeError, AttributeError, OSError):
+            log.warning("legacy download ledger %s unreadable; ignoring", self._legacy)
+            return
+        keys.update(entries)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=".downloaded-", suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as fh:
-                fh.write(data)
+                for k in sorted(keys):
+                    fh.write(json.dumps(list(k)) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp, self._path)
-        except BaseException:
+            self._legacy.rename(self._legacy.with_name(self._legacy.name + ".migrated"))
+        except OSError:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            raise
+            log.warning("could not migrate legacy download ledger %s", self._legacy)
+
+    def _append(self, key: _Key) -> None:
+        line = json.dumps(list(key)).encode() + b"\n"
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._path, "ab+") as fh:
+            if fh.tell() > 0:
+                fh.seek(-1, os.SEEK_END)
+                if fh.read(1) != b"\n":
+                    line = b"\n" + line  # repair a torn last line
+            fh.write(line)
 
     @staticmethod
     def key(info: CameraFileInfo) -> _Key:
@@ -132,8 +173,11 @@ class DownloadLedger:
 
     async def add(self, info: CameraFileInfo) -> None:
         def _do() -> None:
-            self._load().add(self.key(info))
-            self._save()
+            keys = self._load()
+            k = self.key(info)
+            if k not in keys:
+                self._append(k)
+                keys.add(k)
 
         await asyncio.to_thread(_do)
 
@@ -164,7 +208,7 @@ class CameraFilesService:
         self._jobs = jobs
         self._data_dir = data_dir
         self._dest = output_dir / "camera"
-        self._ledger = DownloadLedger(data_dir / "downloaded.json")
+        self._ledger = DownloadLedger(data_dir / "downloaded.jsonl")
         self._cache = _Cache()
         self._sub: Subscription | None = None
         self._task: asyncio.Task[None] | None = None
@@ -256,6 +300,7 @@ class CameraFilesService:
 
         def _mk() -> Path:
             tmp_root.mkdir(parents=True, exist_ok=True)
+            _sweep_stale_dirs(tmp_root, _TMP_MAX_AGE_S)  # leftovers of dropped downloads
             return Path(tempfile.mkdtemp(dir=tmp_root))
 
         tmp_dir = await asyncio.to_thread(_mk)
@@ -344,6 +389,12 @@ class CameraFilesService:
 
 
 def _rm(path: Path) -> None:
-    import shutil
-
     shutil.rmtree(path, ignore_errors=True)
+
+
+def _sweep_stale_dirs(root: Path, max_age_s: float) -> None:
+    cutoff = time.time() - max_age_s
+    for d in root.iterdir():
+        with contextlib.suppress(OSError):
+            if d.is_dir() and d.stat().st_mtime < cutoff:
+                shutil.rmtree(d, ignore_errors=True)

@@ -16,6 +16,7 @@ import contextlib
 import logging
 import os
 import shutil
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -191,12 +192,17 @@ def _image_size(path: Path) -> tuple[int, int]:
         return im.size
 
 
-def prepare_sequence(frames: list[Path], seq_dir: Path) -> int:
+def prepare_sequence(
+    frames: list[Path], seq_dir: Path, cancel: threading.Event | None = None
+) -> int:
     """Link (or copy) / convert ``frames`` to ``seq_dir/000001.jpg ...``. Returns the count
-    of frames written; unreadable frames are skipped (numbering stays gapless)."""
+    of frames written; unreadable frames are skipped (numbering stays gapless). Stops early
+    once ``cancel`` is set (checked before every frame)."""
     seq_dir.mkdir(parents=True, exist_ok=True)
     n = 0
     for src in frames:
+        if cancel is not None and cancel.is_set():
+            break
         dest = seq_dir / f"{n + 1:06d}.jpg"
         try:
             if src.suffix.lower() in JPEG_EXTS:
@@ -212,6 +218,16 @@ def prepare_sequence(frames: list[Path], seq_dir: Path) -> int:
             continue
         n += 1
     return n
+
+
+def _reserve_output(videos_dir: Path, name: str, session_id: str) -> Path:
+    """Create ``videos_dir`` (never its parents: a deleted session must stay deleted) and
+    reserve a fresh output file in it."""
+    try:
+        videos_dir.mkdir(exist_ok=True)
+    except FileNotFoundError:
+        raise SessionNotFound(details={"id": session_id}) from None
+    return unique_path(videos_dir, name)
 
 
 class VideoService:
@@ -321,17 +337,41 @@ class VideoService:
         opts: RenderOptions,
         name: str,
     ) -> dict[str, Any]:
+        # hold: the session cannot be deleted while its folder is being rendered into
+        with self._sessions.hold(session_id):
+            return await self._render_held(ctx, ffmpeg, session_id, frames, opts, name)
+
+    async def _render_held(
+        self,
+        ctx: JobContext,
+        ffmpeg: str,
+        session_id: str,
+        frames: list[Path],
+        opts: RenderOptions,
+        name: str,
+    ) -> dict[str, Any]:
         work = self._tmp_root / uuid.uuid4().hex
         final: Path | None = None
         part: Path | None = None
         ok = False
+        cancel = threading.Event()
         try:
             ctx.report(0.0, "Preparing frames")
-            count = await asyncio.to_thread(prepare_sequence, frames, work)
+            prep = asyncio.ensure_future(asyncio.to_thread(prepare_sequence, frames, work, cancel))
+            try:
+                count = await asyncio.shield(prep)
+            except BaseException:
+                # the worker thread cannot be interrupted: stop it and wait for it to
+                # finish before the work dir is removed
+                cancel.set()
+                await asyncio.wait({prep})
+                if prep.done() and not prep.cancelled():
+                    prep.exception()  # mark retrieved
+                raise
             if count == 0:
                 raise InvalidState("None of the session's frames could be read")
             videos_dir = self._sessions.folder(session_id) / "videos"
-            final = await asyncio.to_thread(unique_path, videos_dir, name)
+            final = await asyncio.to_thread(_reserve_output, videos_dir, name, session_id)
             part = final.with_name(f"{final.stem}.part{final.suffix}")
             dims = target_size(
                 await asyncio.to_thread(_image_size, work / "000001.jpg"), opts.resolution

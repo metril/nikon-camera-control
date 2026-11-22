@@ -1863,11 +1863,12 @@
                 "type": "string"
               },
               {
+                "minimum": 0.0,
                 "type": "integer"
               }
             ],
             "default": "middle",
-            "description": "Which shot of each bracket set to use: middle, first, last or a step index.",
+            "description": "Which shot of each bracket set to use: middle, first, last or a zero-based step index (>= 0; an index past the end of a set uses its last shot).",
             "title": "Bracket Frame"
           },
           "codec": {
@@ -2760,6 +2761,12 @@
             },
             "title": "Resolved Steps",
             "type": "array"
+          },
+          "validated": {
+            "default": false,
+            "description": "True when every step was resolved against the connected camera's choices. False for a configuration made offline; start re-validates before the first shot.",
+            "title": "Validated",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2898,6 +2905,18 @@
               }
             ]
           },
+          "measured_set_duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rolling average of the real duration of one shot set.",
+            "title": "Measured Set Duration S"
+          },
           "paused_reason": {
             "anyOf": [
               {
@@ -2929,6 +2948,12 @@
           },
           "timing": {
             "$ref": "#/components/schemas/Timing"
+          },
+          "validated": {
+            "default": false,
+            "description": "The configuration was resolved against a connected camera.",
+            "title": "Validated",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3706,7 +3731,7 @@
         ],
         "summary": "List Camera Files",
         "tags": [
-          "camera files"
+          "camera-files"
         ]
       }
     },
@@ -3802,7 +3827,7 @@
         ],
         "summary": "Download All Camera Files",
         "tags": [
-          "camera files"
+          "camera-files"
         ]
       }
     },
@@ -3909,7 +3934,7 @@
         ],
         "summary": "Delete Camera File",
         "tags": [
-          "camera files"
+          "camera-files"
         ]
       },
       "get": {
@@ -3937,9 +3962,14 @@
         "responses": {
           "200": {
             "content": {
-              "application/octet-stream": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
             },
-            "description": "Successful Response"
+            "description": "The file from the card"
           },
           "401": {
             "content": {
@@ -4009,7 +4039,7 @@
         ],
         "summary": "Download Camera File",
         "tags": [
-          "camera files"
+          "camera-files"
         ]
       }
     },
@@ -4107,7 +4137,7 @@
         ],
         "summary": "List Camera Folders",
         "tags": [
-          "camera files"
+          "camera-files"
         ]
       }
     },
@@ -5254,9 +5284,14 @@
         "responses": {
           "200": {
             "content": {
-              "application/octet-stream": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
             },
-            "description": "Successful Response"
+            "description": "The file content"
           },
           "401": {
             "content": {
@@ -6932,6 +6967,113 @@
         ]
       }
     },
+    "/api/v1/settings/refresh": {
+      "post": {
+        "description": "Re-read every setting from the camera, bypassing the cache (slow on a real body).",
+        "operationId": "refresh_settings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "default": "common",
+              "enum": [
+                "common",
+                "all"
+              ],
+              "title": "Group",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SettingOut"
+                  },
+                  "title": "Response Refresh Settings",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Refresh Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/settings/{name}": {
       "get": {
         "operationId": "get_setting",
@@ -7172,9 +7314,14 @@
         "responses": {
           "200": {
             "content": {
-              "image/jpeg": {}
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
             },
-            "description": "Successful Response"
+            "description": "JPEG thumbnail"
           },
           "401": {
             "content": {
@@ -8204,9 +8351,14 @@
         "responses": {
           "200": {
             "content": {
-              "video/*": {}
+              "video/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
             },
-            "description": "Successful Response"
+            "description": "The video file"
           },
           "401": {
             "content": {

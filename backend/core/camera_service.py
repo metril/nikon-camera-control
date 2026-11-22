@@ -52,12 +52,13 @@ import contextlib
 import enum
 import functools
 import itertools
+import logging
 import queue
 import threading
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, TypeVar, cast
 
@@ -84,7 +85,27 @@ from backend.core.state import CameraState, can_transition
 
 T = TypeVar("T")
 
+log = logging.getLogger(__name__)
+
 _S = CameraState
+
+# Widgets whose change can alter OTHER widgets' choices/values on a real body (exposure program
+# changes the usable aperture/shutter, image quality the size options, ...). ``set_setting`` drops
+# the whole settings cache after writing one of these; any other write updates just that widget.
+MODE_LIKE_SETTINGS: frozenset[str] = frozenset(
+    {
+        "expprogram",
+        "autoexposuremode",
+        "capturemode",
+        "drivemode",
+        "focusmode",
+        "focusmode2",
+        "imagequality",
+        "imagesize",
+        "liveviewsize",
+        "flashmode",
+    }
+)
 _LIVE_STATES = frozenset({_S.IDLE, _S.LIVEVIEW, _S.CAPTURING, _S.RECORDING, _S.BULB, _S.BUSY})
 _KEEPALIVE_STATES = frozenset({_S.IDLE, _S.BUSY})
 _KEEPALIVE_FAILURES = 3
@@ -428,8 +449,20 @@ class CameraService:
         return datetime.fromtimestamp(time.time() - (time.monotonic() - self._last_activity), UTC)
 
     async def transition(self, to: CameraState) -> CameraState:
-        """Validated state change (see class docstring). Returns the previous state."""
-        return self._set_state(to)
+        """Validated state change (see class docstring). Returns the previous state.
+
+        Leaving LIVEVIEW for IDLE also switches the camera's viewfinder off (best effort, at
+        CONTROL priority and regardless of any lease: it only undoes our own preview)."""
+        prev = self._set_state(to)
+        if prev == _S.LIVEVIEW and to == _S.IDLE:
+            await self._end_preview()
+        return prev
+
+    async def _end_preview(self) -> None:
+        try:
+            await self._run(lambda b: b.end_preview(), Priority.CONTROL, 10.0)
+        except AppError as e:
+            log.debug("end_preview failed: %s", e)
 
     # state machine (the only writers of self._state) -----------------------------
     def _set_state(self, to: CameraState) -> CameraState:
@@ -655,6 +688,27 @@ class CameraService:
         self._settings_tree = None
         self._settings_map = {}
 
+    def invalidate_settings(self) -> None:
+        """Drop the whole settings cache (next read re-fetches the config tree)."""
+        self._invalidate_cache()
+
+    def _store_widget(self, widget: ConfigWidget) -> None:
+        """Update one widget in the cache (map and tree) without refetching the tree."""
+        self._cache_epoch += 1  # reads in flight started before this must not overwrite it
+        if self._settings_tree is None:
+            return
+        self._settings_map[widget.name] = widget
+
+        def swap(ws: tuple[ConfigWidget, ...] | list[ConfigWidget]) -> list[ConfigWidget]:
+            return [
+                widget
+                if w.name == widget.name and w.type != ConfigType.SECTION
+                else (replace(w, children=tuple(swap(w.children))) if w.children else w)
+                for w in ws
+            ]
+
+        self._settings_tree = swap(self._settings_tree)
+
     @staticmethod
     def _flatten(widgets: list[ConfigWidget] | tuple[ConfigWidget, ...]) -> dict[str, ConfigWidget]:
         out: dict[str, ConfigWidget] = {}
@@ -690,11 +744,19 @@ class CameraService:
             self._settings_map[name] = widget
         return widget
 
+    async def refresh_setting(self, name: str) -> ConfigWidget:
+        """Fresh single-widget read from the camera (one ``get_config``), cache updated."""
+        widget = await self._run(lambda b: b.get_config(name), Priority.CONTROL, 30.0)
+        self._store_widget(widget)
+        return widget
+
     async def set_setting(
         self, name: str, value: str | int | float | bool, *, owner: str | None = None
     ) -> ConfigWidget:
-        """Set a widget, invalidate the cache, publish SETTING_CHANGED, and return the
-        re-read widget. ``owner`` is the lease holder, if any."""
+        """Set a widget, publish SETTING_CHANGED, and return the re-read widget. ``owner`` is
+        the lease holder, if any. Only that widget is updated in the cache, except for the
+        ``MODE_LIKE_SETTINGS`` whose change can alter other widgets' choices: those drop the
+        whole cache."""
         self._check_lease(Priority.CONTROL, owner)
 
         def _set(b: CameraBackend) -> ConfigWidget:
@@ -702,7 +764,10 @@ class CameraService:
             return b.get_config(name)
 
         widget = await self._run(_set, Priority.CONTROL, 30.0)
-        self._invalidate_cache()
+        if name in MODE_LIKE_SETTINGS:
+            self._invalidate_cache()
+        else:
+            self._store_widget(widget)
         self._bus.publish(EventType.SETTING_CHANGED, {"name": name, "value": widget.value})
         return widget
 
@@ -727,6 +792,7 @@ class CameraService:
 
         def _do(b: CameraBackend) -> list[CameraFilePath]:
             files = [b.capture()]
+            b.invalidate_preview()  # a capture may drop the body out of live view
             deadline = last = time.monotonic()
             deadline += t
             while True:
@@ -766,10 +832,17 @@ class CameraService:
             raise CameraNotConnected()
         item = self._preview_item
         if item is None or item.fut is None or item.fut.done():
-            item = worker.submit(lambda w: w.require().capture_preview(), Priority.PREVIEW)
+            item = worker.submit(self._preview_job, Priority.PREVIEW)
             self._preview_item = item
             item.fut.add_done_callback(functools.partial(self._clear_preview_cb, item))
         return cast("bytes", await self._finish(worker, item, _PREVIEW_TIMEOUT_S))
+
+    def _preview_job(self, w: _Worker) -> bytes:
+        # Runs on the worker thread. A frame queued before live view ended must not run after
+        # end_preview (it would switch the viewfinder back on): state is already left by then.
+        if self._state != _S.LIVEVIEW:
+            raise InvalidState("Live view is not active")
+        return w.require().capture_preview()
 
     def _clear_preview_cb(self, item: _Item, _fut: object) -> None:
         if self._preview_item is item:

@@ -7,6 +7,8 @@ import contextlib
 import logging
 import os
 import re
+import shutil
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
@@ -134,3 +136,42 @@ async def download_files(
             except Exception:
                 log.warning("could not delete %s/%s from camera", f.folder, f.name, exc_info=True)
     return out
+
+
+STALE_PART_AGE_S = 3600.0
+_PART_SCAN_DEPTH = 4  # output/sessions/<id>/videos/x.part
+
+
+def _sweep_parts(root: Path, cutoff: float, depth: int) -> None:
+    try:
+        entries = list(os.scandir(root))
+    except OSError:
+        return
+    for e in entries:
+        try:
+            if e.is_dir(follow_symlinks=False):
+                if depth > 0:
+                    _sweep_parts(Path(e.path), cutoff, depth - 1)
+            elif e.name.endswith(".part") or ".part." in e.name:
+                if e.stat(follow_symlinks=False).st_mtime < cutoff:
+                    os.unlink(e.path)
+        except OSError:
+            continue
+
+
+def cleanup_stale(
+    data_dir: Path, output_dir: Path, *, part_max_age_s: float = STALE_PART_AGE_S
+) -> None:
+    """Startup housekeeping (blocking; run in a thread): empty ``<data>/tmp`` and
+    ``<data>/video-tmp`` (nothing survives a restart) and delete ``*.part`` files under the
+    output dir older than ``part_max_age_s`` (leftovers of interrupted downloads/renders)."""
+    for name in ("tmp", "video-tmp"):
+        d = data_dir / name
+        if d.is_dir():
+            for child in d.iterdir():
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    with contextlib.suppress(OSError):
+                        child.unlink()
+    _sweep_parts(output_dir, time.time() - part_max_age_s, _PART_SCAN_DEPTH)

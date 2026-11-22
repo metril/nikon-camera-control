@@ -384,3 +384,48 @@ def test_real_camera(request: pytest.FixtureRequest) -> None:
         assert b.storage_info() is not None
     finally:
         b.close()
+
+
+def test_end_preview_clears_viewfinder_and_flag() -> None:
+    vf = StubWidget("viewfinder", gp.GP_WIDGET_TOGGLE, 1)
+    root = StubWidget(
+        "main",
+        gp.GP_WIDGET_WINDOW,
+        children=(StubWidget("actions", gp.GP_WIDGET_SECTION, children=(vf,)),),
+    )
+    cam = FakeCamera(root)
+    b = _backend(cam)
+    b._viewfinder_on = True
+    b.end_preview()
+    assert cam.set_calls == [("viewfinder", 0)] and not b._viewfinder_on
+
+
+def test_end_preview_without_viewfinder_widget_is_quiet_and_resets_flag() -> None:
+    b = _backend(FakeCamera(_root()))
+    b._viewfinder_on = True
+    b.end_preview()  # no "viewfinder" widget on this body
+    assert not b._viewfinder_on
+
+
+def test_invalidate_preview_makes_next_preview_reenable() -> None:
+    vf = StubWidget("viewfinder", gp.GP_WIDGET_TOGGLE, 0)
+    root = StubWidget(
+        "main",
+        gp.GP_WIDGET_WINDOW,
+        children=(StubWidget("actions", gp.GP_WIDGET_SECTION, children=(vf,)),),
+    )
+
+    class Cam(FakeCamera):
+        def capture_preview(self) -> Any:
+            class F:
+                def get_data_and_size(self) -> bytes:
+                    return b"j"
+
+            return F()
+
+    c2 = Cam(root)
+    b = _backend(c2)
+    b.capture_preview()
+    b.invalidate_preview()
+    b.capture_preview()
+    assert [n for n, _ in c2.set_calls] == ["viewfinder", "viewfinder"]

@@ -36,6 +36,7 @@ from backend.core.errors import (
     CameraIOError,
     CameraNotConnected,
     CameraNotFound,
+    CameraOperationFailed,
     FileNotFoundError_,
     SettingInvalid,
     SettingNotAllowed,
@@ -54,6 +55,7 @@ OPS = frozenset(
         "capture",
         "trigger",
         "capture_preview",
+        "end_preview",
         "wait_for_event",
         "list_folders",
         "list_files",
@@ -76,11 +78,8 @@ _BASE_TIME = 1_700_000_000.0
 
 
 def _fmt_comp(thirds: int) -> str:
-    v = thirds / 3
-    if thirds == 0:
-        return "0"
-    s = f"{abs(v):.1f}".rstrip("0").rstrip(".")
-    return ("+" if v > 0 else "-") + s
+    """libgphoto2 (ptp2) style: unsigned positives, "%.3g" of the EV ("0.333", "-0.667", "1.33")."""
+    return "0" if thirds == 0 else f"{thirds / 3:.3g}"
 
 
 _SHUTTER = [
@@ -317,10 +316,16 @@ class FakeCamera:
         start_counter: int = 1,
         capacity_kb: int = 8192,
         emit_capture_complete: bool = False,
+        capture_exits_liveview: bool = True,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
-        Default False mirrors real PTP bodies, where capture() usually consumes it."""
+        Default False mirrors real PTP bodies, where capture() usually consumes it.
+        ``capture_exits_liveview``: a capture turns the viewfinder off (suspected real D500
+        behaviour; NEEDS A REAL D500 CHECK). The fake then needs ``invalidate_preview`` +
+        re-enable before the next preview, exactly like ``Gphoto2Backend``."""
         self._emit_complete = emit_capture_complete
+        self._capture_exits_lv = capture_exits_liveview
+        self._pv_flag = False  # mirrors Gphoto2Backend._viewfinder_on
         self._rng = random.Random(seed)  # noqa: S311
         self._specs = {s.name: s for s in _specs()}
         self._values: dict[str, str | int | float | bool] = {
@@ -426,9 +431,11 @@ class FakeCamera:
     def open(self) -> None:
         self._enter("open")
         self._open = True
+        self._pv_flag = False
 
     def close(self) -> None:
         self._open = False
+        self._pv_flag = False
 
     def summary(self) -> str:
         self._enter("summary")
@@ -619,6 +626,8 @@ class FakeCamera:
                     f"DSC_{n:04d}.JPG", _File(jpg, jpg, self._stamp(), "image/jpeg", w, h)
                 )
             )
+        if self._capture_exits_lv:
+            self._values["viewfinder"] = False
         if self._emit_complete:
             with self._cond:
                 self._events.append(CameraEvent(EventType.CAPTURE_COMPLETE))
@@ -635,9 +644,32 @@ class FakeCamera:
 
     def capture_preview(self) -> bytes:
         self._enter("capture_preview")
-        self._values["viewfinder"] = True  # real D500 auto-starts live view
+        if not self._pv_flag:  # same lazy enable as Gphoto2Backend
+            self._count("enable_viewfinder")
+            self._values["viewfinder"] = True
+            self._pv_flag = True
+        if not self._values["viewfinder"]:
+            raise CameraOperationFailed("Camera is not in live view")
         self._preview_n += 1
         return _jpeg([f"LIVE {self._preview_n}"], self._rng)
+
+    def end_preview(self) -> None:
+        self._enter("end_preview")
+        self._values["viewfinder"] = False
+        self._pv_flag = False
+
+    def invalidate_preview(self) -> None:
+        self._count("invalidate_preview")
+        self._pv_flag = False
+
+    @property
+    def viewfinder_on(self) -> bool:
+        """Current state of the fake's viewfinder widget (for tests)."""
+        return bool(self._values["viewfinder"])
+
+    def _count(self, key: str) -> None:
+        with self._flock:
+            self._faults.calls[key] = self._faults.calls.get(key, 0) + 1
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
         self._enter("wait_for_event")

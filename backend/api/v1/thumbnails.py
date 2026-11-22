@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 
 from backend.api.errors import ERROR_RESPONSES
+from backend.api.schemas.files import binary_response
 from backend.api.v1.files import FilesDep
 from backend.core.security import require_api_key
 
@@ -23,7 +24,7 @@ router = APIRouter(
     "/{path:path}",
     operation_id="get_thumbnail",
     response_class=FileResponse,
-    responses={200: {"content": {"image/jpeg": {}}}},
+    responses=binary_response("image/jpeg", "JPEG thumbnail"),
 )
 async def get_thumbnail(
     path: str,

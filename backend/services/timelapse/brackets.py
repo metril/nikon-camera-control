@@ -18,8 +18,10 @@ from backend.core.errors import ConfigInvalid
 from backend.services.settings import resolve_name
 
 # Time model used for the minimum interval of a bracket set.
+# D500-UNVERIFIED: these are estimates, not measurements from a real body. The runner measures
+# the real set duration and warns once if it exceeds the interval (``interval_too_short``).
 SHOT_ESTIMATE_S = 1.0  # capture + download of one frame
-SETTLE_S = 0.3  # wait after applying a step's settings
+SETTLE_S = 0.3  # wait after applying a step's settings (also used by the runner)
 RESTORE_S = 0.5  # restoring the original values after the set
 
 
@@ -27,8 +29,14 @@ def _step(name: str, value: str, label: str) -> BracketStep:
     return BracketStep(settings={name: value}, label=label)
 
 
+def _ev_label(v: str) -> str:
+    return f"{float(v):+g} EV" if float(v) else "0 EV"
+
+
 def _ev(values: list[str]) -> list[BracketStep]:
-    return [_step("exposurecompensation", v, f"{v} EV") for v in values]
+    # Values are camera-neutral decimals ("1", "-0.667"); they are resolved to the camera's
+    # own choice strings through ``SettingsService.prepare`` before any shot is taken.
+    return [_step("exposurecompensation", v, _ev_label(v)) for v in values]
 
 
 def _iso(values: list[str]) -> list[BracketStep]:
@@ -74,21 +82,24 @@ def _p(name: str, description: str, steps: list[BracketStep]) -> tuple[str, Pres
     return name, PresetOut(name=name, description=description, steps=steps)
 
 
-_EV5 = ["-2", "-1", "0", "+1", "+2"]
+_EV5 = ["-2", "-1", "0", "1", "2"]
 PRESETS: dict[str, PresetOut] = dict(
     [
-        _p("exposure_3", "3 shots, -2/0/+2 EV", _ev(["-2", "0", "+2"])),
+        _p("exposure_3", "3 shots, -2/0/+2 EV", _ev(["-2", "0", "2"])),
         _p("exposure_5", "5 shots, -2 to +2 EV", _ev(_EV5)),
-        _p("exposure_7", "7 shots, -3 to +3 EV", _ev(["-3", "-2", "-1", "0", "+1", "+2", "+3"])),
+        _p("exposure_7", "7 shots, -3 to +3 EV", _ev(["-3", "-2", "-1", "0", "1", "2", "3"])),
         _p("iso_3", "3 shots, ISO 200/800/3200", _iso(["200", "800", "3200"])),
-        _p("hdr_3shot", "HDR: -2/0/+2 EV", _ev(["-2", "0", "+2"])),
+        _p("hdr_3shot", "HDR: -2/0/+2 EV", _ev(["-2", "0", "2"])),
         _p("hdr_5shot", "HDR: -2 to +2 EV", _ev(_EV5)),
         _p(
             "hdr_iso_combo",
             "HDR plus a high-ISO frame",
             [
-                BracketStep(settings={"exposurecompensation": e, "iso": i}, label=f"{e}EV / ISO{i}")
-                for e, i in (("-2", "100"), ("0", "100"), ("+2", "100"), ("0", "800"))
+                BracketStep(
+                    settings={"exposurecompensation": e, "iso": i},
+                    label=f"{_ev_label(e)} / ISO {i}",
+                )
+                for e, i in (("-2", "100"), ("0", "100"), ("2", "100"), ("0", "800"))
             ],
         ),
         _p("astro_stack", "ISO 1600/3200/6400", _iso(["1600", "3200", "6400"])),

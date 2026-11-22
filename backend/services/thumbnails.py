@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import io
+import logging
+import mmap
 import os
+import struct
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageOps
 
 from backend.core.errors import FileNotFoundError_, UnsupportedMedia
 from backend.services.storage import classify
+
+log = logging.getLogger(__name__)
 
 MIN_SIZE = 64
 MAX_SIZE = 1024
@@ -29,39 +36,125 @@ def clamp_size(size: int) -> int:
     return max(MIN_SIZE, min(MAX_SIZE, size))
 
 
+_MAX_PREVIEW_BYTES = 64 * 1024 * 1024
+_MAX_SCAN_HITS = 64  # SOI markers examined by the byte scan
+_MAX_IFDS = 16
+_SOI = b"\xff\xd8\xff"
+_TYPE_SIZE = {3: 2, 4: 4}  # SHORT, LONG: the only types of the tags we read
+
+
+class _Window(io.RawIOBase):
+    """Read-only view of ``buf[start:]`` (an mmap or bytes) usable as a file by Pillow."""
+
+    def __init__(self, buf: mmap.mmap | bytes, start: int, end: int) -> None:
+        self._buf, self._start, self._end, self._pos = buf, start, end, start
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._pos - self._start
+
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        base = {os.SEEK_SET: self._start, os.SEEK_CUR: self._pos, os.SEEK_END: self._end}[whence]
+        self._pos = max(self._start, min(self._end, base + offset))
+        return self._pos - self._start
+
+    def readinto(self, b: Any) -> int:
+        n = min(len(b), self._end - self._pos)
+        b[:n] = self._buf[self._pos : self._pos + n]
+        self._pos += n
+        return n
+
+
+def _tiff_jpeg_ranges(buf: mmap.mmap | bytes) -> list[tuple[int, int]]:
+    """(offset, length) of JPEGs referenced by TIFF tags 0x0201/0x0202 in IFD0, IFD1 and
+    any SubIFD listed in tag 0x014A (parsed by hand: Pillow does not expose them for NEFs)."""
+    size = len(buf)
+    if size < 8 or bytes(buf[:2]) not in (b"II", b"MM"):
+        return []
+    end = "<" if bytes(buf[:2]) == b"II" else ">"
+    if struct.unpack_from(end + "H", buf, 2)[0] != 42:
+        return []
+    out: list[tuple[int, int]] = []
+    seen: set[int] = set()
+    todo = [struct.unpack_from(end + "I", buf, 4)[0]]
+    while todo and len(seen) < _MAX_IFDS:
+        off = todo.pop(0)
+        if off in seen or off < 8 or off + 2 > size:
+            continue
+        seen.add(off)
+        n = struct.unpack_from(end + "H", buf, off)[0]
+        if off + 2 + n * 12 + 4 > size:
+            continue
+        tags: dict[int, list[int]] = {}
+        for i in range(n):
+            tag, typ, count, val = struct.unpack_from(end + "HHI4s", buf, off + 2 + i * 12)
+            width = _TYPE_SIZE.get(typ)
+            if tag not in (_SUBIFDS, _JPEG_OFFSET, _JPEG_LENGTH) or width is None:
+                continue
+            count = min(count, 32)
+            code = "H" if typ == 3 else "I"
+            if width * count <= 4:
+                where = off + 2 + i * 12 + 8
+            else:
+                where = struct.unpack(end + "I", val)[0]
+                if where + width * count > size:
+                    continue
+            tags[tag] = list(struct.unpack_from(f"{end}{count}{code}", buf, where))
+        if _JPEG_OFFSET in tags and _JPEG_LENGTH in tags:
+            o, ln = tags[_JPEG_OFFSET][0], tags[_JPEG_LENGTH][0]
+            if 0 < ln <= _MAX_PREVIEW_BYTES and o + ln <= size:
+                out.append((o, ln))
+        todo += tags.get(_SUBIFDS, [])
+        todo.append(struct.unpack_from(end + "I", buf, off + 2 + n * 12)[0])  # next IFD
+    return out
+
+
+def _scan_jpeg_starts(buf: mmap.mmap | bytes) -> list[int]:
+    out: list[int] = []
+    pos = buf.find(_SOI)
+    while pos != -1 and len(out) < _MAX_SCAN_HITS:
+        out.append(pos)
+        pos = buf.find(_SOI, pos + 1)
+    return out
+
+
 def _embedded_preview(path: Path, im: Image.Image) -> Image.Image | None:
-    """Largest JPEG preview embedded in a TIFF-based RAW (SubIFDs / IFD1), else None."""
-    best: Image.Image | None = None
+    """Largest image among: JPEGs referenced by TIFF/SubIFD tags, JPEG streams found by a
+    bounded byte scan, and Pillow's own decode (``im``). Memory-safe: the file is mmapped and
+    only the winning candidate is decoded. Returns None if nothing beats failing outright."""
     try:
-        exif = im.getexif()
-        ifds = [exif.get_ifd(_SUBIFDS)] if _SUBIFDS in exif else []
-        ifds.append(exif.get_ifd(0x8769))
-        offsets: list[tuple[int, int]] = []
-        for ifd in ifds:
-            if isinstance(ifd, dict) and _JPEG_OFFSET in ifd and _JPEG_LENGTH in ifd:
-                offsets.append((int(ifd[_JPEG_OFFSET]), int(ifd[_JPEG_LENGTH])))
-        sub = exif.get(_SUBIFDS)
-        if isinstance(sub, tuple | list):
-            for off in sub:
-                d = exif.get_ifd(int(off)) if hasattr(exif, "get_ifd") else {}
-                if _JPEG_OFFSET in d and _JPEG_LENGTH in d:
-                    offsets.append((int(d[_JPEG_OFFSET]), int(d[_JPEG_LENGTH])))
-        with path.open("rb") as fh:
-            for off, length in offsets:
-                if length <= 0:
-                    continue
-                fh.seek(off)
-                data = fh.read(length)
+        with path.open("rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as buf:
+            spans: dict[int, int] = {}
+            with contextlib.suppress(Exception):  # malformed TIFF: fall through to the scan
+                for off, ln in _tiff_jpeg_ranges(buf):
+                    spans[off] = off + ln
+            for off in _scan_jpeg_starts(buf):
+                spans.setdefault(off, min(len(buf), off + _MAX_PREVIEW_BYTES))
+            cands: list[tuple[int, Image.Image]] = []
+            for off, stop in spans.items():
                 try:
-                    cand = Image.open(io.BytesIO(data))
-                    cand.load()
-                except Exception:  # noqa: S112 - corrupt candidate, try the next
+                    opened = Image.open(io.BufferedReader(_Window(buf, off, stop)))
+                    cands.append((opened.width * opened.height, opened))
+                except Exception:  # noqa: S112 - not a decodable JPEG, ignore
                     continue
-                if best is None or cand.width * cand.height > best.width * best.height:
-                    best = cand
+            cands.append((im.width * im.height, im))
+            cands.sort(key=lambda c: c[0], reverse=True)
+            for _, choice in cands:
+                try:
+                    choice.load()
+                except Exception:  # noqa: S112 - e.g. raw sensor data Pillow cannot decode
+                    continue
+                if choice is im:
+                    return None  # Pillow's own decode is the best available
+                return choice
     except Exception:
-        return best
-    return best
+        log.warning("embedded preview extraction failed for %s", path, exc_info=True)
+    return None
 
 
 def load_full_image(path: Path) -> Image.Image:

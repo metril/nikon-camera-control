@@ -72,3 +72,24 @@ def test_routes_document_error_envelope(spec: dict[str, Any]) -> None:
         if p not in OPEN_PATHS and not any(r.endswith("/ErrorResponse") for r in refs):
             bad.append(f"{m.upper()} {p}")
     assert bad == []
+
+
+# TODO: GET /api/v1/liveview/snapshot (liveview agent) still has an empty binary schema.
+KNOWN_UNTYPED_BINARY = {"/api/v1/liveview/snapshot"}
+
+
+def test_binary_200_responses_declare_a_binary_schema(spec: dict[str, Any]) -> None:
+    bad = []
+    for path, m, op in _ops(spec):
+        content = op["responses"].get("200", {}).get("content", {})
+        for mime, body in content.items():
+            if mime == "application/json" or path in KNOWN_UNTYPED_BINARY:
+                continue
+            if body.get("schema") != {"type": "string", "format": "binary"}:
+                bad.append(f"{m.upper()} {path} {mime}: {body}")
+    assert bad == []
+
+
+def test_camera_files_tag_is_kebab_case(spec: dict[str, Any]) -> None:
+    tags = {t for _, _, op in _ops(spec) for t in op.get("tags", [])}
+    assert "camera-files" in tags and "camera files" not in tags

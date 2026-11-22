@@ -17,6 +17,7 @@ from starlette.datastructures import State
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.common import Ok, Page
+from backend.api.schemas.files import binary_response
 from backend.api.schemas.jobs import JobOut
 from backend.api.schemas.videos import RenderRequest, VideoEntry
 from backend.api.v1.sessions import build_sessions_service
@@ -71,7 +72,7 @@ async def list_videos(
     "/videos/{session_id}/{name}",
     operation_id="download_video",
     response_class=FileResponse,
-    responses={200: {"content": {"video/*": {}}}},
+    responses=binary_response("video/*", "The video file"),
 )
 async def download_video(session_id: str, name: str, svc: VideosDep) -> FileResponse:
     """Stream the video; HTTP Range requests are supported."""

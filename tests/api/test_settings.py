@@ -64,7 +64,8 @@ async def test_put_invalid_values(
         ("iso", "999999"),
         ("iso", True),
         ("whitebalance", "Nope"),
-        ("f-number", 5.6),
+        ("f-number", 6.5),
+        ("exposurecompensation", "+9"),
     ]
     for name, val in bad:
         r = await connected_client.put(f"{S}/{name}", json={"value": val})
@@ -130,3 +131,12 @@ async def test_lease_blocks_writes_without_owner(
         r = await connected_client.put(f"{S}/iso", json={"value": "400"})
         assert r.status_code == 409 and r.json()["error"]["code"] == "CAMERA_BUSY"
         assert (await connected_client.get(f"{S}/iso")).status_code == 200  # reads allowed
+
+
+async def test_refresh_settings_route_rereads_tree(
+    connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    await connected_client.get(S)
+    n = fake_camera.calls["list_config"]
+    r = await connected_client.post(f"{S}/refresh")
+    assert r.status_code == 200 and fake_camera.calls["list_config"] == n + 1

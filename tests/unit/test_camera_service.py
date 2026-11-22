@@ -75,6 +75,8 @@ class StubBackend:
         self.list_calls = 0
         self.get_calls = 0
         self.preview_calls = 0
+        self.end_previews = 0
+        self.invalidations = 0
         self.entered = threading.Event()
         self.release = threading.Event()
         self.events: collections.deque[CameraEvent] = collections.deque()
@@ -136,6 +138,12 @@ class StubBackend:
     def capture_preview(self) -> bytes:
         self.preview_calls += 1
         return b"jpeg"
+
+    def end_preview(self) -> None:
+        self.end_previews += 1
+
+    def invalidate_preview(self) -> None:
+        self.invalidations += 1
 
     def summary(self) -> str:
         return "stub"
@@ -609,7 +617,12 @@ async def test_settings_cache_and_invalidation(env: Env) -> None:
     assert widget.value == "400"
     assert env.bus.of(EventType.SETTING_CHANGED) == [{"name": "iso", "value": "400"}]
     assert (await svc.get_setting("iso")).value == "400"
-    assert env.backend.list_calls == 3  # cache was invalidated by set_setting
+    assert env.backend.list_calls == 2  # one widget updated in place, no tree refetch
+    tree_iso = next(w for w in (await svc.list_settings())[0].children if w.name == "iso")
+    assert tree_iso.value == "400"  # the cached tree reflects the write too
+    await svc.set_setting("imagequality", "x")  # mode-like: may change other widgets' choices
+    await svc.get_setting("iso")
+    assert env.backend.list_calls == 3
     await svc.disconnect()
     await svc.connect()
     await svc.get_setting("iso")
@@ -668,3 +681,27 @@ async def test_capture_io_error_leaves_disconnected(env: Env) -> None:
     with pytest.raises(CameraIOError):
         await svc.capture(timeout=1)
     assert svc.state == S.DISCONNECTED
+
+
+async def test_refresh_setting_is_one_get_config_not_a_tree_read(env: Env) -> None:
+    svc = await env.make()
+    await svc.list_settings()
+    env.backend.values["iso"] = "800"  # changed on the camera body
+    assert (await svc.refresh_setting("iso")).value == "800"
+    assert (await svc.get_setting("iso")).value == "800"
+    assert env.backend.list_calls == 1
+
+
+async def test_leaving_liveview_for_idle_ends_preview_even_under_other_lease(env: Env) -> None:
+    svc = await env.make()
+    await svc.transition(S.LIVEVIEW)
+    async with svc.lease("timelapse"):
+        await svc.transition(S.IDLE)
+    assert env.backend.end_previews == 1
+
+
+async def test_capture_invalidates_preview_state_regression(env: Env) -> None:
+    svc = await env.make()
+    await svc.transition(S.LIVEVIEW)
+    await svc.capture(timeout=0.02)
+    assert env.backend.invalidations == 1 and svc.state == S.LIVEVIEW

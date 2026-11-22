@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import mimetypes
 import shutil
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
+from starlette.types import Receive, Scope, Send
 
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
@@ -19,6 +20,7 @@ from backend.api.schemas.camera_files import (
     FolderOut,
 )
 from backend.api.schemas.common import Ok, Page
+from backend.api.schemas.files import binary_response
 from backend.api.schemas.jobs import JobOut
 from backend.core.security import require_api_key
 from backend.services.camera_files import (
@@ -36,10 +38,26 @@ get_camera_files = service_dep(
 )
 FilesDep = Annotated[CameraFilesService, Depends(get_camera_files)]
 
+
+class _TempFileResponse(FileResponse):
+    """FileResponse that always removes its temp dir, even if the client disconnects
+    mid-stream (a plain BackgroundTask would not run then)."""
+
+    def __init__(self, path: Path, tmp_dir: Path, **kwargs: Any) -> None:
+        super().__init__(path, **kwargs)
+        self._tmp_dir = tmp_dir
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            shutil.rmtree(self._tmp_dir, ignore_errors=True)
+
+
 # Separate router object, same prefix as the status router; paths do not clash.
 router = APIRouter(
     prefix="/camera",
-    tags=["camera files"],
+    tags=["camera-files"],
     dependencies=[Depends(require_api_key)],
     responses=ERROR_RESPONSES,
 )
@@ -85,17 +103,17 @@ async def download_all_camera_files(body: DownloadAllRequest, svc: FilesDep) -> 
     "/files/{folder:path}/{name}",
     operation_id="download_camera_file",
     response_class=FileResponse,
-    responses={200: {"content": {"application/octet-stream": {}}}},
+    responses=binary_response("application/octet-stream", "The file from the card"),
 )
 async def download_camera_file(folder: str, name: str, svc: FilesDep) -> FileResponse:
     folder = validate_camera_folder("/" + folder)
     validate_camera_name(name)
     tmp_dir, path = await svc.fetch_to_temp(folder, name)
-    return FileResponse(
+    return _TempFileResponse(
         path,
+        tmp_dir,
         filename=name,
         media_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
-        background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
     )
 
 

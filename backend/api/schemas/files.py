@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -30,3 +30,15 @@ class FilePage(Page[FileEntry]):
     folders: list[FolderEntry] = Field(
         default_factory=list, description="Immediate sub-folders of the requested folder"
     )
+
+
+def binary_response(
+    mime: str, description: str = "File content"
+) -> dict[int | str, dict[str, Any]]:
+    """``responses=`` entry declaring a 200 binary body (the generated client types it as Blob)."""
+    return {
+        200: {
+            "description": description,
+            "content": {mime: {"schema": {"type": "string", "format": "binary"}}},
+        }
+    }

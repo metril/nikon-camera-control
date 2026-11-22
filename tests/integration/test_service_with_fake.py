@@ -196,3 +196,19 @@ async def test_set_setting_invalidates_cache_and_publishes(
     changed = [e for e in drain(sub) if e.type.value == "setting_changed"]
     assert changed and changed[0].data == {"name": "iso", "value": "800"}
     sub.close()
+
+
+async def test_liveview_exit_turns_viewfinder_off_and_reconnect_resets_flag_regression(
+    svc: CameraService, fake_camera: FakeCamera
+) -> None:
+    await svc.connect()
+    await svc.transition(CameraState.LIVEVIEW)
+    await svc.preview_frame()
+    assert fake_camera.viewfinder_on
+    await svc.transition(CameraState.IDLE)
+    assert not fake_camera.viewfinder_on
+    await svc.transition(CameraState.LIVEVIEW)
+    await svc.capture()  # fake drops out of live view, like the suspected D500
+    assert svc.state == CameraState.LIVEVIEW and not fake_camera.viewfinder_on
+    await svc.preview_frame()  # service reset the flag, so the backend re-enabled it
+    assert fake_camera.viewfinder_on

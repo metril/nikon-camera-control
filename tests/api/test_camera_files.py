@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 from collections.abc import Callable
 from typing import Any
@@ -173,8 +172,8 @@ async def test_download_all_happy_and_only_new(
     assert (res["downloaded"], res["skipped"], res["failed"]) == (4, 0, 0)
     out = tmp_dirs.output_dir / "camera"
     assert len(list(out.iterdir())) == 4
-    ledger = json.loads((tmp_dirs.data_dir / "downloaded.json").read_text())
-    assert len(ledger["entries"]) == 4
+    ledger = (tmp_dirs.data_dir / "downloaded.jsonl").read_text().splitlines()
+    assert len(ledger) == 4
     items = (await c.get(F, params={"folder": CARD_FOLDER})).json()["items"]
     assert all(i["downloaded"] for i in items)
     # second run: nothing new (regression: "new" used to re-download everything)
@@ -229,12 +228,9 @@ async def test_download_all_cancel_midway(
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
     fake_camera.set_latency("read_file", 0)
     await asyncio.sleep(0.15)  # let the in-flight worker call drain
-    ledger = (
-        json.loads((app.state.data_dir / "downloaded.json").read_text())
-        if (app.state.data_dir / "downloaded.json").exists()
-        else {"entries": []}
-    )
-    assert len(ledger["entries"]) < 4
+    ledger_file = app.state.data_dir / "downloaded.jsonl"
+    ledger = ledger_file.read_text().splitlines() if ledger_file.exists() else []
+    assert len(ledger) < 4
     assert j["message"]
 
 
@@ -263,3 +259,41 @@ async def test_download_all_listing_error_fails_job(
     jid = (await connected_client.post(f"{F}/download-all", json={})).json()["id"]
     j = await _wait_job(connected_client, jid, _finished)
     assert j["status"] == "failed" and j["error_code"] == "CAMERA_OPERATION_FAILED"
+
+
+async def test_temp_dir_removed_even_if_client_disconnects_mid_stream(tmp_path: Any) -> None:
+    from backend.api.v1.camera_files import _TempFileResponse
+
+    d = tmp_path / "dl"
+    d.mkdir()
+    (d / "a.bin").write_bytes(b"x" * 100_000)
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.disconnect"}
+
+    async def send(msg: dict[str, Any]) -> None:
+        if msg["type"] == "http.response.body":
+            raise OSError("client went away")
+
+    resp = _TempFileResponse(d / "a.bin", d, filename="a.bin")
+    scope = {"type": "http", "method": "GET", "headers": [], "asgi": {"spec_version": "2.4"}}
+    with pytest.raises(OSError):  # noqa: PT011 - the injected disconnect
+        await resp(scope, receive, send)
+    assert not d.exists()
+
+
+async def test_stale_download_temp_dirs_swept_on_next_download(
+    app: FastAPI, connected_client: httpx.AsyncClient, tmp_dirs: Any
+) -> None:
+    import os
+
+    stale = tmp_dirs.data_dir / "tmp" / "old"
+    stale.mkdir(parents=True)
+    (stale / "big.NEF").write_bytes(b"x")
+    os.utime(stale, (1, 1))
+    await _shoot(connected_client, app, "JPEG Fine")
+    name = (await connected_client.get(F, params={"folder": CARD_FOLDER})).json()["items"][0][
+        "name"
+    ]
+    assert (await connected_client.get(f"{F}{CARD_FOLDER}/{name}")).status_code == 200
+    assert not stale.exists()

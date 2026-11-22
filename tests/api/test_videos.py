@@ -8,6 +8,7 @@ import re
 import stat
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,9 +22,10 @@ from PIL import Image
 
 from backend.api.schemas.sessions import BracketInfo, SessionFile, SessionFrame
 from backend.api.v1.sessions import build_sessions_service as make_sessions
+from backend.core.errors import SessionNotFound
 from backend.core.events import EventBus
 from backend.services.sessions import SessionStore
-from backend.services.video import VideoService
+from backend.services.video import VideoService, _reserve_output
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 S = "/api/v1/sessions"
@@ -426,3 +428,98 @@ async def test_routes_and_operation_ids(app: FastAPI) -> None:
     assert paths[V]["get"]["operationId"] == "list_videos"
     assert paths[f"{V}/{{session_id}}/{{name}}"]["get"]["operationId"] == "download_video"
     assert paths[f"{V}/{{session_id}}/{{name}}"]["delete"]["operationId"] == "delete_video"
+
+
+@pytest.mark.parametrize("bad", [-1, -100])
+async def test_negative_bracket_frame_is_422_not_500(
+    client: httpx.AsyncClient, ctx: tuple[VideoService, SessionStore], bad: int
+) -> None:
+    _, store = ctx
+    sid = await _session(store, 2)
+    r = await client.post(f"{S}/{sid}/video", json={"bracket_frame": bad})
+    assert r.status_code == 422
+
+
+async def test_out_of_range_bracket_index_clamps_to_last_shot(
+    client: httpx.AsyncClient, ctx: tuple[VideoService, SessionStore]
+) -> None:
+    svc, store = ctx
+    sid = await _session(store, 3)
+    frames = await svc._select_frames(sid, 999)
+    assert len(frames) == 3
+
+
+def _slow_prepare(
+    monkeypatch: pytest.MonkeyPatch, entered: threading.Event, stopped: threading.Event
+) -> list[bool]:
+    """Replace prepare_sequence with a loop that keeps writing files until cancelled."""
+    saw_cancel: list[bool] = []
+
+    def slow(frames: list[Path], seq_dir: Path, cancel: threading.Event | None = None) -> int:
+        seq_dir.mkdir(parents=True, exist_ok=True)
+        entered.set()
+        i = 0
+        while not (cancel and cancel.is_set()) and i < 2000:
+            (seq_dir / f"{i:06d}.jpg").write_bytes(b"x")
+            i += 1
+            time.sleep(0.005)
+        saw_cancel.append(bool(cancel and cancel.is_set()))
+        stopped.set()
+        return 0
+
+    monkeypatch.setattr("backend.services.video.prepare_sequence", slow)
+    return saw_cancel
+
+
+async def _wait_event(ev: threading.Event, limit: float = 10) -> None:
+    deadline = time.monotonic() + limit
+    while not ev.is_set():
+        assert time.monotonic() < deadline, "timed out"
+        await asyncio.sleep(0.01)
+
+
+async def test_cancel_stops_prepare_thread_before_work_dir_removed(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    ctx: tuple[VideoService, SessionStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, store = ctx
+    sid = await _session(store, 3)
+    entered, stopped = threading.Event(), threading.Event()
+    saw_cancel = _slow_prepare(monkeypatch, entered, stopped)
+    r = await client.post(f"{S}/{sid}/video", json={})
+    await _wait_event(entered)
+    c = await client.delete(f"/api/v1/jobs/{r.json()['id']}")
+    assert c.json()["status"] == "cancelled"
+    # cancel returned only after the thread was stopped and the work dir removed
+    assert stopped.is_set() and saw_cancel == [True]
+    tmp = app.state.data_dir / "video-tmp"
+    assert not tmp.exists() or list(tmp.iterdir()) == []
+
+
+async def test_delete_session_refused_while_rendering_then_allowed(
+    client: httpx.AsyncClient,
+    ctx: tuple[VideoService, SessionStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, store = ctx
+    sid = await _session(store, 3)
+    entered, stopped = threading.Event(), threading.Event()
+    _slow_prepare(monkeypatch, entered, stopped)
+    r = await client.post(f"{S}/{sid}/video", json={})
+    await _wait_event(entered)
+    d = await client.delete(f"{S}/{sid}")
+    assert d.status_code == 409 and d.json()["error"]["code"] == "INVALID_STATE"
+    await client.delete(f"/api/v1/jobs/{r.json()['id']}")
+    assert (await client.delete(f"{S}/{sid}")).status_code == 200
+    assert not store.folder(sid).exists()  # and the render did not recreate it
+
+
+def test_reserve_output_never_recreates_a_deleted_session(tmp_path: Path) -> None:
+    gone = tmp_path / "sessions" / "s1" / "videos"
+    with pytest.raises(SessionNotFound):
+        _reserve_output(gone, "a.mp4", "s1")
+    assert not (tmp_path / "sessions").exists()
+    (tmp_path / "sessions" / "s1").mkdir(parents=True)
+    assert _reserve_output(gone, "a.mp4", "s1").parent == gone

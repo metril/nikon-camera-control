@@ -28,6 +28,13 @@ Rules
   then the run pauses until the camera is back.
 * Bracketing: the camera's real values of every touched setting are snapshotted before the
   first set, restored after every set and again (in ``finally``) when the run ends.
+* A camera disconnect (explicit or not) pauses the run at once (a bus watcher); an explicit
+  disconnect also drops the lease. The runner re-takes the lease the moment the camera is back
+  and BEFORE resuming; if someone else holds it by then it stays paused (``lease_lost``).
+* ``start()`` re-validates the configuration against the connected camera (an offline
+  ``configure`` is only provisional) and refuses to start, state unchanged, if it is invalid.
+* Restores are bounded (``RESTORE_TIMEOUT_S``); ``stop()``/``aclose()`` wait a bounded time,
+  cancel, and finally abandon a task stuck on a hung camera, always freeing the lease.
 * ``aclose()`` stops a running session cleanly; its session is marked ``interrupted``.
   After a crash/restart there is no runner (status ``idle``) and the manifest is recovered as
   ``interrupted`` by ``SessionStore.recover_interrupted``.
@@ -36,6 +43,7 @@ Rules
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import errno
 import logging
@@ -73,21 +81,23 @@ from backend.core.errors import (
     InvalidState,
     StorageFull,
 )
-from backend.core.events import EventBus
+from backend.core.events import EventBus, Subscription
 from backend.services.capture import CaptureService
 from backend.services.sessions import SessionStore
 from backend.services.settings import SettingsService, SettingValue
 from backend.services.storage import RAW_EXTS
+from backend.services.timelapse.brackets import SETTLE_S
 from backend.services.timelapse.config import ResolvedConfig, resolve_config, shot_bytes_for
 
 log = logging.getLogger(__name__)
 
 OWNER = "timelapse"
-SETTLE_S = 0.3
 CAMERA_POLL_S = 1.0
-STOP_WAIT_S = 120.0
-SHUTDOWN_WAIT_S = 15.0
+STOP_WAIT_S = 120.0  # stop(): wait for a cooperative end, then cancel
+SHUTDOWN_WAIT_S = 20.0  # after cancel: must exceed RESTORE_TIMEOUT_S + RECONNECT_WAIT_S
 RESTORE_TIMEOUT_S = 15.0
+RATE_SAMPLES = 5  # rolling window for the measured set duration
+MIN_RATE_SAMPLES = 2
 RECONNECT_WAIT_S = 3.0
 _EPS = 1e-9
 
@@ -162,6 +172,12 @@ class TimelapseRunner:
         self._user_pause = False
         self._cam_pause = False
         self._dirty = False
+        self._restore_hung = False
+        self._lease_warned = False
+        self._slow_warned = False
+        self._durations: collections.deque[float] = collections.deque(maxlen=RATE_SAMPLES)
+        self._watcher: asyncio.Task[None] | None = None
+        self._sub: Subscription | None = None
         self._snapshot: dict[str, SettingValue] = {}
         self._started_at: datetime | None = None
         self._started_mono: float | None = None
@@ -240,7 +256,14 @@ class TimelapseRunner:
             last_frame=self._last_frame,
             paused_reason=self._pause_reason(),
             error=self._error,
+            validated=bool(r and r.validated),
+            measured_set_duration_s=self._measured(),
         )
+
+    def _measured(self) -> float | None:
+        if not self._durations:
+            return None
+        return round(sum(self._durations) / len(self._durations), 3)
 
     def _pause_reason(self) -> Literal["user", "camera_disconnected"] | None:
         if self._state != TimelapseState.PAUSED:
@@ -273,6 +296,14 @@ class TimelapseRunner:
                 raise InvalidState("No time-lapse configuration has been set")
             if not self._camera.status().connected:
                 raise CameraNotConnected()
+            # An offline configure() is provisional: resolve again against the real camera.
+            r = await resolve_config(
+                r.config,
+                self._cfg.config.timelapse,
+                settings=self._settings,
+                shot_bytes=await self._shot_bytes(),
+            )
+            self._resolved = r
             stack = AsyncExitStack()
             await stack.enter_async_context(self._camera.lease(OWNER))  # CameraBusy -> 409
             try:
@@ -295,6 +326,10 @@ class TimelapseRunner:
             self._started_mono = self._clock()
             self._stack = stack
             self._state = TimelapseState.RUNNING
+            self._sub = self._bus.subscribe()
+            self._watcher = asyncio.create_task(
+                self._watch_camera(self._sub), name="timelapse-camera-watch"
+            )
             self._task = asyncio.create_task(self._run(r), name="timelapse-runner")
             self._emit(EventType.TIMELAPSE_STARTED, planned_shots=r.planned_shots)
         return self.status()
@@ -322,7 +357,22 @@ class TimelapseRunner:
         task = self._task
         if task is not None:
             await asyncio.wait({task}, timeout=STOP_WAIT_S)
+            if not task.done():
+                await self._abandon(task)
         return self.status()
+
+    async def _abandon(self, task: asyncio.Task[None]) -> None:
+        """The task is stuck (hung camera): cancel it; if it still will not end, free the lease
+        and settle the state ourselves so nothing is blocked on it."""
+        task.cancel()
+        await asyncio.wait({task}, timeout=SHUTDOWN_WAIT_S)
+        if task.done():
+            return
+        log.error("time-lapse task did not end after cancel; abandoning it")
+        await self._release_lease()
+        await self._stop_watcher()
+        self._state = TimelapseState.STOPPED
+        self._next_at = None
 
     def _request_stop(self) -> None:
         self._stop_req = True
@@ -340,8 +390,7 @@ class TimelapseRunner:
         self._request_stop()
         await asyncio.wait({task}, timeout=SHUTDOWN_WAIT_S)
         if not task.done():
-            task.cancel()
-            await asyncio.wait({task}, timeout=SHUTDOWN_WAIT_S)
+            await self._abandon(task)
 
     # ------------------------------------------------------------------ events / pause state
     def _emit(self, type_: EventType, **extra: object) -> None:
@@ -420,23 +469,21 @@ class TimelapseRunner:
     async def _finish(self, final: TimelapseState, cancelled: bool) -> None:
         # Settings go back first, then the lease is released, then the state becomes terminal.
         try:
-            await self._await_camera_for_restore()
-            if self._dirty and self._camera_ok():
-                await asyncio.wait_for(self._restore(), RESTORE_TIMEOUT_S)
-            if self._dirty:
-                self._warn(
-                    "settings_not_restored",
-                    "Camera settings could not be restored: "
-                    + ", ".join(f"{k}={v}" for k, v in self._snapshot.items()),
-                )
-        except Exception:
-            log.exception("restoring camera settings failed")
-        if self._stack is not None:
+            await self._stop_watcher()
             try:
-                await self._stack.aclose()
+                await self._await_camera_for_restore()
+                if self._dirty and self._camera_ok() and not self._restore_hung:
+                    await self._restore_bounded()
+                if self._dirty:
+                    self._warn(
+                        "settings_not_restored",
+                        "Camera settings could not be restored: "
+                        + ", ".join(f"{k}={v}" for k, v in self._snapshot.items()),
+                    )
             except Exception:
-                log.exception("releasing camera lease failed")
-            self._stack = None
+                log.exception("restoring camera settings failed")
+        finally:
+            await self._release_lease()  # always, even when cancelled again
         if self._started_mono is not None:
             self._finished_elapsed = max(0.0, self._clock() - self._started_mono)
         self._next_at = None
@@ -462,6 +509,33 @@ class TimelapseRunner:
             self._emit(EventType.TIMELAPSE_ERROR, error=self._error)
         else:
             self._emit(EventType.TIMELAPSE_STOPPED, interrupted=interrupted)
+
+    async def _release_lease(self) -> None:
+        stack, self._stack = self._stack, None
+        if stack is not None:
+            try:
+                await stack.aclose()
+            except Exception:
+                log.exception("releasing camera lease failed")
+
+    async def _stop_watcher(self) -> None:
+        sub, self._sub = self._sub, None
+        watcher, self._watcher = self._watcher, None
+        if sub is not None:
+            sub.close()
+        if watcher is not None and watcher is not asyncio.current_task():
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+    async def _watch_camera(self, sub: Subscription) -> None:
+        """React to camera connect/disconnect events at once (no waiting for the next shot)."""
+        async for ev in sub:
+            if ev.type == EventType.CAMERA_DISCONNECTED:
+                await self._set_cam_pause("camera disconnected")
+                self._wake.set()
+            elif ev.type == EventType.CAMERA_CONNECTED:
+                await self._try_rejoin()
+                self._wake.set()
 
     async def _await_camera_for_restore(self) -> None:
         """Real-time grace period for the camera to come back before giving up on restoring."""
@@ -494,7 +568,7 @@ class TimelapseRunner:
                 anchor, k = now, 0  # resume re-anchors: the next set is due immediately
                 continue
             if self._dirty:
-                await self._restore()
+                await self._restore_bounded()
             if self._sets_done >= r.total_sets:
                 return
             target = anchor + k * interval
@@ -506,12 +580,14 @@ class TimelapseRunner:
                 await self._wait(target - now, self._wake)
                 continue
             self._next_at = None
+            set_start = self._clock()
             completed = await self._do_set(r)
             if not completed:
                 continue  # stop, disconnect or pause: handled at the top
             self._sets_done += 1
             k += 1
             end = self._clock()
+            self._track_duration(end - set_start, interval)
             if end > anchor + k * interval + _EPS:
                 k_new = math.ceil((end - anchor) / interval - _EPS)
                 self._warn(
@@ -521,15 +597,31 @@ class TimelapseRunner:
                 )
                 k = k_new
 
+    def _track_duration(self, took: float, interval: float) -> None:
+        """Rolling average of real set durations; ONE warning when it exceeds the interval."""
+        self._durations.append(took)
+        measured = self._measured()
+        if (
+            measured is not None
+            and len(self._durations) >= MIN_RATE_SAMPLES
+            and measured > interval
+            and not self._slow_warned
+        ):
+            self._slow_warned = True
+            self._warn(
+                "interval_too_short",
+                f"Sets take {measured:g}s on average, longer than the {interval:g}s interval",
+                measured_set_duration_s=measured,
+                suggested_min_interval_s=math.ceil(measured * 1.1 * 10) / 10,
+            )
+
     async def _hold(self) -> None:
         """Park until neither the user nor a missing camera holds the run back."""
         while True:
             self._wake.clear()
             if self._stop_req:
                 return
-            if self._cam_pause and self._camera_ok():
-                self._cam_pause = False
-                await self._sync_pause_state()
+            await self._try_rejoin()
             if not self._user_pause and not self._cam_pause:
                 return
             if self._cam_pause:
@@ -537,13 +629,39 @@ class TimelapseRunner:
             else:
                 await self._wake.wait()
 
-    async def _ensure_lease(self) -> None:
-        holder = self._camera.status().leased_by
-        if holder == OWNER:
+    async def _try_rejoin(self) -> None:
+        """Camera back: re-take the lease first, only then lift the camera pause. If another
+        owner got the lease in between, stay paused (warn once) rather than shoot without it."""
+        if not self._cam_pause or self._stop_req or not self._camera_ok():
             return
-        if holder is not None or self._stack is None:
+        if await self._reacquire_lease():
+            self._cam_pause = False
+            self._lease_warned = False
+            await self._sync_pause_state()
+        elif not self._lease_warned:
+            self._lease_warned = True
+            holder = self._camera.status().leased_by
+            self._warn(
+                "lease_lost",
+                f"Camera is back but leased by {holder!r}; staying paused until it is free",
+                leased_by=holder,
+            )
+
+    async def _reacquire_lease(self) -> bool:
+        if self._camera.status().leased_by == OWNER:
+            return True
+        if self._camera.status().leased_by is not None or self._stack is None:
+            return False
+        try:
+            await self._stack.enter_async_context(self._camera.lease(OWNER))
+        except CameraBusy:
+            return False
+        return True
+
+    async def _ensure_lease(self) -> None:
+        if not await self._reacquire_lease():
+            holder = self._camera.status().leased_by
             raise _RunFailed(f"Camera is leased by {holder!r}")
-        await self._stack.enter_async_context(self._camera.lease(OWNER))  # re-take after reconnect
 
     async def _restore(self) -> None:
         """Put the snapshot back; stays ``dirty`` (retried later) if the camera refuses."""
@@ -556,6 +674,14 @@ class TimelapseRunner:
             self._warn("restore_failed", f"Could not restore camera settings: {e}")
             return
         self._dirty = False
+
+    async def _restore_bounded(self) -> None:
+        """``_restore`` with a deadline: a hung camera must not hang stop/shutdown again."""
+        try:
+            await asyncio.wait_for(self._restore(), RESTORE_TIMEOUT_S)
+        except TimeoutError:
+            self._restore_hung = True
+            self._warn("restore_failed", "Restoring camera settings timed out")
 
     async def _do_set(self, r: ResolvedConfig) -> bool:
         """One interval: every step of the bracket (or the single shot). True when all steps
@@ -601,7 +727,7 @@ class TimelapseRunner:
             return True
         finally:
             if self._dirty:
-                await self._restore()
+                await self._restore_bounded()
 
     async def _record(
         self,

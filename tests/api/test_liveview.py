@@ -166,3 +166,42 @@ def test_auth_required_on_ws_and_rest(ws_client: TestClient) -> None:
     assert ws_client.get(API).status_code == 401
     with ws_client.websocket_connect(W, subprotocols=["apikey.k1"]) as ws:
         assert ws.receive_json()["type"] == "status"
+
+
+def test_stop_switches_viewfinder_off_regression(lv: TestClient, fake_camera: FakeCamera) -> None:
+    lv.post(f"{API}/start")
+    wait(lambda: fake_camera.viewfinder_on)
+    lv.post(f"{API}/stop")
+    wait(lambda: state(lv) == "idle" and not fake_camera.viewfinder_on)
+    assert fake_camera.calls["end_preview"] >= 1
+
+
+def test_last_client_leaving_switches_viewfinder_off_regression(
+    lv: TestClient, fake_camera: FakeCamera
+) -> None:
+    with lv.websocket_connect(W) as ws:
+        frames(ws, 1)
+        assert fake_camera.viewfinder_on
+    wait(lambda: state(lv) == "idle" and not fake_camera.viewfinder_on)
+
+
+def test_snapshot_when_idle_leaves_viewfinder_off_regression(
+    lv: TestClient, fake_camera: FakeCamera
+) -> None:
+    assert lv.get(f"{API}/snapshot").status_code == 200
+    wait(lambda: state(lv) == "idle")
+    assert not fake_camera.viewfinder_on
+
+
+def test_capture_exiting_liveview_reenables_viewfinder_regression(
+    lv: TestClient, fake_camera: FakeCamera
+) -> None:
+    with lv.websocket_connect(W) as ws:
+        frames(ws, 2)
+        before = fake_camera.calls["enable_viewfinder"]
+        svc = lv.app.state.camera_service  # type: ignore[attr-defined]
+        assert lv.portal.call(svc.capture)  # type: ignore[union-attr]
+        assert not fake_camera.viewfinder_on or fake_camera.calls["enable_viewfinder"] > before
+        frames(ws, 3)
+        assert fake_camera.viewfinder_on
+        assert fake_camera.calls["enable_viewfinder"] == before + 1

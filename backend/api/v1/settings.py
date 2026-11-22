@@ -57,6 +57,14 @@ async def list_settings(
     return [_out(v) for v in await svc.list_settings(group)]
 
 
+@router.post("/refresh", operation_id="refresh_settings", response_model=list[SettingOut])
+async def refresh_settings(
+    svc: SettingsDep, group: Annotated[Literal["common", "all"], Query()] = "common"
+) -> list[SettingOut]:
+    """Re-read every setting from the camera, bypassing the cache (slow on a real body)."""
+    return [_out(v) for v in await svc.refresh(group)]
+
+
 @router.patch("", operation_id="update_settings", response_model=SettingsPatchOut)
 async def update_settings(body: SettingsPatchIn, svc: SettingsDep) -> SettingsPatchOut:
     res = await svc.set_many(body.values)

@@ -11,7 +11,7 @@ from starlette.datastructures import State
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.common import Ok
-from backend.api.schemas.files import FileEntry, FilePage, FolderEntry
+from backend.api.schemas.files import FileEntry, FilePage, FolderEntry, binary_response
 from backend.core.security import require_api_key
 from backend.services.files import FileService, KindFilter, SortOrder
 
@@ -65,7 +65,7 @@ async def list_files(
     "/{path:path}",
     operation_id="download_file",
     response_class=FileResponse,
-    responses={200: {"content": {"application/octet-stream": {}}}},
+    responses=binary_response("application/octet-stream", "The file content"),
 )
 async def download_file(path: str, svc: FilesDep) -> FileResponse:
     p = svc.resolve_file(path)

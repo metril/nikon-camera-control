@@ -57,7 +57,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/camera/storage` | `get_camera_storage` | Get Camera Storage |
 | GET | `/api/v1/camera/summary` | `get_camera_summary` | Get Camera Summary |
 
-### camera files
+### camera-files
 
 | Method | Path | operation_id | Summary |
 |---|---|---|---|
@@ -127,6 +127,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | GET | `/api/v1/settings` | `list_settings` | List Settings |
 | PATCH | `/api/v1/settings` | `update_settings` | Update Settings |
+| POST | `/api/v1/settings/refresh` | `refresh_settings` | Refresh Settings |
 | GET | `/api/v1/settings/{name}` | `get_setting` | Get Setting |
 | PUT | `/api/v1/settings/{name}` | `set_setting` | Set Setting |
 
@@ -257,7 +258,7 @@ operation_id: `get_camera_summary`
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
-## camera files
+## camera-files
 
 ### `GET /api/v1/camera/folders`
 
@@ -345,7 +346,7 @@ operation_id: `download_camera_file`
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `application/octet-stream`: `any` |
+| 200 | The file from the card | `application/octet-stream`: `string(binary)` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -574,7 +575,7 @@ operation_id: `download_file`
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `application/octet-stream`: `any` |
+| 200 | The file content | `application/octet-stream`: `string(binary)` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -621,7 +622,7 @@ JPEG thumbnail of the file at ``path`` (relative to the output dir).
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `image/jpeg`: `any` |
+| 200 | JPEG thumbnail | `image/jpeg`: `string(binary)` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -935,6 +936,30 @@ operation_id: `update_settings`
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
+### `POST /api/v1/settings/refresh`
+
+operation_id: `refresh_settings`
+
+Re-read every setting from the camera, bypassing the cache (slow on a real body).
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `group` | query | enum("common", "all") | no | `"common"` |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `list[SettingOut]` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ### `GET /api/v1/settings/{name}`
 
 operation_id: `get_setting`
@@ -1179,7 +1204,7 @@ Start rendering the session's frames (so far) into a video; returns the job.
 | `quality` | enum("low", "medium", "high") \| null | no |  |  | Shortcut overriding crf (and the ProRes profile). |
 | `preset` | enum("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow") \| null | no |  |  | x264/x265 speed preset. |
 | `resolution` | enum("source", "2160p", "1080p", "720p") | no | `"source"` |  | Fit inside this size, keeping aspect ratio. |
-| `bracket_frame` | enum("middle", "first", "last") \| integer | no | `"middle"` |  | Which shot of each bracket set to use: middle, first, last or a step index. |
+| `bracket_frame` | enum("middle", "first", "last") \| integer | no | `"middle"` | `>=0.0` | Which shot of each bracket set to use: middle, first, last or a zero-based step index (>= 0; an index past the end of a set uses its last shot). |
 | `deflicker` | boolean | no | `false` |  | Apply ffmpeg's deflicker filter. |
 | `output_name` | string \| null | no |  | `maxLength=120` | File name (sanitised; extension is set by the codec; never overwrites). |
 
@@ -1236,7 +1261,7 @@ Stream the video; HTTP Range requests are supported.
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `video/*`: `any` |
+| 200 | The video file | `video/*`: `string(binary)` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |

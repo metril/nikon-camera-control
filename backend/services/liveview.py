@@ -5,7 +5,8 @@
   latest frame (drop-old), so a slow client skips frames and never delays others.
 - Reference counted: the producer starts on the first subscriber or an explicit (sticky)
   ``start()``, moves the camera IDLE -> LIVEVIEW through ``CameraService.transition`` and
-  moves it back to IDLE when the last subscriber leaves (and it is not sticky) or on ``stop()``.
+  moves it back to IDLE when the last subscriber leaves (and it is not sticky) or on ``stop()``;
+  ``CameraService.transition(IDLE)`` out of LIVEVIEW also switches the camera's viewfinder off.
 - Camera state is polled/awaited every iteration, never cached: the producer pauses (keeping
   subscribers) while the camera is CAPTURING/BULB/RECORDING/BUSY/ERROR or disconnected, and
   resumes by itself. ``preview_frame`` only works in LIVEVIEW, so RECORDING pauses the stream.

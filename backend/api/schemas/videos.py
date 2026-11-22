@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,9 +33,12 @@ class RenderRequest(BaseModel):
     resolution: Resolution = Field(
         default="source", description="Fit inside this size, keeping aspect ratio."
     )
-    bracket_frame: Literal["middle", "first", "last"] | int = Field(
+    bracket_frame: Literal["middle", "first", "last"] | Annotated[int, Field(ge=0)] = Field(
         default="middle",
-        description="Which shot of each bracket set to use: middle, first, last or a step index.",
+        description=(
+            "Which shot of each bracket set to use: middle, first, last or a zero-based step "
+            "index (>= 0; an index past the end of a set uses its last shot)."
+        ),
     )
     deflicker: bool = Field(default=False, description="Apply ffmpeg's deflicker filter.")
     output_name: str | None = Field(

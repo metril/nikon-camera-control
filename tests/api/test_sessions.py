@@ -78,3 +78,23 @@ async def test_operation_ids(app: FastAPI) -> None:
         "rename_session",
         "delete_session",
     }
+
+
+async def test_crashed_sessions_recovered_at_startup_off_the_request_path(app: FastAPI) -> None:
+    from backend.api.v1.sessions import build_sessions_service
+    from backend.services.sessions import SessionStore
+
+    out = app.state.output_dir
+    old = SessionStore(out, fsync=False)
+    m = await old.create("crashed", {}, 5)
+    await old.update(m.id, status="running")
+    for i in range(3):
+        await old.add_frame(m.id, _frame(i))
+    await old.aclose()
+    # building the service no longer scans sessions synchronously (it would block the loop)
+    assert (await build_sessions_service(app.state).get(m.id)).status == "running"
+    async with app.router.lifespan_context(app):  # startup hook recovers in a thread
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            d = (await c.get(f"{S}/{m.id}")).json()
+    assert d["status"] == "interrupted" and d["frames_captured"] == 3

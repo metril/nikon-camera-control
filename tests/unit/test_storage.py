@@ -61,3 +61,37 @@ async def test_download_files_atomic_and_ordered(
     assert [p.name for p in out] == [f"p_{f.name}" for f in files]
     assert all(p.stat().st_size > 0 for p in out)
     assert not list((tmp_path / "o").glob("*.part"))
+
+
+def test_cleanup_stale_empties_tmp_dirs_and_removes_only_old_part_files(tmp_path: Path) -> None:
+    import os
+    import time
+
+    from backend.services.storage import cleanup_stale
+
+    data, out = tmp_path / "data", tmp_path / "out"
+    for d in ("tmp/x", "video-tmp/y"):
+        (data / d).mkdir(parents=True)
+        (data / d / "f").write_bytes(b"1")
+    (data / "tmp" / "loose").write_bytes(b"1")
+    (out / "sessions" / "s" / "videos").mkdir(parents=True)
+    old = out / "sessions" / "s" / "videos" / "a.part.mp4"
+    new = out / "camera" / "b.NEF.part"
+    new.parent.mkdir(parents=True)
+    keep = out / "camera" / "c.NEF"
+    old.write_bytes(b"1")
+    new.write_bytes(b"1")
+    keep.write_bytes(b"1")
+    os.utime(old, (time.time() - 7200,) * 2)
+    os.utime(keep, (time.time() - 7200,) * 2)
+    cleanup_stale(data, out)
+    assert list((data / "tmp").iterdir()) == [] and list((data / "video-tmp").iterdir()) == []
+    assert not old.exists() and new.exists() and keep.exists()
+
+
+async def test_app_startup_runs_cleanup(app: FastAPI) -> None:
+    leftover = app.state.data_dir / "video-tmp" / "dead"
+    leftover.mkdir(parents=True)
+    (leftover / "000001.jpg").write_bytes(b"1")
+    async with app.router.lifespan_context(app):
+        assert not leftover.exists()

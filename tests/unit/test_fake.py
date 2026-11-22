@@ -14,6 +14,7 @@ from backend.core.errors import (
     CameraIOError,
     CameraNotConnected,
     CameraNotFound,
+    CameraOperationFailed,
     CameraTimeout,
     FileNotFoundError_,
     SettingInvalid,
@@ -302,3 +303,35 @@ def test_card_full(cam: FakeCamera) -> None:
         cam.capture()
     cam.card_full(False)
     cam.capture()
+
+
+def test_exposurecompensation_choices_are_libgphoto2_format_regression(cam: FakeCamera) -> None:
+    ch = cam.get_config("exposurecompensation").choices
+    assert "1" in ch and "0.333" in ch and "-0.667" in ch and "0" in ch
+    assert not any(c.startswith("+") for c in ch)
+    with pytest.raises(SettingInvalid):
+        cam.set_config("exposurecompensation", "+1")
+
+
+def test_capture_exits_liveview_needs_reenable() -> None:
+    c = FakeCamera()
+    c.open()
+    c.capture_preview()
+    assert c.viewfinder_on
+    c.capture()
+    assert not c.viewfinder_on
+    with pytest.raises(CameraOperationFailed):  # stale flag: viewfinder not re-enabled
+        c.capture_preview()
+    c.invalidate_preview()
+    c.capture_preview()
+    assert c.viewfinder_on
+    c.end_preview()
+    assert not c.viewfinder_on and c.calls["end_preview"] == 1
+
+
+def test_capture_keeps_liveview_when_option_off() -> None:
+    c = FakeCamera(capture_exits_liveview=False)
+    c.open()
+    c.capture_preview()
+    c.capture()
+    assert c.viewfinder_on

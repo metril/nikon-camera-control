@@ -113,6 +113,11 @@ class TimelapseConfigResult(BaseModel):
     resolved_steps: list[ResolvedStep] = Field(description="Empty without bracketing.")
     estimate: Estimate
     min_interval_s: float
+    validated: bool = Field(
+        default=False,
+        description="True when every step was resolved against the connected camera's choices. "
+        "False for a configuration made offline; start re-validates before the first shot.",
+    )
 
 
 class PresetOut(BaseModel):
@@ -156,3 +161,9 @@ class TimelapseStatus(BaseModel):
     last_frame: LastFrame | None = None
     paused_reason: Literal["user", "camera_disconnected"] | None = None
     error: str | None = None
+    validated: bool = Field(
+        default=False, description="The configuration was resolved against a connected camera."
+    )
+    measured_set_duration_s: float | None = Field(
+        default=None, description="Rolling average of the real duration of one shot set."
+    )

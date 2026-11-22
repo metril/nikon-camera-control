@@ -205,3 +205,11 @@ def test_file_path_validation() -> None:
     for bad in ("/etc/passwd", "../x", "a/../../x", ""):
         with pytest.raises(ValueError):
             SessionFile(path=bad)
+
+
+async def test_delete_refused_while_held_by_a_render(store: SessionStore) -> None:
+    m = await store.create("x", {}, 1)
+    with store.hold(m.id), store.hold(m.id):
+        with pytest.raises(InvalidState):
+            await store.delete(m.id)
+    await store.delete(m.id)  # all holds released

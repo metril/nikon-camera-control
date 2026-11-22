@@ -16,11 +16,12 @@ from backend.api.schemas.timelapse import TimelapseSetup, TimelapseState
 from backend.api.v1.capture import build_capture_service as build_capture
 from backend.api.v1.sessions import build_sessions_service as make_sessions
 from backend.camera.fake import FakeCamera
-from backend.core.errors import CameraBusy, CameraOperationFailed, InvalidState
+from backend.core.errors import CameraBusy, CameraOperationFailed, InvalidState, SettingInvalid
 from backend.services.settings import SettingsService
 from backend.services.timelapse import TimelapseRunner
 
 S = TimelapseState
+OWNER = "timelapse"
 
 
 class VClock:
@@ -49,10 +50,13 @@ class Rig:
             st.config_store, clock=clock, sleep=clock.sleep,
         )  # fmt: skip
         self.events: list[tuple[EventType, dict[str, Any]]] = []
+        self.lease_at_resume: list[str | None] = []
         orig = st.event_bus.publish
 
         def spy(type_: EventType, data: dict[str, Any] | None = None) -> None:
             self.events.append((type_, dict(data or {})))
+            if type_ == EventType.TIMELAPSE_RESUMED:
+                self.lease_at_resume.append(self.camera.status().leased_by)
             orig(type_, data)
 
         st.event_bus.publish = spy
@@ -480,3 +484,123 @@ async def test_estimate_eta_and_timing(rig: Rig) -> None:
     st = rig.runner.status()
     assert st.timing.started and st.timing.eta_s is not None and st.timing.eta_s > 0
     await rig.runner.stop()
+
+
+# ---------------------------------------------------------------- review fixes
+async def test_start_revalidates_after_offline_configure_regression(rig: Rig) -> None:
+    await rig.camera.disconnect()
+    preset = {"mode": "preset", "preset": "exposure_3"}
+    res = await rig.runner.configure(rig.cfg(interval_s=20, total_frames=1, bracketing=preset))
+    assert res.validated is False and rig.runner.status().validated is False
+    await rig.camera.connect()
+    await rig.runner.start()
+    assert rig.runner.status().validated is True
+    st = await rig.finish()
+    assert st.state == S.COMPLETED and st.counters.failures == 0 and st.counters.frames_done == 3
+    ev = (await rig.camera.get_setting("exposurecompensation")).choices
+    frames = (await rig.sessions.get(st.session_id, with_frames=True)).frames
+    assert all(f.bracket and f.bracket.settings["exposurecompensation"] in ev for f in frames)
+
+
+async def test_start_refuses_invalid_offline_config_without_session_regression(rig: Rig) -> None:
+    await rig.camera.disconnect()
+    bad = {"mode": "quick", "iso": ["100", "123456"]}
+    await rig.runner.configure(rig.cfg(interval_s=20, bracketing=bad))
+    await rig.camera.connect()
+    before = len(await rig.sessions.list())
+    with pytest.raises(SettingInvalid):
+        await rig.runner.start()
+    st = rig.runner.status()
+    assert st.state == S.CONFIGURED and st.session_id is None
+    assert rig.camera.status().leased_by is None
+    after = len(await rig.sessions.list())
+    assert before == after
+
+
+@pytest.fixture
+def fast_abandon(monkeypatch: pytest.MonkeyPatch) -> None:
+    import backend.services.timelapse.runner as m
+
+    monkeypatch.setattr(m, "STOP_WAIT_S", 0.1)
+    monkeypatch.setattr(m, "SHUTDOWN_WAIT_S", 1.0)
+    monkeypatch.setattr(m, "RESTORE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(m, "RECONNECT_WAIT_S", 0.1)
+
+
+@pytest.mark.parametrize("op", ["capture", "set_config"])
+@pytest.mark.parametrize("how", ["stop", "aclose"])
+async def test_hung_camera_cannot_pin_lease_or_task_regression(
+    rig: Rig, fake_camera: FakeCamera, fast_abandon: None, op: str, how: str
+) -> None:
+    fake_camera.hang(op)
+    await rig.go(total_frames=50, interval_s=10, bracketing=BRACKET)
+    await rig.until(lambda: fake_camera.calls.get(op, 0) >= 1, f"{op} hung")
+    try:
+        if how == "stop":
+            await rig.runner.stop()
+        else:
+            await rig.runner.aclose()
+        assert rig.camera.status().leased_by is None
+        assert rig.runner.status().state == S.STOPPED
+        assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("timelapse")]
+    finally:
+        fake_camera.release_all()
+
+
+async def test_explicit_disconnect_pauses_and_lease_taken_before_resume_regression(
+    rig: Rig,
+) -> None:
+    async def hook(n: int) -> None:
+        if n == 1:
+            await rig.camera.disconnect()
+
+    rig.hook = hook
+    await rig.go(total_frames=4, interval_s=10)
+    await rig.until(lambda: rig.runner.status().state == S.PAUSED, "pause on disconnect")
+    assert rig.runner.status().paused_reason == "camera_disconnected"
+    assert rig.camera.status().leased_by is None
+    await rig.camera.connect()
+    st = await rig.finish()
+    assert st.state == S.COMPLETED
+    assert rig.lease_at_resume == [OWNER]  # lease was already ours when the run resumed
+
+
+async def test_stays_paused_with_warning_when_lease_grabbed_after_reconnect_regression(
+    rig: Rig,
+) -> None:
+    async def hook(n: int) -> None:
+        if n == 1:
+            await rig.camera.disconnect()
+
+    rig.hook = hook
+    await rig.go(total_frames=4, interval_s=10)
+    await rig.until(lambda: rig.runner.status().state == S.PAUSED, "pause on disconnect")
+    shots = len(rig.capture_times)
+    await rig.camera.connect()
+    async with rig.camera.lease("someone"):  # grabbed before the runner's watcher ran
+        await rig.until(
+            lambda: any(
+                k == EventType.TIMELAPSE_WARNING and d["code"] == "lease_lost"
+                for k, d in rig.events
+            ),
+            "lease_lost warning",
+        )
+        await asyncio.sleep(0.05)
+        assert rig.runner.status().state == S.PAUSED and len(rig.capture_times) == shots
+        assert rig.camera.status().leased_by == "someone"
+    st = await rig.finish()  # lease freed: runner takes it back and carries on
+    assert st.state == S.COMPLETED
+
+
+async def test_slow_sets_warn_once_and_expose_measured_duration(rig: Rig) -> None:
+    async def slow(n: int) -> None:
+        rig.clock.t += 12.0  # every set "takes" 12 s against a 10 s interval
+
+    rig.hook = slow
+    await rig.go(total_frames=5, interval_s=10)
+    st = await rig.finish()
+    warns = [d for k, d in rig.events if k == EventType.TIMELAPSE_WARNING]
+    slow_w = [d for d in warns if d["code"] == "interval_too_short"]
+    assert len(slow_w) == 1
+    assert slow_w[0]["measured_set_duration_s"] >= 12 and slow_w[0]["suggested_min_interval_s"] > 12
+    assert st.measured_set_duration_s is not None and st.measured_set_duration_s >= 12

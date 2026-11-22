@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import contextlib
 import json
 import logging
 import os
@@ -83,6 +84,7 @@ class SessionStore:
         self._locks: dict[str, asyncio.Lock] = {}
         self._cache: dict[str, SessionManifest] = {}  # headers touched by this process
         self._unflushed: dict[str, int] = {}
+        self._holds: dict[str, int] = {}  # session id -> active holders (e.g. renders)
 
     # ---- helpers -------------------------------------------------------------------------
     @staticmethod
@@ -94,6 +96,20 @@ class SessionStore:
     def folder(self, session_id: str) -> Path:
         """Absolute session folder (validates the id; does not require existence)."""
         return self.root / self.validate_id(session_id)
+
+    @contextlib.contextmanager
+    def hold(self, session_id: str) -> Iterator[None]:
+        """Mark the session in use (a render reads/writes its folder): ``delete`` refuses
+        with InvalidState while any hold is active. Synchronous, so atomic on the event loop."""
+        self._holds[session_id] = self._holds.get(session_id, 0) + 1
+        try:
+            yield
+        finally:
+            n = self._holds.get(session_id, 1) - 1
+            if n > 0:
+                self._holds[session_id] = n
+            else:
+                self._holds.pop(session_id, None)
 
     def _lock(self, session_id: str) -> asyncio.Lock:
         return self._locks.setdefault(session_id, asyncio.Lock())
@@ -232,6 +248,11 @@ class SessionStore:
         """Remove the folder. InvalidState while running/paused; SessionNotFound if absent."""
         folder = self.folder(session_id)
         async with self._lock(session_id):
+            if self._holds.get(session_id):
+                raise InvalidState(
+                    "A video is being rendered from this session; cancel it before deleting",
+                    details={"session_id": session_id},
+                )
             if not folder.is_dir():
                 raise SessionNotFound(details={"id": session_id})
             try:

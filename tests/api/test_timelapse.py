@@ -114,7 +114,7 @@ async def test_config_validation_errors(connected_client: httpx.AsyncClient) -> 
     r = await put(c, interval_s=2, bracketing={"mode": "preset", "preset": "exposure_5"})
     assert r.status_code == 422 and r.json()["error"]["details"]["min_interval_s"] > 5
     assert "minimum" in r.json()["error"]["message"]
-    r = await put(c, interval_s=20, bracketing={"mode": "quick", "iso": ["100", "999"]})
+    r = await put(c, interval_s=20, bracketing={"mode": "quick", "iso": ["100", "123456"]})
     assert r.status_code == 422 and r.json()["error"]["code"] == "SETTING_INVALID"
     r = await put(c, interval_s=20, bracketing={"mode": "preset", "preset": "nope"})
     assert r.status_code == 422
@@ -270,7 +270,9 @@ async def test_bracket_run_restores_camera_settings_regression(
     c = connected_client
     cam = app.state.camera_service
     await cam.set_setting("iso", "800")
-    await cam.set_setting("exposurecompensation", "+1")
+    choices = (await cam.get_setting("exposurecompensation")).choices
+    ev_plus_one = next(c for c in choices if float(c) == 1)  # the camera's own spelling
+    await cam.set_setting("exposurecompensation", ev_plus_one)
     before = {n: (await cam.get_setting(n)).value for n in ("iso", "exposurecompensation")}
     r = await put(
         c, total_frames=1, interval_s=10, bracketing={"mode": "preset", "preset": "hdr_iso_combo"}
@@ -280,7 +282,7 @@ async def test_bracket_run_restores_camera_settings_regression(
     st = await wait_for(c, DONE)
     assert st["state"] == "completed" and st["counters"]["frames_done"] == 4
     after = {n: (await cam.get_setting(n)).value for n in ("iso", "exposurecompensation")}
-    assert after == before == {"iso": "800", "exposurecompensation": "+1"}
+    assert after == before == {"iso": "800", "exposurecompensation": ev_plus_one}
     frames = (await c.get(f"/api/v1/sessions/{st['session_id']}/frames")).json()["items"]
     assert [f["bracket"]["step_index"] for f in frames] == [0, 1, 2, 3]
     assert {f["set_index"] for f in frames} == {0}

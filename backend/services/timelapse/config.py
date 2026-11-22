@@ -35,6 +35,7 @@ class ResolvedConfig:
     total_sets: int
     min_interval_s: float
     shot_bytes: int
+    validated: bool = False  # steps resolved against a connected camera
 
     @property
     def shots_per_set(self) -> int:
@@ -68,6 +69,7 @@ class ResolvedConfig:
             ],
             estimate=self.estimate(),
             min_interval_s=self.min_interval_s,
+            validated=self.validated,
         )
 
 
@@ -146,4 +148,6 @@ async def resolve_config(
         norm_cfg = cfg.model_copy(update={"bracketing": StepsBracketing(steps=steps)})
     else:
         norm_cfg = cfg
-    return ResolvedConfig(norm_cfg, steps, total_sets, floor, shot_bytes)
+    return ResolvedConfig(
+        norm_cfg, steps, total_sets, floor, shot_bytes, validated=settings is not None
+    )

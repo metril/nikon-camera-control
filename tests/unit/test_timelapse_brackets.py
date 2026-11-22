@@ -80,3 +80,21 @@ def test_touched_and_min_interval() -> None:
     assert min_interval(steps, 1.0) > min_interval(steps[:2], 1.0) > 1.0
     delayed = [BracketStep(settings={"iso": "100"}, delay_ms=5000)] * 2
     assert min_interval(delayed, 1.0) > 12
+
+
+def test_presets_are_camera_neutral_decimals_regression() -> None:
+    """No camera-specific spellings ("+1"): the camera's own choice string is resolved later."""
+    from backend.services.timelapse.brackets import PRESETS
+
+    for p in PRESETS.values():
+        for step in p.steps:
+            ev = step.settings.get("exposurecompensation")
+            if ev is not None:
+                assert isinstance(ev, str) and not ev.startswith("+")
+                float(ev)
+
+
+def test_time_model_constants_are_module_level() -> None:
+    from backend.services.timelapse import brackets
+
+    assert (brackets.SHOT_ESTIMATE_S, brackets.SETTLE_S, brackets.RESTORE_S) == (1.0, 0.3, 0.5)

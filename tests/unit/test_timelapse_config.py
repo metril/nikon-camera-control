@@ -97,7 +97,7 @@ async def test_values_checked_against_connected_camera(
     assert r.steps[0].settings == {"iso": "100", "f-number": "f/4"}
     with pytest.raises(SettingInvalid, match="step 2"):
         await resolve_config(
-            cfg(bracketing={"mode": "quick", "iso": ["100", "999"]}), LIM, settings=svc
+            cfg(bracketing={"mode": "quick", "iso": ["100", "123456"]}), LIM, settings=svc
         )
     with pytest.raises(Exception, match="read-only|cannot be changed|not found"):
         await resolve_config(
@@ -110,3 +110,30 @@ async def test_values_checked_against_connected_camera(
             LIM,
             settings=svc,
         )
+
+
+async def test_every_preset_resolves_to_the_cameras_own_choices_regression(
+    app, connected_client
+) -> None:
+    """Presets are camera-neutral; resolved steps must hold the camera's canonical strings."""
+    from backend.services.timelapse.brackets import PRESETS
+
+    cam = app.state.camera_service
+    svc = SettingsService(cam)
+    for name in PRESETS:
+        r = await resolve_config(
+            cfg(interval_s=100, bracketing={"mode": "preset", "preset": name}), LIM, settings=svc
+        )
+        assert r.validated
+        for step in r.steps:
+            for setting, value in step.settings.items():
+                assert value in (await cam.get_setting(setting)).choices, (name, setting, value)
+
+
+async def test_offline_resolution_is_not_validated(app, client) -> None:
+    r = await resolve_config(
+        cfg(interval_s=100, bracketing={"mode": "preset", "preset": "exposure_3"}),
+        LIM,
+        settings=None,
+    )
+    assert not r.validated and not r.result().validated

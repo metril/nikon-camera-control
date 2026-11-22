@@ -382,6 +382,28 @@ class Gphoto2Backend:
         except gp.GPhoto2Error as e:
             raise translate_error(e, "capture_preview") from e
 
+    def end_preview(self) -> None:
+        """Viewfinder off (best effort) and forget the flag. Always attempts the write: after
+        ``invalidate_preview`` the flag says nothing about the real viewfinder state."""
+        if self._camera is None:
+            self._viewfinder_on = False
+            return
+        try:
+            self.set_config("viewfinder", 0)
+        except (
+            SettingNotFound,
+            SettingNotAllowed,
+            SettingInvalid,
+            FeatureUnsupported,
+            CameraOperationFailed,
+        ) as e:
+            log.info("viewfinder_not_cleared", reason=e.message)
+        finally:
+            self._viewfinder_on = False
+
+    def invalidate_preview(self) -> None:
+        self._viewfinder_on = False
+
     def _enable_viewfinder(self) -> None:
         # Best effort: not every body exposes "viewfinder"; preview may still work without it.
         try:

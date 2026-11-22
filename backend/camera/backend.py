@@ -157,6 +157,16 @@ class CameraBackend(Protocol):
         """One live-view JPEG frame. Raises CameraTimeout / CameraIOError."""
         ...
 
+    def end_preview(self) -> None:
+        """Leave live view (viewfinder off, mirror down). Best effort: never raises for a
+        missing/rejected widget; only genuine link loss may raise CameraIOError."""
+        ...
+
+    def invalidate_preview(self) -> None:
+        """Forget that live view is on (no camera IO), so the next ``capture_preview``
+        re-enables it. Called after captures, which may drop a D500 out of live view."""
+        ...
+
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
         """Block up to ``timeout_s`` for one event; returns type TIMEOUT if none arrives."""
         ...
