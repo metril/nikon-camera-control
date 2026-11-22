@@ -20,13 +20,13 @@ from backend.core.security import require_api_key
 from backend.services.sessions import SessionStore
 
 
-def _make(state: object) -> SessionStore:
+def build_sessions_service(state: object) -> SessionStore:
     store = SessionStore(state.output_dir)  # type: ignore[attr-defined]
     store.recover_interrupted()
     return store
 
 
-get_sessions = service_dep("sessions", _make)
+get_sessions = service_dep("sessions", build_sessions_service)
 SessionsDep = Annotated[SessionStore, Depends(get_sessions)]
 
 router = APIRouter(

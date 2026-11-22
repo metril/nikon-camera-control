@@ -2,7 +2,6 @@
 fastapi==0.165.0
 uvicorn[standard]==0.54.0
 pydantic==2.14.4
-pydantic-settings==2.16.3  # TODO: remove with config rewrite
 gphoto2==2.6.4
 pillow==13.0.0
 websockets==17.4

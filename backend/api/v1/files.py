@@ -61,24 +61,6 @@ async def list_files(
     )
 
 
-# Declared before the catch-all ``/{path:path}`` so ``.../thumbnail`` is matched first.
-@router.get(
-    "/{path:path}/thumbnail",
-    operation_id="get_file_thumbnail",
-    response_class=FileResponse,
-    responses={200: {"content": {"image/jpeg": {}}}},
-)
-async def get_file_thumbnail(
-    path: str,
-    svc: FilesDep,
-    size: Annotated[int | None, Query(ge=64, le=1024, description="Longest edge in px")] = None,
-) -> FileResponse:
-    thumb = await svc.thumbnails.get(svc.resolve_file(path), size)
-    return FileResponse(
-        thumb, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"}
-    )
-
-
 @router.get(
     "/{path:path}",
     operation_id="download_file",

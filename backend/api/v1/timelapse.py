@@ -15,24 +15,24 @@ from backend.api.schemas.timelapse import (
     TimelapseSetup,
     TimelapseStatus,
 )
-from backend.api.v1.capture import _build as _build_capture
-from backend.api.v1.sessions import _make as _make_sessions
+from backend.api.v1.capture import build_capture_service
+from backend.api.v1.sessions import build_sessions_service
+from backend.api.v1.settings import build_settings_service
 from backend.core.security import require_api_key
-from backend.services.settings import SettingsService
 from backend.services.timelapse import TimelapseRunner
 from backend.services.timelapse.brackets import PRESETS
 
 
-def _build(s: State) -> TimelapseRunner:
-    settings = s.services.get("settings", lambda: SettingsService(s.camera_service))
-    capture = s.services.get("capture", lambda: _build_capture(s))
-    sessions = s.services.get("sessions", lambda: _make_sessions(s))
+def build_timelapse_service(s: State) -> TimelapseRunner:
+    settings = s.services.get("settings", lambda: build_settings_service(s))
+    capture = s.services.get("capture", lambda: build_capture_service(s))
+    sessions = s.services.get("sessions", lambda: build_sessions_service(s))
     return TimelapseRunner(
         s.camera_service, settings, capture, sessions, s.event_bus, s.config_store
     )
 
 
-get_timelapse = service_dep("timelapse", _build)
+get_timelapse = service_dep("timelapse", build_timelapse_service)
 TimelapseDep = Annotated[TimelapseRunner, Depends(get_timelapse)]
 
 router = APIRouter(

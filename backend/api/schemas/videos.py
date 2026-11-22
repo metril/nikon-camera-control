@@ -53,4 +53,5 @@ class VideoEntry(BaseModel):
     created: datetime
     fps: float = 0
     codec: str = ""
-    duration_s: float | None = Field(default=None, description="Not recorded in the manifest.")
+    frames: int | None = Field(default=None, ge=0)
+    duration_s: float | None = Field(default=None, ge=0, description="None for older videos.")

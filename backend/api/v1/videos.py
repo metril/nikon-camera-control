@@ -12,25 +12,24 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
+from starlette.datastructures import State
 
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.common import Ok, Page
 from backend.api.schemas.jobs import JobOut
 from backend.api.schemas.videos import RenderRequest, VideoEntry
-from backend.api.v1.sessions import _make as _make_sessions
+from backend.api.v1.sessions import build_sessions_service
 from backend.core.security import require_api_key
 from backend.services.video import VideoService
 
-get_videos = service_dep(
-    "videos",
-    lambda s: VideoService(
-        s.config_store,
-        s.services.get("sessions", lambda: _make_sessions(s)),
-        s.job_manager,
-        s.data_dir,
-    ),
-)
+
+def build_video_service(s: State) -> VideoService:
+    sessions = s.services.get("sessions", lambda: build_sessions_service(s))
+    return VideoService(s.config_store, sessions, s.job_manager, s.data_dir)
+
+
+get_videos = service_dep("videos", build_video_service)
 VideosDep = Annotated[VideoService, Depends(get_videos)]
 
 router = APIRouter(

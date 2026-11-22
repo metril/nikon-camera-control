@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from PIL import Image
 
 F = "/api/v1/files"
+T = "/api/v1/thumbnails"
 
 
 def _jpg(p: Path, size: tuple[int, int] = (640, 480)) -> None:
@@ -124,26 +125,36 @@ async def test_thumbnail_is_small_jpeg_not_original(
 ) -> None:
     o = _out(app)
     _jpg(o / "s" / "a.jpg", (2000, 1500))
-    r = await client.get(f"{F}/s/a.jpg/thumbnail", params={"size": 100})
+    r = await client.get(f"{T}/s/a.jpg", params={"size": 100})
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
     assert len(r.content) < (o / "s" / "a.jpg").stat().st_size
     from io import BytesIO
 
     assert max(Image.open(BytesIO(r.content)).size) == 100
-    assert (await client.get(f"{F}/s/a.jpg/thumbnail", params={"size": 10})).status_code == 422
-    assert (await client.get(f"{F}/s/a.jpg/thumbnail", params={"size": 5000})).status_code == 422
+    assert (await client.get(f"{T}/s/a.jpg", params={"size": 10})).status_code == 422
+    assert (await client.get(f"{T}/s/a.jpg", params={"size": 5000})).status_code == 422
     assert list((app.state.data_dir / "thumbs").glob("*.jpg"))
 
 
 async def test_thumbnail_unsupported_415(app: FastAPI, client: httpx.AsyncClient) -> None:
     (_out(app) / "a.mov").write_bytes(b"x")
-    r = await client.get(f"{F}/a.mov/thumbnail")
+    r = await client.get(f"{T}/a.mov")
     assert r.status_code == 415 and r.json()["error"]["code"] == "UNSUPPORTED_MEDIA"
-    assert (await client.get(f"{F}/nope.jpg/thumbnail")).status_code == 404
+    assert (await client.get(f"{T}/nope.jpg")).status_code == 404
 
 
 async def test_openapi_operation_ids(app: FastAPI) -> None:
     paths = app.openapi()["paths"]
     assert paths["/api/v1/files"]["get"]["operationId"] == "list_files"
-    assert paths["/api/v1/files/{path}/thumbnail"]["get"]["operationId"] == "get_file_thumbnail"
+    assert paths["/api/v1/thumbnails/{path}"]["get"]["operationId"] == "get_thumbnail"
     assert paths["/api/v1/files/{path}"]["delete"]["operationId"] == "delete_file"
+
+
+async def test_file_named_thumbnail_is_downloadable_not_shadowed(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    (_out(app) / "a.jpg").mkdir()
+    (_out(app) / "a.jpg" / "thumbnail").write_bytes(b"raw-bytes")
+    r = await client.get(f"{F}/a.jpg/thumbnail")
+    assert r.status_code == 200
+    assert r.content == b"raw-bytes"

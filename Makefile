@@ -1,13 +1,19 @@
 BIN := .venv/bin
 
-.PHONY: lint test ci
+.PHONY: lint test api api-check ci
 
 lint:
 	$(BIN)/ruff check .
 	$(BIN)/ruff format --check .
-	$(BIN)/mypy backend
+	$(BIN)/mypy backend scripts
 
 test:
 	$(BIN)/pytest
 
-ci: lint test
+api:
+	$(BIN)/python -m scripts.gen_api
+
+api-check:
+	$(BIN)/python -m scripts.gen_api --check
+
+ci: lint api-check test

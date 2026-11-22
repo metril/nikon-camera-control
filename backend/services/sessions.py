@@ -26,7 +26,7 @@ import os
 import re
 import secrets
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -68,8 +68,14 @@ def _now() -> datetime:
 
 class SessionStore:
     def __init__(
-        self, output_dir: Path, *, fsync: bool = True, header_flush_every: int = 25
+        self,
+        output_dir: Path,
+        *,
+        fsync: bool = True,
+        header_flush_every: int = 25,
+        clock: Callable[[], datetime] = _now,
     ) -> None:
+        self._clock = clock
         self.root = Path(output_dir) / "sessions"
         self.root.mkdir(parents=True, exist_ok=True)
         self._fsync = fsync
@@ -140,7 +146,7 @@ class SessionStore:
 
     # ---- create / read -------------------------------------------------------------------
     def _create(self, name: str, config: dict[str, Any], planned_frames: int) -> SessionManifest:
-        now = _now()
+        now = self._clock()
         while True:
             sid = f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
             try:

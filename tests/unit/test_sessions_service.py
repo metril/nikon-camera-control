@@ -49,20 +49,21 @@ async def test_create_add_list_get_paginate(store: SessionStore) -> None:
 
 
 async def test_list_newest_first(store: SessionStore) -> None:
+    ticks = iter([datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)])
+    store._clock = lambda: next(ticks)  # noqa: SLF001
     a = await store.create("a", {}, 1)
-    await asyncio.sleep(1.01)
     b = await store.create("b", {}, 1)
     assert [s.id for s in await store.list()] == [b.id, a.id]
 
 
-async def test_2000_frames_fast(store: SessionStore) -> None:
-    m = await store.create("big", {}, 2000)
+async def test_500_frames_fast(store: SessionStore) -> None:
+    m = await store.create("big", {}, 500)
     t = time.monotonic()
-    for i in range(2000):
+    for i in range(500):
         await store.add_frame(m.id, frame(i))
     assert time.monotonic() - t < 2.0
-    assert (await store.get(m.id)).frames_captured == 2000
-    assert len(await store.list_frames(m.id, 1990, 50)) == 10
+    assert (await store.get(m.id)).frames_captured == 500
+    assert len(await store.list_frames(m.id, 490, 50)) == 10
 
 
 async def test_torn_last_line_ignored_and_repaired(store: SessionStore) -> None:

@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PIL import ImageOps
+from PIL import Image, ImageOps
 
 from backend.api.schemas.sessions import SessionFrame, SessionVideo
 from backend.api.schemas.videos import RenderRequest
@@ -38,7 +38,7 @@ from backend.core.errors import (
 from backend.core.jobs import Job, JobContext, JobManager
 from backend.services.sessions import SessionStore
 from backend.services.storage import VIDEO_EXTS, safe_join, sanitize_name, unique_path
-from backend.services.thumbnails import _load_source
+from backend.services.thumbnails import load_full_image
 
 log = logging.getLogger(__name__)
 
@@ -110,13 +110,26 @@ def resolve_options(
     )
 
 
-def build_ffmpeg_args(ffmpeg: str, pattern: str, output: str, opts: RenderOptions) -> list[str]:
-    """Pure argv builder (no shell). ``output`` must not exist (``-n``)."""
-    if opts.resolution in _BOX:
-        w, h = _BOX[opts.resolution]
-        scale = f"scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2"
-    else:
-        scale = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+def target_size(first: tuple[int, int], resolution: str) -> tuple[int, int]:
+    """Output size (even dimensions): the first frame's, fitted into the requested box."""
+    w, h = first
+    if resolution in _BOX:
+        bw, bh = _BOX[resolution]
+        k = min(bw / w, bh / h)
+        w, h = round(w * k), round(h * k)
+    return max(2, w // 2 * 2), max(2, h // 2 * 2)
+
+
+def build_ffmpeg_args(
+    ffmpeg: str, pattern: str, output: str, opts: RenderOptions, size: tuple[int, int]
+) -> list[str]:
+    """Pure argv builder (no shell). ``output`` must not exist (``-n``). Every frame is
+    scaled to fit ``size`` and padded to exactly it, so mixed frame sizes encode."""
+    w, h = size
+    scale = (
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1"
+    )
     filters = (["deflicker=mode=pm:size=10"] if opts.deflicker else []) + [scale]
     argv = [
         ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-nostats",
@@ -166,11 +179,16 @@ def parse_progress_line(line: str) -> int | None:
 
 
 def _to_jpeg(src: Path, dest: Path) -> None:
-    im = _load_source(src)
+    im = load_full_image(src)
     try:
         ImageOps.exif_transpose(im).convert("RGB").save(dest, "JPEG", quality=92)
     finally:
         im.close()
+
+
+def _image_size(path: Path) -> tuple[int, int]:
+    with Image.open(path) as im:
+        return im.size
 
 
 def prepare_sequence(frames: list[Path], seq_dir: Path) -> int:
@@ -222,7 +240,7 @@ class VideoService:
     def _configured_path(self) -> str | None:
         if self._ffmpeg_path:
             return self._ffmpeg_path
-        return getattr(self._config.config.video, "ffmpeg_path", None) or None
+        return self._config.config.video.ffmpeg_path or None
 
     def ffmpeg_available(self) -> bool:
         return find_ffmpeg(self._configured_path()) is not None
@@ -315,7 +333,10 @@ class VideoService:
             videos_dir = self._sessions.folder(session_id) / "videos"
             final = await asyncio.to_thread(unique_path, videos_dir, name)
             part = final.with_name(f"{final.stem}.part{final.suffix}")
-            argv = build_ffmpeg_args(ffmpeg, str(work / "%06d.jpg"), str(part), opts)
+            dims = target_size(
+                await asyncio.to_thread(_image_size, work / "000001.jpg"), opts.resolution
+            )
+            argv = build_ffmpeg_args(ffmpeg, str(work / "%06d.jpg"), str(part), opts, dims)
             ctx.report(0.0, "Encoding")
             await self._run_ffmpeg(ctx, argv, count)
             if not part.is_file() or part.stat().st_size == 0:
@@ -330,6 +351,8 @@ class VideoService:
                     size=size,
                     fps=opts.fps,
                     codec=opts.codec,
+                    frames=count,
+                    duration_s=round(count / opts.fps, 3),
                 ),
             )
             ok = True
@@ -367,7 +390,9 @@ class VideoService:
                 if n is not None and total:
                     ctx.report(min(0.99, n / total), f"Encoded {min(n, total)}/{total} frames")
 
-        timeout = self._base_timeout + total * self._per_frame
+        timeout = min(
+            float(self._config.config.video.timeout_s), self._base_timeout + total * self._per_frame
+        )
         stderr_task = asyncio.create_task(read_stderr())
         try:
             async with asyncio.timeout(timeout):
@@ -412,6 +437,8 @@ class VideoService:
             "created": v.created,
             "fps": v.fps,
             "codec": v.codec,
+            "frames": v.frames,
+            "duration_s": v.duration_s,
         }
 
     async def list_videos(self, session_id: str | None = None) -> list[dict[str, Any]]:

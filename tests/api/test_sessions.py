@@ -69,6 +69,7 @@ async def test_operation_ids(app: FastAPI) -> None:
         for path, item in app.openapi()["paths"].items()
         if path.startswith(S)
         for op in item.values()
+        if "sessions" in op.get("tags", [])
     }
     assert ops == {
         "list_sessions",

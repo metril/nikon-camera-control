@@ -46,7 +46,7 @@ class CameraConfig(_Section):
     reconnect_interval_s: float = Field(
         default=2.0, ge=0.5, le=60.0, description="Delay between reconnects"
     )
-    capture_timeout_s: float = Field(default=30.0, ge=0.1, le=300.0, description="Capture timeout")
+    capture_timeout_s: float = Field(default=30.0, ge=1.0, le=300.0, description="Capture timeout")
     event_quiet_window_s: float = Field(
         default=1.0,
         ge=0.0,
@@ -57,9 +57,6 @@ class CameraConfig(_Section):
 
 class LiveViewConfig(_Section):
     target_fps: int = Field(default=8, ge=1, le=30, description="Target live view frame rate")
-    frame_timeout_s: float = Field(
-        default=0.5, ge=0.1, le=5.0, description="Max wait for one frame"
-    )
     quality: Literal["small", "medium", "large"] = Field(
         default="medium", description="Frame size preset"
     )
@@ -106,15 +103,14 @@ class VideoConfig(_Section):
         "veryslow",
     ] = Field(default="medium", description="ffmpeg preset")
     fps: int = Field(default=24, ge=1, le=120, description="Output frame rate")
-    timeout_s: int = Field(default=3600, ge=10, le=86400, description="ffmpeg run timeout")
+    timeout_s: int = Field(
+        default=3600, ge=10, le=86400, description="Upper bound for one ffmpeg run (s)"
+    )
 
 
 class MediaConfig(_Section):
     thumbnail_size: int = Field(
         default=200, ge=32, le=1024, description="Thumbnail longest edge (px)"
-    )
-    download_concurrency: int = Field(
-        default=2, ge=1, le=8, description="Parallel camera downloads"
     )
 
 

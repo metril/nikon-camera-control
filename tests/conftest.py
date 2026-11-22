@@ -88,9 +88,7 @@ def app_config() -> AppConfig:
                 "connect_timeout_s": 1.0,
                 "connect_retries": 1,
                 "reconnect_interval_s": 0.5,
-                "capture_timeout_s": 0.3,
             },
-            "liveview": {"frame_timeout_s": 0.1},
             "timelapse": {"min_interval_s": 0.1},
             "demo_camera": True,
         }

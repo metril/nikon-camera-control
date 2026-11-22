@@ -63,6 +63,8 @@ class SessionVideo(BaseModel):
     size: int = Field(default=0, ge=0)
     fps: float = Field(default=0, ge=0)
     codec: str = ""
+    frames: int | None = Field(default=None, ge=0, description="Frames rendered, if recorded.")
+    duration_s: float | None = Field(default=None, ge=0, description="Video length in seconds.")
 
 
 class SessionManifest(BaseModel):

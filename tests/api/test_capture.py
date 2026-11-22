@@ -6,6 +6,7 @@ import httpx
 from fastapi import FastAPI
 
 from backend.camera.fake import FakeCamera
+from backend.core.config_store import CameraConfig
 
 C = "/api/v1/capture"
 
@@ -89,7 +90,11 @@ async def test_capture_card_full_leaves_idle(
 async def test_capture_hang_times_out(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
-    app.state.config_store.update({"camera": {"capture_timeout_s": 0.1}})
+    store = app.state.config_store
+    short = CameraConfig.model_construct(
+        **{**store.config.camera.model_dump(), "capture_timeout_s": 0.1}
+    )
+    store._config = store.config.model_copy(update={"camera": short})  # noqa: SLF001
     fake_camera.hang("capture")
     try:
         r = await asyncio.wait_for(connected_client.post(C, json={}), 5)

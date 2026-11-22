@@ -15,6 +15,7 @@ from backend.services.video import (
     parse_progress_line,
     prepare_sequence,
     resolve_options,
+    target_size,
 )
 
 
@@ -28,7 +29,7 @@ def _opts(**kw: object) -> RenderOptions:
 
 
 def _args(**kw: object) -> list[str]:
-    return build_ffmpeg_args("ff", "/t/%06d.jpg", "/o/x.mp4", _opts(**kw))
+    return build_ffmpeg_args("ff", "/t/%06d.jpg", "/o/x.mp4", _opts(**kw), (1920, 1080))
 
 
 def test_h264_args_use_configured_preset_and_crf_not_hardcoded_slow() -> None:
@@ -53,8 +54,13 @@ def test_h265_prores_vp9_args() -> None:
 def test_scale_and_deflicker_filters() -> None:
     a = _args(resolution="1080p", deflicker=True)
     vf = a[a.index("-vf") + 1]
-    assert vf.startswith("deflicker") and "scale=1920:1080" in vf and "force_divisible_by=2" in vf
-    assert "trunc(iw/2)*2" in _args()[_args().index("-vf") + 1]
+    assert vf.startswith("deflicker") and "scale=1920:1080" in vf and "pad=1920:1080" in vf
+
+
+def test_target_size_even_and_fitted() -> None:
+    assert target_size((6001, 4001), "source") == (6000, 4000)
+    assert target_size((6000, 4000), "1080p") == (1620, 1080)
+    assert target_size((1, 1), "source") == (2, 2)
 
 
 def test_resolve_options_defaults_and_overrides() -> None:

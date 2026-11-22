@@ -13,8 +13,8 @@ from fastapi import FastAPI
 from backend.api.schemas.common import EventType
 from backend.api.schemas.sessions import SessionStatus
 from backend.api.schemas.timelapse import TimelapseSetup, TimelapseState
-from backend.api.v1.capture import _build as build_capture
-from backend.api.v1.sessions import _make as make_sessions
+from backend.api.v1.capture import build_capture_service as build_capture
+from backend.api.v1.sessions import build_sessions_service as make_sessions
 from backend.camera.fake import FakeCamera
 from backend.core.errors import CameraBusy, CameraOperationFailed, InvalidState
 from backend.services.settings import SettingsService

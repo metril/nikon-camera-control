@@ -102,7 +102,7 @@ async def validate_steps(steps: list[BracketStep], settings: SettingsService) ->
         norm: dict[str, str | int | float | bool] = {}
         for name, value in s.settings.items():
             try:
-                wname, v = await settings._prepare(name, value)  # noqa: SLF001
+                wname, v = await settings.prepare(name, value)
             except AppError as e:
                 raise type(e)(
                     f"Bracket step {i + 1}: {e.message}",

@@ -205,7 +205,7 @@ class SettingsService:
         return self._view(await self._cam.get_setting(resolve_name(name)))
 
     # writes ---------------------------------------------------------------------------
-    async def _prepare(self, name: str, value: object) -> tuple[str, SettingValue]:
+    async def prepare(self, name: str, value: object) -> tuple[str, SettingValue]:
         wname = resolve_name(name)
         widget = await self._cam.get_setting(wname)
         if widget.readonly:
@@ -218,7 +218,7 @@ class SettingsService:
         return wname, validate_value(widget, value)
 
     async def set(self, name: str, value: object, *, owner: str | None = None) -> SettingView:
-        wname, v = await self._prepare(name, value)
+        wname, v = await self.prepare(name, value)
         return self._view(await self._cam.set_setting(wname, v, owner=owner))
 
     async def set_many(
@@ -233,7 +233,7 @@ class SettingsService:
         ``continue_on_error`` every setting is attempted and the first error raised at the end."""
         prepared: dict[str, SettingValue] = {}
         for name, value in values.items():
-            wname, v = await self._prepare(name, value)
+            wname, v = await self.prepare(name, value)
             if wname in prepared:
                 raise SettingInvalid(
                     f"Setting {wname!r} given more than once", details={"name": wname}

@@ -64,7 +64,7 @@ def _embedded_preview(path: Path, im: Image.Image) -> Image.Image | None:
     return best
 
 
-def _load_source(path: Path) -> Image.Image:
+def load_full_image(path: Path) -> Image.Image:
     kind = classify(path.name)
     if kind not in ("image", "raw"):
         raise UnsupportedMedia(f"No thumbnail for {path.suffix or 'this'} files")
@@ -88,7 +88,7 @@ def _load_source(path: Path) -> Image.Image:
 
 
 def _render(src: Path, dest: Path, size: int) -> None:
-    im = _load_source(src)
+    im = load_full_image(src)
     try:
         im = ImageOps.exif_transpose(im)
         im.thumbnail((size, size), Image.Resampling.LANCZOS)

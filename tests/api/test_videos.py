@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from PIL import Image
 
 from backend.api.schemas.sessions import BracketInfo, SessionFile, SessionFrame
-from backend.api.v1.sessions import _make as make_sessions
+from backend.api.v1.sessions import build_sessions_service as make_sessions
 from backend.core.events import EventBus
 from backend.services.sessions import SessionStore
 from backend.services.video import VideoService
@@ -145,6 +145,9 @@ async def test_render_happy_path_manifest_and_progress(
     assert _frame_count(out) == 10
     m = await store.get(sid)
     assert [(v.name, v.codec, v.fps) for v in m.videos] == [("my_night.mp4", "h264", 10)]
+    assert (m.videos[0].frames, m.videos[0].duration_s) == (10, 1.0)
+    listed = (await client.get(V)).json()["items"][0]
+    assert listed["duration_s"] == 1.0 and listed["frames"] == 10
     assert not list(store.folder(sid).glob("videos/*.part*"))
     assert not list((app.state.data_dir / "video-tmp").glob("*"))
     assert any(e.get("job", {}).get("kind") == "render-video" for e in events)
@@ -190,6 +193,30 @@ async def test_codecs_render(
     out = store.folder(sid) / "videos" / job["result"]["name"]
     assert out.suffix == ext and out.read_bytes()[:12].find(magic) >= 0
     assert _frame_count(out) == 4
+
+
+async def test_mixed_frame_sizes_are_scaled_and_padded_to_first_frame(
+    client: httpx.AsyncClient, ctx: tuple[VideoService, SessionStore]
+) -> None:
+    """Regression: frames of different sizes (RAW preview vs camera JPEG) failed in ffmpeg."""
+    _, store = ctx
+    m = await store.create("Mixed", {}, 3)
+    folder = store.folder(m.id)
+    for i, size in enumerate([(64, 48), (100, 80), (50, 90)]):
+        name = f"img/f{i}.jpg"
+        (folder / "img").mkdir(exist_ok=True)
+        Image.new("RGB", size, (20 * i, 30, 30)).save(folder / name, "JPEG")
+        await store.add_frame(m.id, _frame(i, [SessionFile(path=name, kind="jpeg")]))
+    job = await _render(client, m.id)
+    assert job["status"] == "completed", job
+    out = store.folder(m.id) / "videos" / job["result"]["name"]
+    assert _frame_count(out) == 3
+    probe = (
+        await asyncio.to_thread(
+            subprocess.run, [FFMPEG, "-i", str(out)], capture_output=True, text=True, check=False
+        )
+    ).stderr
+    assert "64x48" in probe
 
 
 async def test_raw_only_frames_are_rendered_from_embedded_preview(

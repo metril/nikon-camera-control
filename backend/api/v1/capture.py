@@ -24,12 +24,12 @@ router = APIRouter(
 )
 
 
-def _build(s: State) -> CaptureService:
+def build_capture_service(s: State) -> CaptureService:
     files = s.services.get("files", lambda: build_file_service(s))
     return CaptureService(s.camera_service, s.output_dir, files.index)
 
 
-get_capture = service_dep("capture", _build)
+get_capture = service_dep("capture", build_capture_service)
 CaptureDep = Annotated[CaptureService, Depends(get_capture)]
 
 

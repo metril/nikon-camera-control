@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
+from starlette.datastructures import State
 
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
@@ -18,7 +19,12 @@ from backend.api.schemas.settings import (
 from backend.core.security import require_api_key
 from backend.services.settings import SettingsService, SettingView
 
-get_settings_service = service_dep("settings", lambda s: SettingsService(s.camera_service))
+
+def build_settings_service(s: State) -> SettingsService:
+    return SettingsService(s.camera_service)
+
+
+get_settings_service = service_dep("settings", build_settings_service)
 SettingsDep = Annotated[SettingsService, Depends(get_settings_service)]
 
 router = APIRouter(
