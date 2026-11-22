@@ -6,7 +6,13 @@ import hashlib
 import hmac
 import secrets
 
-from fastapi import Request, WebSocket
+from fastapi import Depends, Request, WebSocket
+from fastapi.security import APIKeyHeader
+
+from backend.core.errors import Unauthorized
+
+# Registers the header as an OpenAPI security scheme; enforcement is in require_api_key.
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def hash_api_key(key: str) -> str:
@@ -28,7 +34,12 @@ def generate_api_key() -> str:
     return secrets.token_urlsafe(32)
 
 
-async def require_api_key(request: Request) -> None:
+def _current_hash(state: object) -> str | None:
+    store = getattr(state, "config_store", None)
+    return store.config.api_key_hash if store is not None else None
+
+
+async def require_api_key(request: Request, _scheme: str | None = Depends(api_key_header)) -> None:
     """FastAPI dependency for REST routes.
 
     Reads the current hash from ``request.app.state.config_store.config.api_key_hash``
@@ -36,7 +47,9 @@ async def require_api_key(request: Request) -> None:
     Raises ``Unauthorized`` (401) on mismatch. No-op when no hash is configured.
     Health, docs and the SPA do not use this dependency.
     """
-    raise NotImplementedError
+    key = _scheme
+    if not verify_api_key(key, _current_hash(request.app.state)):
+        raise Unauthorized()
 
 
 async def ws_authorize(websocket: WebSocket) -> bool:
@@ -47,7 +60,17 @@ async def ws_authorize(websocket: WebSocket) -> bool:
     allowed (always True in open mode). On failure it closes with code 4401 and
     returns False; the caller must then return without accepting.
     """
-    raise NotImplementedError
+    key_hash = _current_hash(websocket.app.state)
+    if not key_hash:
+        return True
+    key: str | None = websocket.query_params.get("api_key")
+    proto = ws_subprotocol(websocket)
+    if proto:
+        key = proto.removeprefix("apikey.")
+    if verify_api_key(key, key_hash):
+        return True
+    await websocket.close(code=4401)
+    return False
 
 
 def ws_subprotocol(websocket: WebSocket) -> str | None:

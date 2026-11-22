@@ -94,3 +94,44 @@ def test_reset(tmp_path: Path) -> None:
 def test_initial_used_when_missing(tmp_path: Path) -> None:
     init = AppConfig(demo_camera=True)
     assert ConfigStore(tmp_path / "c.json", init).config.demo_camera is True
+
+
+def test_reset_keeps_api_key_hash(tmp_path: Path) -> None:
+    p = tmp_path / "c.json"
+    s = ConfigStore(p)
+    s.set_api_key_hash("abc")
+    s.update({"demo_camera": True})
+    assert s.reset() == AppConfig(api_key_hash="abc")
+    assert ConfigStore(p).config.api_key_hash == "abc"
+
+
+def test_set_api_key_hash_persists_and_notifies(tmp_path: Path) -> None:
+    p = tmp_path / "c.json"
+    s = ConfigStore(p)
+    seen: list[str | None] = []
+    s.subscribe(lambda new, old: seen.append(new.api_key_hash))
+    s.set_api_key_hash("h1")
+    s.set_api_key_hash("h1")  # no change, no notify
+    assert ConfigStore(p).config.api_key_hash == "h1"
+    s.set_api_key_hash(None)
+    assert seen == ["h1", None]
+    assert ConfigStore(p).config.api_key_hash is None
+
+
+def test_update_rejects_api_key_hash(tmp_path: Path) -> None:
+    s = ConfigStore(tmp_path / "c.json")
+    with pytest.raises(ConfigInvalid):
+        s.update({"api_key_hash": "x"})
+    assert s.config.api_key_hash is None
+
+
+def test_public_dump_and_schema(tmp_path: Path) -> None:
+    s = ConfigStore(tmp_path / "c.json")
+    s.set_api_key_hash("secret")
+    d = s.config.public_dump()
+    assert "api_key_hash" not in d and d["api_key_set"] is True
+    assert "secret" not in json.dumps(d)
+    schema = s.public_schema()
+    assert "api_key_hash" not in schema["properties"]
+    assert schema["properties"]["api_key_set"]["readOnly"] is True
+    assert "$defs" in schema

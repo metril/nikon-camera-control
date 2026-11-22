@@ -119,6 +119,25 @@ class AppConfig(BaseModel):
     demo_camera: bool = Field(default=False, description="Use the simulated camera")
     api_key_hash: str | None = Field(default=None, description="sha256 of the API key; None = open")
 
+    def public_dump(self) -> dict[str, Any]:
+        """JSON-safe dump for API output: the hash is replaced by ``api_key_set``."""
+        out = self.model_dump(mode="json", exclude={"api_key_hash"})
+        out["api_key_set"] = self.api_key_hash is not None
+        return out
+
+    @classmethod
+    def public_schema(cls) -> dict[str, Any]:
+        """JSON schema of the public config (titles, descriptions, constraints)."""
+        schema = cls.model_json_schema()
+        schema.get("properties", {}).pop("api_key_hash", None)
+        schema.setdefault("properties", {})["api_key_set"] = {
+            "type": "boolean",
+            "title": "Api Key Set",
+            "description": "Whether an API key is configured (read-only)",
+            "readOnly": True,
+        }
+        return schema
+
 
 def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(base)
@@ -203,6 +222,10 @@ class ConfigStore:
             raise
 
     def update(self, patch: dict[str, Any]) -> tuple[AppConfig, list[str]]:
+        if "api_key_hash" in patch:
+            raise ConfigInvalid(
+                "api_key_hash cannot be set through update", details={"fields": ["api_key_hash"]}
+            )
         with self._lock:
             old = self._config
             merged = _deep_merge(old.model_dump(mode="json"), patch)
@@ -231,16 +254,32 @@ class ConfigStore:
         return new, restart
 
     def reset(self) -> AppConfig:
-        """Restore defaults (keeps nothing, including api_key_hash) and persist."""
+        """Restore defaults and persist; the API key hash is preserved."""
         with self._lock:
             old = self._config
-            new = AppConfig()
+            new = AppConfig(api_key_hash=old.api_key_hash)
             self._write(new)
             self._config = new
             subs = list(self._subscribers)
         if new != old:
             self._notify(subs, new, old)
         return new
+
+    def set_api_key_hash(self, key_hash: str | None) -> AppConfig:
+        """Set or clear the API key hash (atomic write, notifies subscribers)."""
+        with self._lock:
+            old = self._config
+            new = old.model_copy(update={"api_key_hash": key_hash})
+            if new != old:
+                self._write(new)
+                self._config = new
+            subs = list(self._subscribers)
+        if new != old:
+            self._notify(subs, new, old)
+        return new
+
+    def public_schema(self) -> dict[str, Any]:
+        return AppConfig.public_schema()
 
     def subscribe(self, callback: Subscriber) -> Callable[[], None]:
         """Register ``callback(new, old)``; returns an unsubscribe function."""
