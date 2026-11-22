@@ -64,6 +64,34 @@ def test_config_tree_names(cam: FakeCamera) -> None:
     assert cam.get_config("iso").path == "/main/imgsettings/iso"
 
 
+@pytest.mark.parametrize("bad", ["1", "true", "on", "0", "off", 2, -1, 1.0, None])
+def test_toggle_rejects_what_real_backend_rejects(cam: FakeCamera, bad: object) -> None:
+    with pytest.raises(SettingInvalid):
+        cam.set_config("viewfinder", bad)  # type: ignore[arg-type]
+    assert cam.get_config("viewfinder").value is False
+
+
+def test_coercion_matches_real_rules(cam: FakeCamera) -> None:
+    cam.set_config("viewfinder", True)
+    cam.set_config("viewfinder", 0)
+    cam.set_config("iso", 400.0)  # integral float -> "400"
+    assert cam.get_config("iso").value == "400"
+    for name, bad in [
+        ("iso", True),  # bool not accepted for radio
+        ("iso", 400.5),
+        ("manualfocusdrive", "10"),  # numbers only, no strings
+        ("manualfocusdrive", True),
+        ("datetime", "1700000000"),
+        ("datetime", 1.5),
+        ("datetime", True),
+    ]:
+        with pytest.raises(SettingInvalid):
+            cam.set_config(name, bad)  # type: ignore[arg-type]
+    cam.set_config("datetime", 1_700_000_100.0)
+    assert cam.get_config("datetime").value == 1_700_000_100
+    assert cam.get_config("manualfocusdrive").value == 0.0
+
+
 def test_config_set_and_validation(cam: FakeCamera) -> None:
     cam.set_config("iso", 400)
     assert cam.get_config("iso").value == "400"
@@ -84,26 +112,37 @@ def test_config_set_and_validation(cam: FakeCamera) -> None:
         cam.get_config("nope")
 
 
+@pytest.mark.parametrize("emit", [False, True])
 @pytest.mark.parametrize(
     ("quality", "exts"),
     [("JPEG Fine", [".JPG"]), ("NEF (Raw)", [".NEF"]), ("NEF+JPEG Fine", [".NEF", ".JPG"])],
 )
-def test_capture_events_per_quality(cam: FakeCamera, quality: str, exts: list[str]) -> None:
+def test_capture_events_per_quality(quality: str, exts: list[str], emit: bool) -> None:
+    cam = FakeCamera(emit_capture_complete=emit)
+    cam.open()
     cam.set_config("imagequality", quality)
     first = cam.capture()
     assert first.folder == CARD_FOLDER and first.name.startswith("DSC_0001")
     events = drain(cam)
     types = [e.type for e in events]
-    assert types == [EventType.FILE_ADDED] * len(exts) + [EventType.CAPTURE_COMPLETE]
+    done = [EventType.CAPTURE_COMPLETE] if emit else []
+    assert types == [EventType.FILE_ADDED] * len(exts) + done
     assert sorted(e.file.name[-4:] for e in events if e.file) == sorted(exts)
     assert sorted(f.name[-4:] for f in cam.list_files(CARD_FOLDER)) == sorted(exts)
 
 
-def test_wait_timeout_and_trigger(cam: FakeCamera) -> None:
+def test_wait_timeout_and_trigger() -> None:
+    cam = FakeCamera(emit_capture_complete=True)
+    cam.open()
     assert cam.wait_for_event(0.01).type is EventType.TIMEOUT
     cam.trigger()
     assert cam.wait_for_event(0.5).type is EventType.FILE_ADDED
     assert cam.wait_for_event(0.5).type is EventType.CAPTURE_COMPLETE
+
+
+def test_capture_complete_off_by_default(cam: FakeCamera) -> None:
+    cam.trigger()
+    assert [e.type for e in drain(cam)] == [EventType.FILE_ADDED]
 
 
 def test_counter_wraps() -> None:
@@ -157,7 +196,7 @@ def test_movie_and_bulb(cam: FakeCamera) -> None:
     assert [e.type for e in drain(cam)] == [EventType.FILE_ADDED]
     cam.set_config("bulb", True)
     cam.set_config("bulb", False)
-    assert [e.type for e in drain(cam)] == [EventType.FILE_ADDED, EventType.CAPTURE_COMPLETE]
+    assert [e.type for e in drain(cam)] == [EventType.FILE_ADDED]
 
 
 def test_folders_delete_storage(cam: FakeCamera, tmp_path: Path) -> None:

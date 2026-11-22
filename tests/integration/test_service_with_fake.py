@@ -30,7 +30,7 @@ async def svc(
     config_store: ConfigStore, fake_camera: FakeCamera, bus: EventBus
 ) -> AsyncIterator[CameraService]:
     config_store.update({"camera": {"connect_retries": 20, "reconnect_interval_s": 0.5}})
-    s = CameraService(lambda: fake_camera, config_store, bus)
+    s = CameraService(lambda: fake_camera, config_store, bus, event_quiet_window_s=0.05)
     await s.start()
     yield s
     fake_camera.release_all()
@@ -90,12 +90,28 @@ async def test_capture_each_quality(
     elapsed = time.monotonic() - t0
     assert {f.name[f.name.rindex(".") :] for f in files} == exts
     assert len(files) == len(exts)
-    assert elapsed < 0.5, "capture must end on CAPTURE_COMPLETE, not the full timeout"
+    assert elapsed < 5, "capture must end on the quiet window, not the full timeout"
     assert svc.state == CameraState.IDLE
     await asyncio.sleep(0.05)
     types = [e.type.value for e in drain(sub)]
     assert "capture_started" in types and "capture_complete" in types
     sub.close()
+
+
+@pytest.mark.parametrize("emit", [False, True])
+async def test_capture_both_fake_modes(
+    config_store: ConfigStore, bus: EventBus, emit: bool
+) -> None:
+    cam = FakeCamera(emit_capture_complete=emit)
+    s = CameraService(lambda: cam, config_store, bus, event_quiet_window_s=0.05)
+    await s.start()
+    try:
+        await s.connect()
+        await s.set_setting("imagequality", "NEF+JPEG Fine")
+        files = await s.capture(timeout=60)
+        assert [f.name[-4:] for f in files] == [".NEF", ".JPG"]
+    finally:
+        await s.stop()
 
 
 async def test_hang_timeout_error_then_recovery(

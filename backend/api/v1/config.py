@@ -60,9 +60,9 @@ async def update_config(
 
 @router.post("/reset", operation_id="reset_config", response_model=ConfigUpdateOut)
 async def reset_config(store: ConfigStoreDep, bus: EventBusDep) -> ConfigUpdateOut:
-    new = store.reset()
-    _changed(bus, new, [])
-    return ConfigUpdateOut(config=_out(new), restart_required=[])
+    new, restart = store.reset()
+    _changed(bus, new, restart)
+    return ConfigUpdateOut(config=_out(new), restart_required=restart)
 
 
 @router.post("/api-key", operation_id="create_api_key", response_model=ApiKeyOut)

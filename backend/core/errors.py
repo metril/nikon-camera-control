@@ -19,6 +19,8 @@ class ErrorCode(StrEnum):
     CAMERA_BUSY = "CAMERA_BUSY"
     CAMERA_TIMEOUT = "CAMERA_TIMEOUT"
     CAMERA_IO_ERROR = "CAMERA_IO_ERROR"
+    CAMERA_OPERATION_FAILED = "CAMERA_OPERATION_FAILED"
+    STORAGE_FULL = "STORAGE_FULL"
     INVALID_STATE = "INVALID_STATE"
     SETTING_NOT_FOUND = "SETTING_NOT_FOUND"
     SETTING_NOT_ALLOWED = "SETTING_NOT_ALLOWED"
@@ -93,6 +95,23 @@ class CameraIOError(AppError):
     code = ErrorCode.CAMERA_IO_ERROR
     http_status = 502
     default_message = "Camera I/O error"
+
+
+class CameraOperationFailed(AppError):
+    """The camera rejected or failed one operation; the USB link itself is fine."""
+
+    code = ErrorCode.CAMERA_OPERATION_FAILED
+    http_status = 502
+    recoverable = True
+    default_message = "Camera operation failed"
+
+
+class StorageFull(AppError):
+    """No space left on the camera's storage card."""
+
+    code = ErrorCode.STORAGE_FULL
+    http_status = 507
+    default_message = "Camera storage is full"
 
 
 class InvalidState(AppError):

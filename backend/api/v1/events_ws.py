@@ -19,8 +19,9 @@ _CLOSE_TRY_AGAIN = 1013
 
 @router.websocket("/ws/events")
 async def events_ws(websocket: WebSocket) -> None:
-    """Auth via ``apikey.<key>`` subprotocol or ``?api_key=``. Client may send
-    ``{"type":"ping"}`` and gets ``{"type":"pong"}``."""
+    """Auth via the ``apikey.<key>`` subprotocol only (rejected: accept, then close 4401).
+
+    Client may send ``{"type":"ping"}`` and gets ``{"type":"pong"}``."""
     if not await ws_authorize(websocket):
         return
     await websocket.accept(subprotocol=ws_subprotocol(websocket))

@@ -29,12 +29,14 @@ from backend.core.errors import (
     CameraIOError,
     CameraNotConnected,
     CameraNotFound,
+    CameraOperationFailed,
     CameraTimeout,
     FeatureUnsupported,
     FileNotFoundError_,
     SettingInvalid,
     SettingNotAllowed,
     SettingNotFound,
+    StorageFull,
 )
 
 log = structlog.get_logger(__name__)
@@ -83,7 +85,11 @@ def gp_code(exc: BaseException) -> int | None:
 
 
 def translate_error(exc: BaseException, op: str) -> AppError:
-    """Map a GPhoto2Error to the matching domain exception, keeping the gphoto2 code."""
+    """Map a GPhoto2Error to the matching domain exception, keeping the gphoto2 code.
+
+    Only genuine link loss (``_IO_CODES``) becomes CameraIOError; everything else is a
+    per-operation failure that must not tear down the connection.
+    """
     code = gp_code(exc)
     try:
         text = gp.gp_result_as_string(code) if code is not None else str(exc)
@@ -104,8 +110,14 @@ def translate_error(exc: BaseException, op: str) -> AppError:
         return FileNotFoundError_(msg, details=details)
     if code == gp.GP_ERROR_NOT_SUPPORTED:
         return FeatureUnsupported(msg, details=details)
-    # IO/USB family, CAMERA_ERROR, NO_SPACE, corrupted data and anything unknown.
-    return CameraIOError(msg, details=details)
+    if code == gp.GP_ERROR_NO_SPACE:
+        return StorageFull(msg, details=details)
+    if code == gp.GP_ERROR_BAD_PARAMETERS and op.startswith("set_config"):
+        return SettingInvalid(msg, details=details)
+    if code in _IO_CODES:
+        return CameraIOError(msg, details=details)
+    # CAMERA_ERROR, corrupted data, bad parameters elsewhere, anything unknown.
+    return CameraOperationFailed(msg, details=details)
 
 
 # ------------------------------------------------------------------ widget conversion
@@ -113,7 +125,7 @@ def translate_error(exc: BaseException, op: str) -> AppError:
 
 def widget_to_config(widget: Any, parent_path: str = "") -> ConfigWidget:
     """Convert a gphoto2 widget (recursively for sections) into a ConfigWidget."""
-    wtype = _WIDGET_TYPES.get(widget.get_type(), ConfigType.TEXT)
+    wtype = _WIDGET_TYPES.get(widget.get_type(), ConfigType.UNKNOWN)
     name = widget.get_name()
     path = f"{parent_path}/{name}"
     base = {
@@ -365,7 +377,7 @@ class Gphoto2Backend:
         try:
             if not self._viewfinder_on:
                 self._enable_viewfinder()
-            f = cam.capture_preview(self._ctx)
+            f = cam.capture_preview()  # binding returns a new CameraFile; no context arg
             return bytes(f.get_data_and_size())
         except gp.GPhoto2Error as e:
             raise translate_error(e, "capture_preview") from e
@@ -436,7 +448,7 @@ class Gphoto2Backend:
             if kind is FileKind.NORMAL:
                 self._read_chunked(cam, folder, name, ftype, tmp)
             else:  # previews/EXIF are small; let libgphoto2 build them
-                cam.file_get(folder, name, ftype, self._ctx).save(str(tmp))
+                cam.file_get(folder, name, ftype).save(str(tmp))
             tmp.replace(dest)
         except gp.GPhoto2Error as e:
             tmp.unlink(missing_ok=True)

@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
+import json
+import logging
+import os
 import secrets
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import Depends, Request, WebSocket
 from fastapi.security import APIKeyHeader
 
 from backend.core.errors import Unauthorized
+
+log = logging.getLogger(__name__)
+
+# Stored in place of the key hash when api_key.json exists but is unusable: never equals a
+# sha256 hex digest, so every key is rejected (fail closed).
+LOCKED_HASH = "!locked"
 
 # Registers the header as an OpenAPI security scheme; enforcement is in require_api_key.
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -27,6 +40,65 @@ def verify_api_key(key: str | None, key_hash: str | None) -> bool:
     if not key:
         return False
     return hmac.compare_digest(hash_api_key(key), key_hash)
+
+
+class ApiKeyStore:
+    """The API key hash, kept in its own file (``{"sha256", "created"}``), written atomically.
+
+    Missing file = no key (open mode). Present but unreadable/invalid = FAIL CLOSED
+    (``load`` returns ``LOCKED_HASH``). Recovery from lockout: delete the file on the host.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = Path(path)
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def load(self) -> str | None:
+        try:
+            raw = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            return self._locked(f"unreadable: {exc}")
+        try:
+            data = json.loads(raw)
+            digest = data["sha256"]
+            if not (isinstance(digest, str) and len(digest) == 64):
+                raise ValueError("sha256 must be a 64-character hex string")
+            int(digest, 16)
+        except (ValueError, KeyError, TypeError) as exc:
+            return self._locked(f"invalid: {exc!r}")
+        return digest
+
+    def _locked(self, why: str) -> str:
+        log.error(
+            "API key file %s is %s. Authentication stays ENABLED and every key is rejected. "
+            "Delete this file on the host to remove the key and re-open the app.",
+            self._path,
+            why,
+        )
+        return LOCKED_HASH
+
+    def save(self, key_hash: str) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=".api_key-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({"sha256": key_hash, "created": datetime.now(UTC).isoformat()}, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self._path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+
+    def clear(self) -> None:
+        with contextlib.suppress(FileNotFoundError):
+            self._path.unlink()
 
 
 def generate_api_key() -> str:
@@ -53,23 +125,23 @@ async def require_api_key(request: Request, _scheme: str | None = Depends(api_ke
 
 
 async def ws_authorize(websocket: WebSocket) -> bool:
-    """Authorize a WebSocket before accept().
+    """Authorize a WebSocket; call before accepting.
 
-    Accepts key via subprotocol ``apikey.<key>`` (preferred; caller must echo the
-    chosen subprotocol on accept) or ``?api_key=`` query fallback. Returns True if
-    allowed (always True in open mode). On failure it closes with code 4401 and
-    returns False; the caller must then return without accepting.
+    The key is taken only from the ``apikey.<key>`` subprotocol (never the URL, which
+    would leak it into access logs). Returns True if allowed (always in open mode); the
+    caller then accepts, echoing ``ws_subprotocol``. On failure it accepts and closes
+    with 4401 (closing before accept would surface as HTTP 403) and returns False; the
+    caller must then return.
     """
     key_hash = _current_hash(websocket.app.state)
     if not key_hash:
         return True
-    key: str | None = websocket.query_params.get("api_key")
     proto = ws_subprotocol(websocket)
-    if proto:
-        key = proto.removeprefix("apikey.")
+    key = proto.removeprefix("apikey.") if proto else None
     if verify_api_key(key, key_hash):
         return True
-    await websocket.close(code=4401)
+    await websocket.accept(subprotocol=proto)
+    await websocket.close(code=4401, reason="Missing or invalid API key")
     return False
 
 

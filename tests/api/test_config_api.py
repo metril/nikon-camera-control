@@ -102,3 +102,14 @@ async def test_openapi(client: httpx.AsyncClient) -> None:
     patch = spec["components"]["schemas"]["ConfigPatch"]
     assert "api_key_hash" not in patch["properties"] and "liveview" in patch["properties"]
     assert "ErrorResponse" in spec["components"]["schemas"]
+
+
+async def test_reset_reports_restart_required(app: FastAPI, client: httpx.AsyncClient) -> None:
+    await client.patch(U, json={"cors_origins": ["http://x"]})
+    sub = app.state.event_bus.subscribe()
+    r = await client.post(f"{U}/reset")
+    assert r.json()["restart_required"] == ["cors_origins"]
+    ev = await asyncio.wait_for(sub.__anext__(), 2)
+    sub.close()
+    assert ev.data["restart_required"] == ["cors_origins"]
+    assert (await client.post(f"{U}/reset")).json()["restart_required"] == []

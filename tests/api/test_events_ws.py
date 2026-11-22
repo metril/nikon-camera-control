@@ -32,16 +32,21 @@ def test_ping_pong(ws_client: TestClient) -> None:
 def test_auth(ws_client: TestClient) -> None:
     store = ws_client.app.state.config_store  # type: ignore[attr-defined]
     store.set_api_key_hash(hash_api_key("k1"))
-    with pytest.raises(WebSocketDisconnect) as ei, ws_client.websocket_connect(W):
-        pass
+    # accepted first, then closed with 4401 (not an HTTP 403 at handshake)
+    with ws_client.websocket_connect(W) as ws, pytest.raises(WebSocketDisconnect) as ei:
+        ws.receive_json()
     assert ei.value.code == 4401
-    with pytest.raises(WebSocketDisconnect) as ei, ws_client.websocket_connect(f"{W}?api_key=bad"):
-        pass
+    with (
+        ws_client.websocket_connect(W, subprotocols=["apikey.bad"]) as ws,
+        pytest.raises(WebSocketDisconnect) as ei,
+    ):
+        ws.receive_json()
     assert ei.value.code == 4401
+    # the query-string fallback is gone
+    with ws_client.websocket_connect(f"{W}?api_key=k1") as ws, pytest.raises(WebSocketDisconnect):
+        ws.receive_json()
     with ws_client.websocket_connect(W, subprotocols=["apikey.k1"]) as ws:
         assert ws.accepted_subprotocol == "apikey.k1"
-        assert ws.receive_json()["type"] == "camera_state"
-    with ws_client.websocket_connect(f"{W}?api_key=k1") as ws:
         assert ws.receive_json()["type"] == "camera_state"
 
 

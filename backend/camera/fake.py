@@ -111,7 +111,7 @@ def _specs() -> list[_Spec]:
             "manualfocusdrive",
             "Drive Nikon DSLR Manual focus",
             ConfigType.RANGE,
-            0,
+            0.0,
             range=ConfigRange(-1000, 1000, 1),
         ),  # fmt: skip
         _Spec("actions", "movie", "Record a movie", T, False),
@@ -309,7 +309,17 @@ def _nef(jpeg: bytes) -> bytes:
 class FakeCamera:
     """Fake ``CameraBackend``. Fault-injection methods may be called from any thread."""
 
-    def __init__(self, *, seed: int = 0, start_counter: int = 1, capacity_kb: int = 8192) -> None:
+    def __init__(
+        self,
+        *,
+        seed: int = 0,
+        start_counter: int = 1,
+        capacity_kb: int = 8192,
+        emit_capture_complete: bool = False,
+    ) -> None:
+        """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
+        Default False mirrors real PTP bodies, where capture() usually consumes it."""
+        self._emit_complete = emit_capture_complete
         self._rng = random.Random(seed)  # noqa: S311
         self._specs = {s.name: s for s in _specs()}
         self._values: dict[str, str | int | float | bool] = {
@@ -497,38 +507,58 @@ class FakeCamera:
         self._values[name] = new
 
     @staticmethod
-    def _coerce(s: _Spec, value: str | int | float | bool) -> str | int | float | bool:
-        bad = SettingInvalid(f"Invalid value {value!r} for {s.name!r}")
-        if s.type is ConfigType.RADIO or s.type is ConfigType.MENU:
-            v = str(value)
-            if v not in s.choices:
-                raise bad
+    def _coerce(s: _Spec, value: object) -> str | int | float | bool:
+        """Same accept/reject rules as ``gphoto2_backend.coerce_config_value``."""
+
+        def bad(why: str) -> SettingInvalid:
+            return SettingInvalid(
+                f"Invalid value {value!r} for {s.name!r}: {why}",
+                details={"name": s.name, "value": value, "type": str(s.type)},
+            )
+
+        is_num = isinstance(value, int | float) and not isinstance(value, bool)
+        t = s.type
+        if t is ConfigType.RADIO or t is ConfigType.MENU:
+            if isinstance(value, bool):
+                raise bad("boolean not accepted")
+            candidates = [str(value)]
+            if isinstance(value, float) and value.is_integer():
+                candidates.append(str(int(value)))
+            for c in candidates:
+                if c in s.choices:
+                    return c
+            raise bad("not one of the available choices")
+        if t is ConfigType.RANGE:
+            if not is_num:
+                raise bad("number required")
+            v = float(value)  # type: ignore[arg-type]
+            r = s.range
+            if r is None:
+                return v
+            if not r.min <= v <= r.max:
+                raise bad(f"must be within [{r.min}, {r.max}]")
+            if r.step > 0:
+                n = (v - r.min) / r.step
+                if abs(n - round(n)) > 1e-6:
+                    raise bad(f"must be a multiple of {r.step} from {r.min}")
             return v
-        if s.type is ConfigType.TOGGLE:
-            if isinstance(value, str):
-                low = value.strip().lower()
-                if low in ("1", "true", "on"):
-                    return True
-                if low in ("0", "false", "off"):
-                    return False
-                raise bad
-            if value in (0, 1):
+        if t is ConfigType.TOGGLE:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, int) and value in (0, 1):
                 return bool(value)
-            raise bad
-        if s.type is ConfigType.RANGE:
-            try:
-                num = float(value)
-            except (TypeError, ValueError):
-                raise bad from None
-            if s.range is None or not s.range.min <= num <= s.range.max:
-                raise bad
-            return num
-        if s.type is ConfigType.DATE:
-            try:
+            raise bad("bool, 0 or 1 required")
+        if t is ConfigType.DATE:
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+            if isinstance(value, float) and value.is_integer():
                 return int(value)
-            except (TypeError, ValueError):
-                raise bad from None
-        return str(value)
+            raise bad("integer epoch seconds required")
+        if t is ConfigType.TEXT:
+            if isinstance(value, str):
+                return value
+            raise bad("string required")
+        raise bad(f"widget of type {t} cannot be set")
 
     # ---- capture ----
 
@@ -588,9 +618,10 @@ class FakeCamera:
                     f"DSC_{n:04d}.JPG", _File(jpg, jpg, self._stamp(), "image/jpeg", w, h)
                 )
             )
-        with self._cond:
-            self._events.append(CameraEvent(EventType.CAPTURE_COMPLETE))
-            self._cond.notify_all()
+        if self._emit_complete:
+            with self._cond:
+                self._events.append(CameraEvent(EventType.CAPTURE_COMPLETE))
+                self._cond.notify_all()
         return made[0]
 
     def capture(self) -> CameraFilePath:

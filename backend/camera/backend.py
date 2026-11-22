@@ -7,6 +7,11 @@ Contract:
   (CameraNotFound, CameraNotConnected, CameraTimeout, CameraIOError,
   SettingNotFound, SettingNotAllowed, SettingInvalid, FileNotFoundError_, ...).
   Raw gphoto2 errors must never escape.
+  CameraIOError means the USB link is lost (the service tears the connection down);
+  it must be raised ONLY for genuine link loss. A single failed operation (autofocus,
+  rejected setting, ...) raises CameraOperationFailed; a full card raises StorageFull;
+  an operation the body lacks raises FeatureUnsupported. All three leave the
+  connection up.
 - ``close()`` is idempotent and must not raise. ``open()`` after ``close()``
   re-initialises the device (used by the reset-after-timeout path).
 - Config widget names are the leaf names gphoto2 reports (e.g. "iso", "shutterspeed",
@@ -30,6 +35,7 @@ class ConfigType(StrEnum):
     DATE = "date"
     SECTION = "section"
     BUTTON = "button"
+    UNKNOWN = "unknown"  # widget type the backend does not recognise; read-only
 
 
 class FileKind(StrEnum):

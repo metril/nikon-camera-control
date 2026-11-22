@@ -7,13 +7,16 @@ Design contract
   KEEPALIVE < PREVIEW; FIFO within a priority (sequence counter). Async callers await a
   future resolved with ``loop.call_soon_threadsafe``.
 - ``call(fn, priority=, timeout=)`` is the one generic way to run a backend op. If the op
-  does not finish within ``timeout`` the awaiting caller gets ``CameraTimeout``, the item
-  is marked abandoned (its late result is discarded), queued items are failed with
-  CameraTimeout, the service moves to ERROR, and once the stuck call returns the worker
-  itself resets the backend (close + reopen) and the state returns to IDLE. There is only
-  ever one live worker thread, so timeouts cannot pile up threads. If the stuck call never
-  returns the service stays in ERROR; ``disconnect()`` abandons that worker (it exits by
-  itself when the call finally returns) and the next ``connect()`` starts a fresh one.
+  does not finish within ``timeout`` the awaiting caller gets ``CameraTimeout`` and the item
+  is marked abandoned (its late result is discarded; every coalesced waiter is woken with the
+  same error). If the item was already running, queued items are failed with CameraTimeout,
+  the service moves to ERROR, and once the stuck call returns the worker itself resets the
+  backend (close + reopen) and the state returns to IDLE. An item that times out while still
+  queued is just skipped: no ERROR, no reset. There is only ever one live worker thread, so
+  timeouts cannot pile up threads. If the stuck call never returns the service stays in
+  ERROR; ``disconnect()`` waits a bounded time for an in-flight call, then abandons that
+  worker (it exits by itself when the call finally returns, and never closes a backend a
+  newer worker owns) and the next ``connect()`` starts a fresh one.
 - Every state change goes through one validated path (``core.state.can_transition``;
   ``transition`` is its public form), is published on the bus as CAMERA_STATE
   ({state, previous}), plus CAMERA_CONNECTED / CAMERA_DISCONNECTED where relevant.
@@ -55,6 +58,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, TypeVar, cast
 
 from backend.api.schemas.common import EventType
@@ -106,6 +110,8 @@ class CameraStatus:
     leased_by: str | None
     last_error: str | None
     connected_at: float | None  # unix seconds
+    serial: str | None = None
+    last_activity: datetime | None = None
 
 
 class Lease:
@@ -126,14 +132,25 @@ class _Item:
     lock: threading.Lock = field(default_factory=threading.Lock)
     finished: bool = False
     abandoned: bool = False
+    started: bool = False
     reset: bool = True
 
     def try_abandon(self, *, reset: bool) -> bool:
+        """Mark abandoned. ``reset`` only applies if the worker already started the item;
+        a still-queued item is simply skipped by the worker."""
         with self.lock:
             if self.finished or self.abandoned:
                 return False
             self.abandoned = True
-            self.reset = reset
+            self.reset = reset and self.started
+            return True
+
+    def begin(self) -> bool:
+        """Worker side: False if the item was abandoned while queued (skip it)."""
+        with self.lock:
+            if self.abandoned:
+                return False
+            self.started = True
             return True
 
     def deliver(self, result: Any, exc: BaseException | None) -> None:
@@ -163,7 +180,10 @@ class _Worker:
         self.backend: CameraBackend | None = None
         self.inflight: _Item | None = None
         self.stopped = False
-        self.thread = threading.Thread(target=self._run, name="camera-worker", daemon=True)
+        self.gen = next(svc._generations)
+        self.thread = threading.Thread(
+            target=self._run, name=f"{svc._thread_prefix}-{self.gen}", daemon=True
+        )
         self.thread.start()
 
     # called on the event loop ---------------------------------------------------------
@@ -220,6 +240,8 @@ class _Worker:
                 _, _, item = self.queue.get()
                 if item.fn is None:
                     break
+                if not item.begin():
+                    continue  # abandoned while queued
                 self.inflight = item
                 result: Any = None
                 exc: BaseException | None = None
@@ -227,7 +249,8 @@ class _Worker:
                     result = item.fn(self)
                 except Exception as e:
                     exc = e
-                self._svc._last_activity = time.monotonic()
+                if self._svc._worker is self:  # late results from old generations are ignored
+                    self._svc._last_activity = time.monotonic()
                 with item.lock:
                     abandoned = item.abandoned
                     if not abandoned:
@@ -248,9 +271,8 @@ class _Worker:
         if backend is None:
             return
         if self.stopped or not reset:
-            with contextlib.suppress(Exception):
-                backend.close()
             self.backend = None
+            self._close_backend(backend)
             return
         ok = True
         try:
@@ -269,8 +291,15 @@ class _Worker:
         backend = self.backend
         self.backend = None
         if backend is not None:
-            with contextlib.suppress(Exception):
-                backend.close()
+            self._close_backend(backend)
+
+    def _close_backend(self, backend: CameraBackend) -> None:
+        """Close unless a newer worker now owns this very backend object."""
+        current = self._svc._worker
+        if current is not None and current is not self and current.backend is backend:
+            return
+        with contextlib.suppress(Exception):
+            backend.close()
 
 
 class CameraService:
@@ -279,9 +308,15 @@ class CameraService:
         backend_factory: Callable[[], CameraBackend],
         config_store: ConfigStore,
         event_bus: EventBus,
+        *,
+        event_quiet_window_s: float = 1.0,
+        disconnect_wait_s: float = 3.0,
     ) -> None:
         """``backend_factory`` is called on each (re)connect to get a fresh backend
-        (real gphoto2 or FakeCamera). It is invoked on the worker thread."""
+        (real gphoto2 or FakeCamera). It is invoked on the worker thread.
+        ``event_quiet_window_s``: after a capture, stop draining camera events once this
+        long passes with no new event. ``disconnect_wait_s``: how long ``disconnect`` waits
+        for an in-flight call before abandoning the worker."""
         self._factory = backend_factory
         self._config = config_store
         self._bus = event_bus
@@ -303,6 +338,10 @@ class CameraService:
         self._settings_map: dict[str, ConfigWidget] = {}
         self._cache_epoch = 0
         self._close_wait_s = 2.0
+        self._quiet_window_s = event_quiet_window_s
+        self._disconnect_wait_s = disconnect_wait_s
+        self._generations = itertools.count(1)
+        self._thread_prefix = f"camera-worker-{id(self):x}"
         self._stop_wait_s = 2.0
 
     # lifecycle ---------------------------------------------------------------
@@ -345,12 +384,18 @@ class CameraService:
         self._invalidate_cache()
         self._lease_owner = None
         self._lease_token = None
-        self._preview_item = None
+        shared, self._preview_item = self._preview_item, None
+        if shared is not None:
+            shared.deliver(None, CameraNotConnected())
         self._connected_at = None
         worker = self._worker
         if worker is None:
             return self.status()
         worker.fail_queued(CameraNotConnected)
+        if worker.inflight is not None:  # give the running call a bounded chance to finish
+            deadline = time.monotonic() + self._disconnect_wait_s
+            while worker.inflight is not None and time.monotonic() < deadline:  # noqa: ASYNC110
+                await asyncio.sleep(0.005)
         if worker.fail_inflight(CameraNotConnected):
             self._abandon_worker(worker)  # stuck in a call: it closes the backend on exit
         elif worker.backend is not None:
@@ -373,7 +418,14 @@ class CameraService:
             leased_by=self._lease_owner,
             last_error=self._last_error,
             connected_at=self._connected_at,
+            serial=self._serial if self._state in _LIVE_STATES else None,
+            last_activity=self._last_activity_dt(),
         )
+
+    def _last_activity_dt(self) -> datetime | None:
+        if self._state not in _LIVE_STATES or not self._last_activity:
+            return None
+        return datetime.fromtimestamp(time.time() - (time.monotonic() - self._last_activity), UTC)
 
     async def transition(self, to: CameraState) -> CameraState:
         """Validated state change (see class docstring). Returns the previous state."""
@@ -427,8 +479,14 @@ class CameraService:
         if task is None or task.done() or task is asyncio.current_task():
             return
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
+        try:
             await task
+        except asyncio.CancelledError:
+            me = asyncio.current_task()
+            if me is not None and me.cancelling() > 0:
+                raise  # we are being cancelled ourselves, not just the inner task
+        except Exception:  # noqa: S110
+            pass
 
     def _open_job(self, w: _Worker) -> tuple[str, str | None]:
         old, w.backend = w.backend, None
@@ -537,8 +595,9 @@ class CameraService:
         await asyncio.wait({fut}, timeout=timeout)
         if not fut.done():
             if item.try_abandon(reset=item.escalate):
-                if item.escalate:
+                if item.escalate and item.started:  # only the in-flight call stalls the camera
                     self._on_timeout(worker)
+                item.deliver(None, CameraTimeout())  # wake every coalesced waiter
                 raise CameraTimeout()
             await asyncio.wait({fut})  # result already in flight
         return fut.result()
@@ -654,27 +713,36 @@ class CameraService:
         timeout: float | None = None,  # noqa: ASYNC109
         owner: str | None = None,
     ) -> list[CameraFilePath]:
-        """CAPTURING transition, capture at CAPTURE priority, drain camera events until
-        CAPTURE_COMPLETE (or ``timeout``), collecting every FILE_ADDED (RAW+JPEG yields two
-        files), publish CAPTURE_STARTED / CAPTURE_COMPLETE, then restore the prior state
-        (IDLE or LIVEVIEW). ``timeout`` defaults to config.camera.capture_timeout_s and
-        bounds the capture and, separately, the event drain."""
+        """CAPTURING transition, capture at CAPTURE priority, then drain camera events until
+        CAPTURE_COMPLETE, a quiet window with no new event (``event_quiet_window_s``; real
+        bodies often swallow CAPTURE_COMPLETE inside capture()) or ``timeout``. The path
+        returned by capture() is always included, de-duplicated with every FILE_ADDED
+        (RAW+JPEG yields two files); publish CAPTURE_STARTED / CAPTURE_COMPLETE, then
+        restore the prior state (IDLE or LIVEVIEW). ``timeout`` defaults to
+        config.camera.capture_timeout_s and bounds the capture and, separately, the drain."""
         self._check_lease(Priority.CAPTURE, owner)
         t = timeout if timeout is not None else self._config.config.camera.capture_timeout_s
         prior = await self.transition(_S.CAPTURING)
         self._bus.publish(EventType.CAPTURE_STARTED, {})
 
         def _do(b: CameraBackend) -> list[CameraFilePath]:
-            first = b.capture()
-            files = [first]
-            deadline = time.monotonic() + t
-            while (remaining := deadline - time.monotonic()) > 0:
+            files = [b.capture()]
+            deadline = last = time.monotonic()
+            deadline += t
+            while True:
+                now = time.monotonic()
+                remaining = min(deadline - now, self._quiet_window_s - (now - last))
+                if remaining <= 0:
+                    break
                 ev = b.wait_for_event(min(remaining, 0.5))
+                if ev.type == CamEventType.CAPTURE_COMPLETE:
+                    break
+                if ev.type == CamEventType.TIMEOUT:
+                    continue
+                last = time.monotonic()
                 if ev.type == CamEventType.FILE_ADDED and ev.file is not None:
                     if ev.file not in files:
                         files.append(ev.file)
-                elif ev.type == CamEventType.CAPTURE_COMPLETE:
-                    break
             return files
 
         try:
@@ -736,6 +804,10 @@ class CameraService:
             wait = self._last_activity + interval - time.monotonic()
             if not cfg.keepalive_enabled or self._state not in _KEEPALIVE_STATES:
                 await asyncio.sleep(min(interval, 1.0))
+                continue
+            w = self._worker
+            if w is not None and (w.inflight is not None or not w.queue.empty()):
+                await asyncio.sleep(min(interval, 0.5))  # never queue behind another call
                 continue
             if wait > 0:
                 await asyncio.sleep(min(wait, 1.0))

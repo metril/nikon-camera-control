@@ -25,12 +25,14 @@ from backend.core.errors import (
     CameraIOError,
     CameraNotConnected,
     CameraNotFound,
+    CameraOperationFailed,
     CameraTimeout,
     FeatureUnsupported,
     FileNotFoundError_,
     SettingInvalid,
     SettingNotAllowed,
     SettingNotFound,
+    StorageFull,
 )
 
 
@@ -153,13 +155,78 @@ def test_satisfies_protocol() -> None:
         (gp.GP_ERROR_IO_READ, CameraIOError),
         (gp.GP_ERROR_FILE_NOT_FOUND, FileNotFoundError_),
         (gp.GP_ERROR_NOT_SUPPORTED, FeatureUnsupported),
-        (gp.GP_ERROR_CAMERA_ERROR, CameraIOError),
+        (gp.GP_ERROR_IO_USB_FIND, CameraIOError),
+        (gp.GP_ERROR_IO_USB_CLEAR_HALT, CameraIOError),
+        (gp.GP_ERROR_CAMERA_ERROR, CameraOperationFailed),
+        (gp.GP_ERROR_CORRUPTED_DATA, CameraOperationFailed),
+        (gp.GP_ERROR_BAD_PARAMETERS, CameraOperationFailed),
+        (gp.GP_ERROR_NO_SPACE, StorageFull),
+        (-12345, CameraOperationFailed),
     ],
 )
 def test_translate_error(code: int, exc: type[Exception]) -> None:
     out = translate_error(gp.GPhoto2Error(code), "op")
     assert type(out) is exc
     assert out.details["gphoto2_code"] == code
+
+
+def test_set_config_bad_parameters_is_setting_invalid() -> None:
+    class Cam(FakeCamera):
+        def set_single_config(self, name: str, w: StubWidget, ctx: Any) -> None:
+            raise gp.GPhoto2Error(gp.GP_ERROR_BAD_PARAMETERS)
+
+    with pytest.raises(SettingInvalid):
+        _backend(Cam(_root())).set_config("iso", "200")
+
+
+def test_failed_operation_does_not_look_like_link_loss() -> None:
+    class Cam:
+        def trigger_capture(self, ctx: Any) -> None:
+            raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_ERROR)
+
+        def capture(self, t: int, ctx: Any) -> None:
+            raise gp.GPhoto2Error(gp.GP_ERROR_NO_SPACE)
+
+    b = _backend(Cam())
+    with pytest.raises(CameraOperationFailed) as ei:
+        b.trigger()
+    assert not isinstance(ei.value, CameraIOError)
+    with pytest.raises(StorageFull):
+        b.capture()
+
+
+def test_unknown_widget_type_is_unknown() -> None:
+    w = widget_to_config(StubWidget("weird", 999, "x"))
+    assert w.type is ConfigType.UNKNOWN
+
+
+def test_binding_calls_match_installed_signatures(tmp_path: Path) -> None:
+    # capture_preview/file_get take an optional CameraFile, NOT the context, in this binding.
+    class Cam:
+        def capture_preview(self, *args: Any) -> Any:
+            assert not args
+
+            class F:
+                def get_data_and_size(self) -> bytes:
+                    return b"jpg"
+
+            return F()
+
+        def file_get(self, folder: str, name: str, t: int, *args: Any) -> Any:
+            assert not args
+
+            class F:
+                def save(self, path: str) -> None:
+                    Path(path).write_bytes(b"x")
+
+            return F()
+
+    b = _backend(Cam())
+    b._viewfinder_on = True
+    assert b.capture_preview() == b"jpg"
+    dest = tmp_path / "p.jpg"
+    b.read_file("/f", "a.jpg", FileKind.PREVIEW, dest)
+    assert dest.read_bytes() == b"x"
 
 
 def test_widget_conversion_tree() -> None:

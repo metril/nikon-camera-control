@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -31,30 +30,17 @@ router = APIRouter(
 
 async def _status(svc: CameraService) -> CameraStatusOut:
     st = svc.status()
-    serial: str | None = None
-    if st.connected:
-        try:
-            value = (await svc.get_setting("serialnumber")).value
-            serial = None if value is None else str(value)
-        except Exception:
-            serial = None
-    activity = getattr(svc, "_last_activity", 0.0)
-    last_activity = (
-        datetime.fromtimestamp(time.time() - (time.monotonic() - activity), UTC)
-        if st.connected and activity
-        else None
-    )
     return CameraStatusOut(
         state=st.state,
         connected=st.connected,
         model=st.model,
-        serial=serial,
+        serial=st.serial,
         leased_by=st.leased_by,
         last_error=st.last_error,
         connected_at=(
             datetime.fromtimestamp(st.connected_at, UTC) if st.connected_at is not None else None
         ),
-        last_activity=last_activity,
+        last_activity=st.last_activity,
     )
 
 

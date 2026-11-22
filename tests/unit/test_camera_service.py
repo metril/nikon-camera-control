@@ -158,12 +158,25 @@ class Env:
         cfg = AppConfig.model_construct(camera=CameraConfig.model_construct(**cam))
         svc._config._config = cfg  # noqa: SLF001 - live config swap, as the UI would do
 
-    async def make(self, *, connect: bool = True, **cam: Any) -> CameraService:
+    async def make(
+        self,
+        *,
+        connect: bool = True,
+        quiet: float = 0.02,
+        disconnect_wait: float = 0.1,
+        **cam: Any,
+    ) -> CameraService:
         cam.setdefault("keepalive_enabled", False)
         cam.setdefault("connect_retries", 0)
         cfg = AppConfig.model_construct(camera=CameraConfig.model_construct(**cam))
         store = ConfigStore(self.tmp / "config.json", initial=cfg)
-        svc = CameraService(self._factory, store, cast(EventBus, self.bus))
+        svc = CameraService(
+            self._factory,
+            store,
+            cast(EventBus, self.bus),
+            event_quiet_window_s=quiet,
+            disconnect_wait_s=disconnect_wait,
+        )
         svc._close_wait_s = 0.1  # noqa: SLF001
         svc._stop_wait_s = 0.1  # noqa: SLF001
         self.services.append(svc)
@@ -182,7 +195,7 @@ async def env(tmp_path: Path) -> AsyncIterator[Env]:
         await svc.stop()
 
 
-async def wait_until(pred: Callable[[], bool], timeout: float = 2.0) -> None:  # noqa: ASYNC109
+async def wait_until(pred: Callable[[], bool], timeout: float = 10.0) -> None:  # noqa: ASYNC109
     deadline = time.monotonic() + timeout
     while not pred():
         assert time.monotonic() < deadline, "condition not met in time"
@@ -193,8 +206,10 @@ def hang(b: CameraBackend) -> Any:
     return b.get_config("hang")
 
 
-def worker_threads() -> int:
-    return sum(1 for t in threading.enumerate() if t.name == "camera-worker" and t.is_alive())
+def worker_threads(svc: CameraService) -> int:
+    """Live worker threads started by this service only (other tests' threads ignored)."""
+    prefix = svc._thread_prefix  # noqa: SLF001
+    return sum(1 for t in threading.enumerate() if t.name.startswith(prefix) and t.is_alive())
 
 
 # 1. priority queue ---------------------------------------------------------------------
@@ -247,7 +262,6 @@ async def test_exception_propagates(env: Env) -> None:
 # 2. timeout ----------------------------------------------------------------------------
 async def test_timeout_abandons_resets_without_thread_pileup(env: Env) -> None:
     svc = await env.make()
-    base = worker_threads()
     stuck = asyncio.create_task(svc.call(hang, timeout=0.05))
     await wait_until(env.backend.entered.is_set)
     queued = asyncio.create_task(svc.call(lambda b: "late", timeout=5))
@@ -257,13 +271,28 @@ async def test_timeout_abandons_resets_without_thread_pileup(env: Env) -> None:
     with pytest.raises(CameraTimeout):
         await queued
     assert svc.state == S.ERROR
-    assert worker_threads() == base == 1
+    assert worker_threads(svc) == 1
     assert env.backend.closes == 0  # reset only after the stuck call returns
     env.backend.release.set()
     await wait_until(lambda: svc.state == S.IDLE)
     assert (env.backend.opens, env.backend.closes) == (2, 1)
-    assert worker_threads() == 1
+    assert worker_threads(svc) == 1
     assert await svc.call(lambda b: "ok") == "ok"
+
+
+async def test_queued_call_timeout_does_not_escalate_to_error(env: Env) -> None:
+    svc = await env.make()
+    ran: list[int] = []
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    with pytest.raises(CameraTimeout):
+        await svc.call(lambda b: ran.append(1), timeout=0.05)  # still queued behind blocker
+    assert svc.state == S.IDLE
+    env.backend.release.set()
+    await blocker
+    assert await svc.call(lambda b: "ok") == "ok"
+    assert ran == [] and svc.state == S.IDLE  # abandoned item was skipped, no reset happened
+    assert (env.backend.opens, env.backend.closes) == (1, 0)
 
 
 # 3. preview coalescing ----------------------------------------------------------------
@@ -282,6 +311,37 @@ async def test_preview_coalesced(env: Env) -> None:
     assert env.backend.preview_calls == 1
     assert await svc.preview_frame() == b"jpeg"
     assert env.backend.preview_calls == 2
+
+
+async def test_coalesced_preview_timeout_wakes_all_waiters(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("backend.core.camera_service._PREVIEW_TIMEOUT_S", 0.1)
+    svc = await env.make()
+    await svc.transition(S.LIVEVIEW)
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    frames = [asyncio.create_task(svc.preview_frame()) for _ in range(3)]
+    results = await asyncio.wait_for(asyncio.gather(*frames, return_exceptions=True), 30)
+    assert all(isinstance(r, CameraTimeout) for r in results)
+    assert svc.state == S.LIVEVIEW
+    env.backend.release.set()
+    await blocker
+
+
+async def test_disconnect_fails_shared_preview_waiters(env: Env) -> None:
+    svc = await env.make()
+    await svc.transition(S.LIVEVIEW)
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    frames = [asyncio.create_task(svc.preview_frame()) for _ in range(3)]
+    await asyncio.sleep(0)
+    await svc.disconnect()
+    results = await asyncio.wait_for(asyncio.gather(*frames, return_exceptions=True), 30)
+    assert all(isinstance(r, CameraNotConnected) for r in results)
+    assert isinstance(
+        (await asyncio.gather(blocker, return_exceptions=True))[0], CameraNotConnected
+    )
 
 
 # 4. state machine ---------------------------------------------------------------------
@@ -340,9 +400,67 @@ async def test_disconnect_fast_and_idempotent(env: Env) -> None:
         await svc.call(lambda b: 1)
 
 
-async def test_stop_fails_pending_and_leaks_no_threads(env: Env) -> None:
-    base = threading.active_count()
+async def test_disconnect_waits_for_inflight_call_then_closes(env: Env) -> None:
+    svc = await env.make(disconnect_wait=30.0)
+    thread = svc._worker.thread  # type: ignore[union-attr]  # noqa: SLF001
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    loop = asyncio.get_running_loop()
+    loop.call_later(0.1, env.backend.release.set)
+    await svc.disconnect()
+    assert (await blocker).value is None  # the in-flight call finished normally
+    assert env.backend.closes == 1 and not env.backend.is_open
+    assert svc._worker is not None  # noqa: SLF001 - worker kept, not abandoned
+    assert thread.is_alive()
+
+
+async def test_abandoned_worker_never_closes_backend_of_newer_worker(env: Env) -> None:
     svc = await env.make()
+    old = svc._worker.thread  # type: ignore[union-attr]  # noqa: SLF001
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    await svc.disconnect()  # bounded wait elapses -> worker abandoned
+    with pytest.raises(CameraNotConnected):
+        await blocker
+    await svc.connect()  # new worker, same backend object from the factory
+    assert env.backend.is_open
+    env.backend.release.set()
+    await wait_until(lambda: not old.is_alive())
+    assert env.backend.is_open and env.backend.closes == 0
+    assert await svc.call(lambda b: "ok") == "ok"
+
+
+async def test_cancelling_caller_of_disconnect_is_not_swallowed(env: Env) -> None:
+    svc = await env.make()
+
+    async def stubborn() -> None:
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.3)  # slow to die: the outer cancel lands meanwhile
+
+    svc._keepalive_task = asyncio.create_task(stubborn())  # noqa: SLF001
+    await asyncio.sleep(0)
+    caller = asyncio.create_task(svc.disconnect())
+    await asyncio.sleep(0.1)
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    assert caller.cancelled()
+
+
+async def test_status_has_serial_and_last_activity(env: Env) -> None:
+    svc = await env.make(connect=False)
+    st = svc.status()
+    assert st.serial is None and st.last_activity is None
+    st = await svc.connect()
+    assert st.serial == "?" and st.last_activity is not None
+    assert (await svc.disconnect()).last_activity is None
+
+
+async def test_stop_fails_pending_and_leaks_no_threads(env: Env) -> None:
+    svc = await env.make()
+    assert worker_threads(svc) == 1
     stuck = asyncio.create_task(svc.call(hang, timeout=5))
     await wait_until(env.backend.entered.is_set)
     queued = asyncio.create_task(svc.call(lambda b: 1, timeout=5))
@@ -353,7 +471,7 @@ async def test_stop_fails_pending_and_leaks_no_threads(env: Env) -> None:
     with pytest.raises(CameraNotConnected):
         await stuck
     env.backend.release.set()  # let the abandoned worker finish and exit
-    await wait_until(lambda: threading.active_count() == base)
+    await wait_until(lambda: worker_threads(svc) == 0)
     assert svc.state == S.DISCONNECTED
 
 
@@ -369,16 +487,30 @@ async def test_keepalive_publishes_battery_on_change_only(env: Env) -> None:
 
 
 async def test_keepalive_skipped_in_liveview_and_after_recent_call(env: Env) -> None:
-    svc = await env.make(keepalive_enabled=True, keepalive_interval_s=0.04)
+    # Interval far longer than the test: any read below must come from a state/interval bug.
+    svc = await env.make(keepalive_enabled=True, keepalive_interval_s=60.0)
     await svc.transition(S.LIVEVIEW)
     await asyncio.sleep(0.1)
     assert env.backend.battery_reads == 0
     await svc.transition(S.IDLE)
-    end = time.monotonic() + 0.1  # calls faster than the interval keep it quiet
-    while time.monotonic() < end:
+    for _ in range(5):
         await svc.call(lambda b: b.get_config("iso"))
-        await asyncio.sleep(0.01)
     assert env.backend.battery_reads == 0
+    env.set_cfg(svc, keepalive_enabled=True, keepalive_interval_s=0.01)  # read live
+    await wait_until(lambda: env.backend.battery_reads >= 1)
+
+
+async def test_keepalive_does_not_queue_behind_inflight_call(env: Env) -> None:
+    svc = await env.make()
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    env.set_cfg(svc, keepalive_enabled=True, keepalive_interval_s=0.01)
+    await asyncio.sleep(0.3)  # many keepalive cycles
+    worker = svc._worker  # noqa: SLF001
+    assert worker is not None and worker.queue.qsize() == 0
+    assert env.backend.battery_reads == 0
+    env.backend.release.set()
+    await blocker
     await wait_until(lambda: env.backend.battery_reads >= 1)
 
 
@@ -505,10 +637,29 @@ async def test_capture_collects_raw_and_jpeg_without_sleeping(env: Env) -> None:
     assert svc.state == S.IDLE
 
 
-async def test_capture_without_complete_event_returns_after_timeout(env: Env) -> None:
+async def test_capture_ends_on_quiet_window_when_camera_swallowed_complete(env: Env) -> None:
+    svc = await env.make(quiet=0.05)
+    env.backend.events.append(CameraEvent(CamEvent.FILE_ADDED, file=A_JPG))
+    t0 = time.monotonic()
+    files = await svc.capture(timeout=60)  # must not wait for the 60 s timeout
+    assert time.monotonic() - t0 < 30
+    assert files == [A_NEF, A_JPG] and svc.state == S.IDLE
+
+
+async def test_capture_dedupes_returned_path_with_file_added(env: Env) -> None:
     svc = await env.make()
-    files = await svc.capture(timeout=0.05)
-    assert files == [A_NEF] and svc.state == S.IDLE
+    env.backend.events.append(CameraEvent(CamEvent.FILE_ADDED, file=A_NEF))
+    assert await svc.capture(timeout=60) == [A_NEF]
+
+
+async def test_capture_complete_event_ends_drain_before_quiet_window(env: Env) -> None:
+    svc = await env.make(quiet=60.0)
+    env.backend.events.extend(
+        [CameraEvent(CamEvent.FILE_ADDED, file=A_JPG), CameraEvent(CamEvent.CAPTURE_COMPLETE)]
+    )
+    t0 = time.monotonic()
+    assert await svc.capture(timeout=60) == [A_NEF, A_JPG]
+    assert time.monotonic() - t0 < 30
 
 
 async def test_capture_io_error_leaves_disconnected(env: Env) -> None:

@@ -5,6 +5,7 @@ import pytest
 
 from backend.core.config_store import AppConfig, ConfigStore
 from backend.core.errors import ConfigInvalid
+from backend.core.security import verify_api_key
 
 
 def test_defaults_when_missing(tmp_path: Path) -> None:
@@ -53,11 +54,65 @@ def test_corrupt_file_renamed(tmp_path: Path) -> None:
     assert len(list(tmp_path.glob("c.json.corrupt-*"))) == 1
 
 
-def test_invalid_values_file_renamed(tmp_path: Path) -> None:
+def test_invalid_values_fall_back_keeping_valid_fields(tmp_path: Path) -> None:
     p = tmp_path / "c.json"
-    p.write_text(json.dumps({"video": {"crf": 999}}))
-    assert ConfigStore(p).config == AppConfig()
-    assert len(list(tmp_path.glob("c.json.corrupt-*"))) == 1
+    p.write_text(
+        json.dumps(
+            {
+                "video": {"crf": 999, "fps": 30},
+                "liveview": {"target_fps": 12, "gone_field": 1},
+                "removed_section": {},
+                "demo_camera": True,
+            }
+        )
+    )
+    c = ConfigStore(p).config
+    assert c.video.crf == 23 and c.video.fps == 30
+    assert c.liveview.target_fps == 12 and c.demo_camera is True
+    assert not list(tmp_path.glob("c.json.corrupt-*"))
+
+
+def test_lenient_load_never_disables_auth(tmp_path: Path) -> None:
+    p = tmp_path / "c.json"
+    s = ConfigStore(p)
+    s.set_api_key_hash("a" * 64)
+    p.write_text(json.dumps({"video": {"crf": 999}, "unknown_new_field": 1}))
+    assert ConfigStore(p).config.api_key_hash == "a" * 64
+
+
+def test_hash_not_stored_in_config_json(tmp_path: Path) -> None:
+    p = tmp_path / "c.json"
+    s = ConfigStore(p)
+    s.set_api_key_hash("b" * 64)
+    s.update({"demo_camera": True})
+    assert "api_key_hash" not in json.loads(p.read_text())
+    assert json.loads((tmp_path / "api_key.json").read_text())["sha256"] == "b" * 64
+    s.set_api_key_hash(None)
+    assert not (tmp_path / "api_key.json").exists()
+
+
+def test_invalid_key_file_fails_closed(tmp_path: Path) -> None:
+    (tmp_path / "api_key.json").write_text("{garbage")
+    c = ConfigStore(tmp_path / "c.json").config
+    assert c.api_key_hash is not None  # auth stays on
+    assert not verify_api_key("x", c.api_key_hash)
+
+
+def test_legacy_hash_migrated(tmp_path: Path) -> None:
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"demo_camera": True, "api_key_hash": "c" * 64}))
+    assert ConfigStore(p).config.api_key_hash == "c" * 64
+    assert json.loads((tmp_path / "api_key.json").read_text())["sha256"] == "c" * 64
+    assert "api_key_hash" not in json.loads(p.read_text())
+    assert ConfigStore(p).config.api_key_hash == "c" * 64
+
+
+def test_reset_reports_restart_fields(tmp_path: Path) -> None:
+    s = ConfigStore(tmp_path / "c.json")
+    s.update({"cors_origins": ["http://x"], "demo_camera": True})
+    cfg, restart = s.reset()
+    assert cfg.cors_origins == [] and restart == ["cors_origins"]
+    assert s.reset()[1] == []
 
 
 def test_subscribe_and_unsubscribe(tmp_path: Path) -> None:
@@ -87,7 +142,7 @@ def test_reset(tmp_path: Path) -> None:
     p = tmp_path / "c.json"
     s = ConfigStore(p)
     s.update({"demo_camera": True})
-    assert s.reset() == AppConfig()
+    assert s.reset() == (AppConfig(), [])
     assert ConfigStore(p).config == AppConfig()
 
 
@@ -99,10 +154,10 @@ def test_initial_used_when_missing(tmp_path: Path) -> None:
 def test_reset_keeps_api_key_hash(tmp_path: Path) -> None:
     p = tmp_path / "c.json"
     s = ConfigStore(p)
-    s.set_api_key_hash("abc")
+    s.set_api_key_hash("a" * 64)
     s.update({"demo_camera": True})
-    assert s.reset() == AppConfig(api_key_hash="abc")
-    assert ConfigStore(p).config.api_key_hash == "abc"
+    assert s.reset() == (AppConfig(api_key_hash="a" * 64), [])
+    assert ConfigStore(p).config.api_key_hash == "a" * 64
 
 
 def test_set_api_key_hash_persists_and_notifies(tmp_path: Path) -> None:
@@ -110,11 +165,11 @@ def test_set_api_key_hash_persists_and_notifies(tmp_path: Path) -> None:
     s = ConfigStore(p)
     seen: list[str | None] = []
     s.subscribe(lambda new, old: seen.append(new.api_key_hash))
-    s.set_api_key_hash("h1")
-    s.set_api_key_hash("h1")  # no change, no notify
-    assert ConfigStore(p).config.api_key_hash == "h1"
+    s.set_api_key_hash("1" * 64)
+    s.set_api_key_hash("1" * 64)  # no change, no notify
+    assert ConfigStore(p).config.api_key_hash == "1" * 64
     s.set_api_key_hash(None)
-    assert seen == ["h1", None]
+    assert seen == ["1" * 64, None]
     assert ConfigStore(p).config.api_key_hash is None
 
 
