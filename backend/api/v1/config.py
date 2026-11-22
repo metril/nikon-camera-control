@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
-
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Depends
 
 from backend.api.deps import ConfigStoreDep, EventBusDep
 from backend.api.errors import ERROR_RESPONSES
@@ -13,6 +11,7 @@ from backend.api.schemas.config import (
     ApiKeyDeletedOut,
     ApiKeyOut,
     ConfigOut,
+    ConfigPatch,
     ConfigSchemaOut,
     ConfigUpdateOut,
 )
@@ -52,9 +51,9 @@ async def get_config_schema(store: ConfigStoreDep) -> ConfigSchemaOut:
 async def update_config(
     store: ConfigStoreDep,
     bus: EventBusDep,
-    patch: Annotated[dict[str, Any], Body(title="ConfigPatch")],
+    patch: ConfigPatch,
 ) -> ConfigUpdateOut:
-    new, restart = store.update(patch)
+    new, restart = store.update(patch.model_dump(exclude_unset=True))
     _changed(bus, new, restart)
     return ConfigUpdateOut(config=_out(new), restart_required=restart)
 

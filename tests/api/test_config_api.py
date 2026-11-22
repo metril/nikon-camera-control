@@ -1,4 +1,4 @@
-from pathlib import Path
+import asyncio
 
 import httpx
 from fastapi import FastAPI
@@ -13,13 +13,16 @@ async def test_get_and_patch(app: FastAPI, client: httpx.AsyncClient) -> None:
     assert r.status_code == 200
     assert r.json()["api_key_set"] is False and "api_key_hash" not in r.json()
 
+    sub = app.state.event_bus.subscribe()
     r = await client.patch(U, json={"liveview": {"target_fps": 12}, "cors_origins": ["http://x"]})
     body = r.json()
     assert r.status_code == 200
     assert body["config"]["liveview"]["target_fps"] == 12
     assert body["config"]["liveview"]["quality"] == "medium"
     assert body["restart_required"] == ["cors_origins"]
-    assert app.state.event_bus.events[-1][0] == "config_changed"
+    ev = await asyncio.wait_for(sub.__anext__(), 2)
+    sub.close()
+    assert ev.type == "config_changed" and ev.data["restart_required"] == ["cors_origins"]
     assert app.state.config_store.config.liveview.target_fps == 12
 
 
@@ -38,7 +41,7 @@ async def test_schema(client: httpx.AsyncClient) -> None:
     assert "target_fps" in js["$defs"]["LiveViewConfig"]["properties"]
 
 
-async def test_key_lifecycle(app: FastAPI, client: httpx.AsyncClient, tmp_path: Path) -> None:
+async def test_key_lifecycle(app: FastAPI, client: httpx.AsyncClient) -> None:
     r = await client.post(f"{U}/api-key")
     key = r.json()["api_key"]
     assert r.json()["config"]["api_key_set"] is True
@@ -62,7 +65,7 @@ async def test_key_lifecycle(app: FastAPI, client: httpx.AsyncClient, tmp_path: 
     assert (await client.post(f"{U}/reset", headers=h2)).json()["config"]["api_key_set"] is True
     assert (await client.get(U)).status_code == 401
     # persisted across a new store
-    assert ConfigStore(tmp_path / "config.json").config.api_key_hash is not None
+    assert ConfigStore(app.state.config_store.path).config.api_key_hash is not None
 
     assert (await client.delete(f"{U}/api-key")).status_code == 401
     r = await client.delete(f"{U}/api-key", headers=h2)
@@ -85,7 +88,7 @@ async def test_hash_never_in_any_response(app: FastAPI, client: httpx.AsyncClien
 
 
 async def test_openapi(client: httpx.AsyncClient) -> None:
-    spec = (await client.get("/openapi.json")).json()
+    spec = (await client.get("/api/v1/openapi.json")).json()
     ids = {op["operationId"] for p in spec["paths"].values() for op in p.values()}
     assert {
         "get_config",
@@ -96,4 +99,6 @@ async def test_openapi(client: httpx.AsyncClient) -> None:
         "delete_api_key",
     } <= ids
     assert "APIKeyHeader" in spec["components"]["securitySchemes"]
+    patch = spec["components"]["schemas"]["ConfigPatch"]
+    assert "api_key_hash" not in patch["properties"] and "liveview" in patch["properties"]
     assert "ErrorResponse" in spec["components"]["schemas"]
