@@ -24,6 +24,7 @@ function setup() {
   const pinia = createTestingPinia({ createSpy: vi.fn })
   const tl = useTimelapseStore()
   tl.setConfig.mockResolvedValue(result())
+  tl.previewDraft.mockResolvedValue(result())
   return { tl, w: mount(ConfigForm, { global: { plugins: [pinia] } }) }
 }
 
@@ -34,21 +35,29 @@ describe('ConfigForm', () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  it('debounces the estimate call and shows server numbers', async () => {
+  it('debounces the preview call, never saves, and shows server numbers', async () => {
     const { tl, w } = setup()
     const input = w.findAll('input')[1] // interval
     for (const v of ['3', '4', '5']) {
       await input.setValue(v)
       vi.advanceTimersByTime(200)
     }
-    expect(tl.setConfig).not.toHaveBeenCalled()
+    expect(tl.previewDraft).not.toHaveBeenCalled()
     vi.advanceTimersByTime(700)
+    await vi.runAllTimersAsync()
+    expect(tl.previewDraft).toHaveBeenCalledTimes(1)
+    expect(tl.previewDraft.mock.calls[0][0].interval_s).toBe(5)
+    expect(tl.setConfig).not.toHaveBeenCalled()
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="total-shots"]').text()).toBe('100')
+    expect(w.find('[data-test="disk"]').text()).toBe('4.8 MB')
+    expect(w.text()).toContain('Unsaved') // previewed, not saved
+    const apply = w.findAll('button').find((b) => b.text() === 'Apply configuration')
+    await apply.trigger('click')
     await vi.runAllTimersAsync()
     expect(tl.setConfig).toHaveBeenCalledTimes(1)
     expect(tl.setConfig.mock.calls[0][0].interval_s).toBe(5)
     await w.vm.$nextTick()
-    expect(w.find('[data-test="total-shots"]').text()).toBe('100')
-    expect(w.find('[data-test="disk"]').text()).toBe('4.8 MB')
     expect(w.text()).not.toContain('Unsaved')
   })
 
@@ -57,14 +66,14 @@ describe('ConfigForm', () => {
     await w.findAll('input')[1].setValue('')
     vi.advanceTimersByTime(2000)
     await vi.runAllTimersAsync()
-    expect(tl.setConfig).not.toHaveBeenCalled()
+    expect(tl.previewDraft).not.toHaveBeenCalled()
     expect(w.text()).not.toMatch(/NaN|Infinity/)
     expect(w.text()).toContain('Enter an interval above 0')
   })
 
   it('shows server errors at the field and unsaved state', async () => {
     const { tl, w } = setup()
-    tl.setConfig.mockRejectedValue({
+    tl.previewDraft.mockRejectedValue({
       message: 'bad',
       details: [{ loc: ['body', 'interval_s'], msg: 'below camera minimum' }],
     })

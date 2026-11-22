@@ -7,7 +7,7 @@ import UiModal from '@/components/ui/UiModal.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import { useVideosStore } from '@/stores/videos'
 import { useToastsStore } from '@/stores/toasts'
-import { formatSize, formatDate, formatDuration, resolveVideo } from './media'
+import { formatSize, formatDate, formatDuration } from './media'
 
 const videos = useVideosStore()
 const toasts = useToastsStore()
@@ -49,7 +49,7 @@ async function play(v) {
   const mine = ++gen
   playLoading.value = true
   try {
-    const r = await resolveVideo(v.session_id, v.name)
+    const r = await videos.acquire(v.session_id, v.name)
     if (mine !== gen) return r.release()
     release = r.release
     playSrc.value = r.url

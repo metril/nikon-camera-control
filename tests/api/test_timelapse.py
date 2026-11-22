@@ -59,6 +59,7 @@ async def test_operation_ids_and_routes(app: FastAPI) -> None:
         ("get", T): "get_timelapse_status",
         ("put", f"{T}/config"): "set_timelapse_config",
         ("get", f"{T}/preview"): "preview_timelapse",
+        ("post", f"{T}/preview"): "preview_timelapse_draft",
         ("get", f"{T}/presets"): "list_timelapse_presets",
         ("post", f"{T}/start"): "start_timelapse",
         ("post", f"{T}/pause"): "pause_timelapse",
@@ -315,3 +316,25 @@ async def test_restart_shows_interrupted_session_and_idle_status(
             s = (await c2.get(f"/api/v1/sessions/{sid}")).json()
             assert s["status"] == "interrupted" and s["frames_captured"] >= 2
     await c.post(f"{T}/stop")
+
+
+async def test_preview_draft_has_no_side_effects_and_works_during_run(
+    connected_client: httpx.AsyncClient,
+) -> None:
+    c = connected_client
+    r = await c.post(f"{T}/preview", json=body(total_frames=7))
+    assert r.status_code == 200 and r.json()["estimate"]["total_sets"] == 7
+    assert r.json()["validated"] is True
+    assert (await c.get(f"{T}/preview")).status_code == 409  # nothing was saved
+    assert (await status(c))["state"] == "idle"
+    await put(c, total_frames=40, interval_s=1)
+    await c.post(f"{T}/start")
+    r = await c.post(f"{T}/preview", json=body(total_frames=9))
+    assert r.status_code == 200 and r.json()["estimate"]["total_sets"] == 9
+    assert (await c.get(f"{T}/preview")).json()["estimate"]["total_sets"] == 40
+    await c.post(f"{T}/stop")
+    await wait_for(c, DONE)
+
+
+async def test_status_exposes_failure_budget(client: httpx.AsyncClient) -> None:
+    assert (await status(client))["failure_budget"] == 5

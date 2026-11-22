@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api } from '@/api'
+import { api, downloadBlob } from '@/api'
 import { guard } from './helpers'
 
 export const useCameraFilesStore = defineStore('cameraFiles', () => {
@@ -34,6 +34,13 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
   }
   /** Returns the download job (progress arrives via the jobs store). */
   const downloadAll = (body = {}) => guard(lastError, () => api.downloadAllCameraFiles({ body }))
+  /** Save one card file locally (blob fetch so the API key header is sent). */
+  async function download(folder, name) {
+    const blob = await guard(lastError, () =>
+      api.downloadCameraFile({ path: { folder, name }, parseAs: 'blob' }),
+    )
+    downloadBlob(blob, name)
+  }
   async function remove(folder, name) {
     await guard(lastError, () => api.deleteCameraFile({ path: { folder, name } }))
     items.value = items.value.filter((f) => !(f.folder === folder && f.name === name))
@@ -49,6 +56,7 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
     loadFolders,
     loadFiles,
     downloadAll,
+    download,
     remove,
   }
 })

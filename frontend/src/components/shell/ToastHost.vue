@@ -1,36 +1,18 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useToastsStore } from '@/stores/toasts'
 
 const toasts = useToastsStore()
-/** Local list: non-error toasts follow the store's auto-dismiss; errors stay until dismissed here. */
-const shown = ref([])
-
-watch(
-  () => toasts.items,
-  (items) => {
-    const live = new Set(items.map((t) => t.id))
-    const known = new Set(shown.value.map((t) => t.id))
-    const added = items.filter((t) => !known.has(t.id))
-    shown.value = [...shown.value.filter((t) => t.kind === 'error' || live.has(t.id)), ...added]
-  },
-  { immediate: true, deep: true },
-)
-
-function dismiss(id) {
-  shown.value = shown.value.filter((t) => t.id !== id)
-  toasts.dismiss(id)
-}
+/** The store owns lifetimes: errors are sticky, others auto-dismiss. */
+const shown = computed(() => toasts.items)
+const dismiss = (id) => toasts.dismiss(id)
 const TONES = {
   error: 'border-red-500/60 bg-red-950/90 text-red-100',
   success: 'border-green-500/60 bg-green-950/90 text-green-100',
   info: 'border-camera-border bg-camera-surface text-camera-text',
 }
 const detail = (t) =>
-  [
-    t.code && `Code: ${t.code}`,
-    (t.requestId || t.request_id) && `Request: ${t.requestId || t.request_id}`,
-  ]
+  [t.code && `Code: ${t.code}`, t.requestId && `Request: ${t.requestId}`]
     .filter(Boolean)
     .join(' · ')
 </script>

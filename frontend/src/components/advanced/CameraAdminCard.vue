@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { api } from '@/api'
+import { computed, ref, watch } from 'vue'
+import { useCameraAdminStore } from '@/stores/cameraAdmin'
 import { useCameraStore } from '@/stores/camera'
 import { useToastsStore } from '@/stores/toasts'
 import AdvCard from './AdvCard.vue'
@@ -10,8 +10,9 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 const camera = useCameraStore()
 const toasts = useToastsStore()
 
-const clock = ref(null) // { data, fetchedAt }
-const target = ref(null)
+const admin = useCameraAdminStore()
+const clock = computed(() => admin.clock)
+const target = computed(() => admin.target)
 const syncing = ref(false)
 const loadingClock = ref(false)
 const savingTarget = ref(false)
@@ -48,7 +49,7 @@ const targetOptions = computed(() =>
 async function loadClock() {
   loadingClock.value = true
   try {
-    clock.value = { data: await api.getCameraDatetime(), fetchedAt: Date.now() }
+    await admin.fetchClock()
   } catch (e) {
     toasts.error(e)
   } finally {
@@ -58,12 +59,7 @@ async function loadClock() {
 async function sync() {
   syncing.value = true
   try {
-    clock.value = {
-      data: await api.setCameraDatetime({
-        body: { mode: 'host', utc_offset_minutes: browserOffset() },
-      }),
-      fetchedAt: Date.now(),
-    }
+    await admin.syncClock()
     toasts.success('Camera clock synced')
   } catch (e) {
     toasts.error(e)
@@ -71,32 +67,27 @@ async function sync() {
     syncing.value = false
   }
 }
-async function loadTarget() {
-  try {
-    target.value = await api.getCaptureTarget()
-  } catch (e) {
-    toasts.error(e)
-  }
-}
 async function setTarget(value) {
   if (!value || value === target.value?.value) return
   savingTarget.value = true
   try {
-    target.value = await api.setCaptureTarget({ body: { value } })
+    await admin.setTarget(value)
   } catch (e) {
     toasts.error(e)
-    await loadTarget()
+    admin.fetchTarget().catch(() => {})
   } finally {
     savingTarget.value = false
   }
 }
 
-onMounted(() => {
-  if (camera.connected) {
-    loadClock()
-    loadTarget()
-  }
-})
+// Loaded on camera connect by the events store; load here when the card opens with nothing yet.
+watch(
+  () => camera.connected,
+  (on) => {
+    if (on && !admin.clock) admin.refresh()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

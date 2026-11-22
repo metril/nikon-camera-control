@@ -1,4 +1,4 @@
-import { api, fileUrl, videoUrl } from '@/api'
+import { api, fileUrl } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 export function formatSize(bytes) {
@@ -37,7 +37,7 @@ export const kindTone = (kind) =>
   ({ raw: 'warn', video: 'info', image: 'neutral' })[kind] || 'neutral'
 
 /**
- * Resolve a media URL usable by <img>/<video>. Without an API key it is the plain URL; with one
+ * Resolve a file URL usable by <img>/<video>. Without an API key it is the plain URL; with one
  * the file is fetched as a blob (headers) and exposed as an object URL. Call `release()` when done.
  */
 async function resolve(plain, fetchBlob) {
@@ -47,7 +47,3 @@ async function resolve(plain, fetchBlob) {
 }
 export const resolveFile = (path) =>
   resolve(fileUrl(path), () => api.downloadFile({ path: { path }, parseAs: 'blob' }))
-export const resolveVideo = (sessionId, name) =>
-  resolve(videoUrl(sessionId, name), () =>
-    api.downloadVideo({ path: { session_id: sessionId, name }, parseAs: 'blob' }),
-  )

@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from 'vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
-import { applied, dirty } from './useDraft'
+import { resultNow, fresh } from './useDraft'
 
-const result = computed(() => applied.result)
+const result = resultNow
 const steps = computed(() => result.value?.resolved_steps ?? [])
 </script>
 
@@ -14,7 +14,7 @@ const steps = computed(() => result.value?.resolved_steps ?? [])
       <UiBadge :tone="result.validated ? 'ok' : 'warn'">
         {{ result.validated ? 'Validated against camera' : 'Not validated (checked on start)' }}
       </UiBadge>
-      <UiBadge v-if="dirty" tone="info">stale</UiBadge>
+      <UiBadge v-if="!fresh" tone="info">stale</UiBadge>
     </div>
     <div class="overflow-x-auto">
       <table class="w-full text-left text-sm">

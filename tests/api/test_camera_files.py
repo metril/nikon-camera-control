@@ -297,3 +297,17 @@ async def test_stale_download_temp_dirs_swept_on_next_download(
     ]
     assert (await connected_client.get(f"{F}{CARD_FOLDER}/{name}")).status_code == 200
     assert not stale.exists()
+
+
+async def test_download_with_encoded_folder_as_generated_client_sends_it(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    await _shoot(connected_client, app, "JPEG Fine")
+    name = (await connected_client.get(F, params={"folder": CARD_FOLDER})).json()["items"][0][
+        "name"
+    ]
+    from urllib.parse import quote
+
+    enc = quote(CARD_FOLDER, safe="")  # '%2Fstore_...%2FDCIM...' : leading slash encoded too
+    r = await connected_client.get(f"{F}/{enc}/{name}")
+    assert r.status_code == 200 and r.content[:2] == b"\xff\xd8"

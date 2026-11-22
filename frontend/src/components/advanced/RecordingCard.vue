@@ -143,6 +143,12 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
           Hint: the camera's live view selector must be set to movie mode.
         </span>
       </p>
+      <p v-if="status?.note" class="text-sm text-amber-300" data-testid="rec-note">
+        {{ status.note }}
+      </p>
+      <p v-if="status?.segments > 1" class="text-sm text-slate-300" data-testid="rec-segments">
+        {{ status.segments }} movie files so far
+      </p>
       <p v-if="status?.warning" class="text-sm text-amber-300" data-testid="rec-warning">
         {{ status.warning }}
       </p>

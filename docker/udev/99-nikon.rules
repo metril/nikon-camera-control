@@ -1,16 +1,15 @@
-# Nikon Camera USB Rules
-# Copy this file to /etc/udev/rules.d/ on the host machine
-# Then run: sudo udevadm control --reload-rules && sudo udevadm trigger
+# Nikon camera USB access for the (non-root) container user.
+# Install on the HOST:
+#   sudo cp docker/udev/99-nikon.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# Also make sure the user running Docker's device is in plugdev (the container adds the group itself).
 
-# Nikon cameras - allow all users to access
-SUBSYSTEM=="usb", ATTRS{idVendor}=="04b0", MODE="0666"
+# 04b0 is Nikon's USB vendor id. Matching the vendor (not a product id) covers the D500
+# and any other Nikon body without maintaining a product list. Access is limited to the
+# plugdev group (0660); it is not world-writable.
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b0", MODE="0660", GROUP="plugdev"
 
-# Nikon D500 specifically (Product ID may vary)
-SUBSYSTEM=="usb", ATTRS{idVendor}=="04b0", ATTRS{idProduct}=="0432", MODE="0666", SYMLINK+="nikon-d500"
-
-# Alternative: Grant access to a specific group
-# SUBSYSTEM=="usb", ATTRS{idVendor}=="04b0", MODE="0660", GROUP="plugdev"
-
-# Prevent gvfs-gphoto2-volume-monitor from claiming the camera
-# This can interfere with remote control
-SUBSYSTEM=="usb", ENV{ID_USB_INTERFACES}=="*:060101:*", ENV{GPHOTO2_DRIVER}="proprietary", ENV{ID_MEDIA_PLAYER}="0"
+# Keep desktop auto-mounters (gvfs-gphoto2-volume-monitor) away from the camera. They open
+# the device and make libgphoto2 fail with "Could not claim the USB device". This sets
+# the standard hwdb flag read by gvfs; it has no effect on headless hosts.
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b0", ENV{GVFS_IGNORE}="1", ENV{UDISKS_IGNORE}="1"

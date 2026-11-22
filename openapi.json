@@ -131,6 +131,53 @@
         "title": "AutofocusResult",
         "type": "object"
       },
+      "BatteryData": {
+        "additionalProperties": true,
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          }
+        },
+        "title": "BatteryData",
+        "type": "object"
+      },
+      "BatteryEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BatteryData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "battery",
+            "default": "battery",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "BatteryEvent",
+        "type": "object"
+      },
       "BatteryOut": {
         "properties": {
           "level": {
@@ -658,6 +705,58 @@
         "title": "CameraConfigPatch",
         "type": "object"
       },
+      "CameraConnectedData": {
+        "additionalProperties": true,
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          }
+        },
+        "title": "CameraConnectedData",
+        "type": "object"
+      },
+      "CameraConnectedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CameraConnectedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "camera_connected",
+            "default": "camera_connected",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CameraConnectedEvent",
+        "type": "object"
+      },
       "CameraDateTimeIn": {
         "properties": {
           "mode": {
@@ -750,6 +849,41 @@
         "title": "CameraDateTimeOut",
         "type": "object"
       },
+      "CameraDisconnectedData": {
+        "additionalProperties": true,
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "CameraDisconnectedData",
+        "type": "object"
+      },
+      "CameraDisconnectedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CameraDisconnectedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "camera_disconnected",
+            "default": "camera_disconnected",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CameraDisconnectedEvent",
+        "type": "object"
+      },
       "CameraFileEntry": {
         "properties": {
           "downloaded": {
@@ -816,6 +950,24 @@
         "title": "CameraFileOut",
         "type": "object"
       },
+      "CameraFileRef": {
+        "properties": {
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder",
+          "name"
+        ],
+        "title": "CameraFileRef",
+        "type": "object"
+      },
       "CameraState": {
         "enum": [
           "disconnected",
@@ -830,6 +982,66 @@
         ],
         "title": "CameraState",
         "type": "string"
+      },
+      "CameraStateData": {
+        "additionalProperties": true,
+        "properties": {
+          "connected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only on the initial snapshot.",
+            "title": "Connected"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CameraStateData",
+        "type": "object"
+      },
+      "CameraStateEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CameraStateData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "camera_state",
+            "default": "camera_state",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CameraStateEvent",
+        "type": "object"
       },
       "CameraStatusOut": {
         "properties": {
@@ -918,6 +1130,54 @@
         "title": "CameraStatusOut",
         "type": "object"
       },
+      "CaptureCompleteData": {
+        "additionalProperties": true,
+        "properties": {
+          "bulb": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bulb"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/CameraFileRef"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "title": "CaptureCompleteData",
+        "type": "object"
+      },
+      "CaptureCompleteEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CaptureCompleteData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "capture_complete",
+            "default": "capture_complete",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CaptureCompleteEvent",
+        "type": "object"
+      },
       "CaptureOut": {
         "properties": {
           "camera_files": {
@@ -973,6 +1233,72 @@
           }
         },
         "title": "CaptureRequest",
+        "type": "object"
+      },
+      "CaptureStartedData": {
+        "additionalProperties": true,
+        "properties": {
+          "bulb": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bulb"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
+          }
+        },
+        "title": "CaptureStartedData",
+        "type": "object"
+      },
+      "CaptureStartedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CaptureStartedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "capture_started",
+            "default": "capture_started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CaptureStartedEvent",
         "type": "object"
       },
       "CaptureTargetIn": {
@@ -1079,6 +1405,51 @@
           "size"
         ],
         "title": "ClipOut",
+        "type": "object"
+      },
+      "ConfigChangedData": {
+        "additionalProperties": true,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "restart_required": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Restart Required",
+            "type": "array"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "title": "ConfigChangedData",
+        "type": "object"
+      },
+      "ConfigChangedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ConfigChangedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "config_changed",
+            "default": "config_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ConfigChangedEvent",
         "type": "object"
       },
       "ConfigOut": {
@@ -1357,6 +1728,59 @@
           "message"
         ],
         "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorData": {
+        "additionalProperties": true,
+        "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorData",
+        "type": "object"
+      },
+      "ErrorEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ErrorEvent",
         "type": "object"
       },
       "ErrorResponse": {
@@ -1808,6 +2232,111 @@
         "title": "InfoOut",
         "type": "object"
       },
+      "JobCancelledEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobEventData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "job_cancelled",
+            "default": "job_cancelled",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "JobCancelledEvent",
+        "type": "object"
+      },
+      "JobCompletedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobEventData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "job_completed",
+            "default": "job_completed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "JobCompletedEvent",
+        "type": "object"
+      },
+      "JobCreatedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobEventData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "job_created",
+            "default": "job_created",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "JobCreatedEvent",
+        "type": "object"
+      },
+      "JobEventData": {
+        "additionalProperties": true,
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobOut"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "JobEventData",
+        "type": "object"
+      },
+      "JobFailedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobEventData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "job_failed",
+            "default": "job_failed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "JobFailedEvent",
+        "type": "object"
+      },
       "JobOut": {
         "properties": {
           "created": {
@@ -1904,6 +2433,29 @@
           "created"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "JobProgressEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/JobEventData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "job_progress",
+            "default": "job_progress",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "JobProgressEvent",
         "type": "object"
       },
       "JobStatus": {
@@ -2188,6 +2740,70 @@
           "frames_dropped"
         ],
         "title": "LiveViewStatusOut",
+        "type": "object"
+      },
+      "LiveviewStartedData": {
+        "additionalProperties": true,
+        "properties": {},
+        "title": "LiveviewStartedData",
+        "type": "object"
+      },
+      "LiveviewStartedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LiveviewStartedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "liveview_started",
+            "default": "liveview_started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "LiveviewStartedEvent",
+        "type": "object"
+      },
+      "LiveviewStoppedData": {
+        "additionalProperties": true,
+        "properties": {
+          "frames": {
+            "default": 0,
+            "title": "Frames",
+            "type": "integer"
+          }
+        },
+        "title": "LiveviewStoppedData",
+        "type": "object"
+      },
+      "LiveviewStoppedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LiveviewStoppedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "liveview_stopped",
+            "default": "liveview_stopped",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "LiveviewStoppedEvent",
         "type": "object"
       },
       "MediaConfig": {
@@ -2654,6 +3270,65 @@
         "title": "PresetOut",
         "type": "object"
       },
+      "PresetsChangedData": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "PresetsChangedData",
+        "type": "object"
+      },
+      "PresetsChangedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PresetsChangedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "presets_changed",
+            "default": "presets_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "PresetsChangedEvent",
+        "type": "object"
+      },
       "QuickBracketing": {
         "description": "Per-type value lists (a missing or empty list disables that type).",
         "properties": {
@@ -2760,6 +3435,29 @@
         "title": "RangeOut",
         "type": "object"
       },
+      "RecordedClip": {
+        "properties": {
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "folder",
+          "name"
+        ],
+        "title": "RecordedClip",
+        "type": "object"
+      },
       "RecordingStartRequest": {
         "properties": {
           "download_after": {
@@ -2784,6 +3482,52 @@
           }
         },
         "title": "RecordingStartRequest",
+        "type": "object"
+      },
+      "RecordingStartedData": {
+        "additionalProperties": true,
+        "properties": {
+          "download_after": {
+            "default": false,
+            "title": "Download After",
+            "type": "boolean"
+          },
+          "max_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Seconds"
+          }
+        },
+        "title": "RecordingStartedData",
+        "type": "object"
+      },
+      "RecordingStartedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RecordingStartedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "recording_started",
+            "default": "recording_started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "RecordingStartedEvent",
         "type": "object"
       },
       "RecordingStatus": {
@@ -2898,6 +3642,77 @@
           "state"
         ],
         "title": "RecordingStatus",
+        "type": "object"
+      },
+      "RecordingStoppedData": {
+        "additionalProperties": true,
+        "properties": {
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/RecordedClip"
+            },
+            "title": "Clips",
+            "type": "array"
+          },
+          "duration_s": {
+            "default": 0.0,
+            "title": "Duration S",
+            "type": "number"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RecordingStoppedData",
+        "type": "object"
+      },
+      "RecordingStoppedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RecordingStoppedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "recording_stopped",
+            "default": "recording_stopped",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "RecordingStoppedEvent",
         "type": "object"
       },
       "RenderRequest": {
@@ -3463,6 +4278,63 @@
         "title": "SessionVideo",
         "type": "object"
       },
+      "SettingChangedData": {
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SettingChangedData",
+        "type": "object"
+      },
+      "SettingChangedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SettingChangedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "setting_changed",
+            "default": "setting_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SettingChangedEvent",
+        "type": "object"
+      },
       "SettingOut": {
         "properties": {
           "alias": {
@@ -3916,6 +4788,29 @@
         "title": "SummaryOut",
         "type": "object"
       },
+      "TimelapseCompletedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_completed",
+            "default": "timelapse_completed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseCompletedEvent",
+        "type": "object"
+      },
       "TimelapseConfig": {
         "additionalProperties": false,
         "properties": {
@@ -4026,6 +4921,252 @@
         "title": "TimelapseConfigResult",
         "type": "object"
       },
+      "TimelapseData": {
+        "additionalProperties": true,
+        "description": "Common counters on every time-lapse event; extras depend on the type.",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_warning",
+            "title": "Code"
+          },
+          "consecutive_failures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_warning",
+            "title": "Consecutive Failures"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_error",
+            "title": "Error"
+          },
+          "failures": {
+            "default": 0,
+            "title": "Failures",
+            "type": "integer"
+          },
+          "frames_done": {
+            "default": 0,
+            "title": "Frames Done",
+            "type": "integer"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_frame",
+            "title": "Index"
+          },
+          "interrupted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_stopped",
+            "title": "Interrupted"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_warning",
+            "title": "Message"
+          },
+          "planned_shots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_started",
+            "title": "Planned Shots"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_paused",
+            "title": "Reason"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "set_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_frame",
+            "title": "Set Index"
+          },
+          "sets_done": {
+            "default": 0,
+            "title": "Sets Done",
+            "type": "integer"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "timelapse_frame",
+            "title": "Step"
+          }
+        },
+        "title": "TimelapseData",
+        "type": "object"
+      },
+      "TimelapseErrorEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_error",
+            "default": "timelapse_error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseErrorEvent",
+        "type": "object"
+      },
+      "TimelapseFrameEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_frame",
+            "default": "timelapse_frame",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseFrameEvent",
+        "type": "object"
+      },
+      "TimelapsePausedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_paused",
+            "default": "timelapse_paused",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapsePausedEvent",
+        "type": "object"
+      },
+      "TimelapseResumedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_resumed",
+            "default": "timelapse_resumed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseResumedEvent",
+        "type": "object"
+      },
       "TimelapseSetup": {
         "properties": {
           "bracketing": {
@@ -4103,6 +5244,29 @@
         "title": "TimelapseSetup",
         "type": "object"
       },
+      "TimelapseStartedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_started",
+            "default": "timelapse_started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseStartedEvent",
+        "type": "object"
+      },
       "TimelapseState": {
         "enum": [
           "idle",
@@ -4142,6 +5306,12 @@
               }
             ],
             "title": "Error"
+          },
+          "failure_budget": {
+            "default": 5,
+            "description": "Consecutive capture failures that end the run as failed.",
+            "title": "Failure Budget",
+            "type": "integer"
           },
           "last_frame": {
             "anyOf": [
@@ -4208,6 +5378,52 @@
           "state"
         ],
         "title": "TimelapseStatus",
+        "type": "object"
+      },
+      "TimelapseStoppedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_stopped",
+            "default": "timelapse_stopped",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseStoppedEvent",
+        "type": "object"
+      },
+      "TimelapseWarningEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelapseData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "timelapse_warning",
+            "default": "timelapse_warning",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "TimelapseWarningEvent",
         "type": "object"
       },
       "Timing": {
@@ -6904,6 +8120,208 @@
         "summary": "Get Config Schema",
         "tags": [
           "config"
+        ]
+      }
+    },
+    "/api/v1/events/schema": {
+      "get": {
+        "description": "No-op: returns a sample event. Its response model is the discriminated union of every\nevent delivered on ``/ws/events`` (discriminator ``type``); it exists so the spec and the\ngenerated client carry the event types.",
+        "operationId": "get_event_schema",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "battery": "#/components/schemas/BatteryEvent",
+                      "camera_connected": "#/components/schemas/CameraConnectedEvent",
+                      "camera_disconnected": "#/components/schemas/CameraDisconnectedEvent",
+                      "camera_state": "#/components/schemas/CameraStateEvent",
+                      "capture_complete": "#/components/schemas/CaptureCompleteEvent",
+                      "capture_started": "#/components/schemas/CaptureStartedEvent",
+                      "config_changed": "#/components/schemas/ConfigChangedEvent",
+                      "error": "#/components/schemas/ErrorEvent",
+                      "job_cancelled": "#/components/schemas/JobCancelledEvent",
+                      "job_completed": "#/components/schemas/JobCompletedEvent",
+                      "job_created": "#/components/schemas/JobCreatedEvent",
+                      "job_failed": "#/components/schemas/JobFailedEvent",
+                      "job_progress": "#/components/schemas/JobProgressEvent",
+                      "liveview_started": "#/components/schemas/LiveviewStartedEvent",
+                      "liveview_stopped": "#/components/schemas/LiveviewStoppedEvent",
+                      "presets_changed": "#/components/schemas/PresetsChangedEvent",
+                      "recording_started": "#/components/schemas/RecordingStartedEvent",
+                      "recording_stopped": "#/components/schemas/RecordingStoppedEvent",
+                      "setting_changed": "#/components/schemas/SettingChangedEvent",
+                      "timelapse_completed": "#/components/schemas/TimelapseCompletedEvent",
+                      "timelapse_error": "#/components/schemas/TimelapseErrorEvent",
+                      "timelapse_frame": "#/components/schemas/TimelapseFrameEvent",
+                      "timelapse_paused": "#/components/schemas/TimelapsePausedEvent",
+                      "timelapse_resumed": "#/components/schemas/TimelapseResumedEvent",
+                      "timelapse_started": "#/components/schemas/TimelapseStartedEvent",
+                      "timelapse_stopped": "#/components/schemas/TimelapseStoppedEvent",
+                      "timelapse_warning": "#/components/schemas/TimelapseWarningEvent"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/CameraStateEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CameraConnectedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CameraDisconnectedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SettingChangedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BatteryEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CaptureStartedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CaptureCompleteEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LiveviewStartedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LiveviewStoppedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseStartedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapsePausedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseResumedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseStoppedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseCompletedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseFrameEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseWarningEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TimelapseErrorEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecordingStartedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecordingStoppedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JobCreatedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JobProgressEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JobCompletedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JobFailedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JobCancelledEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ConfigChangedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PresetsChangedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEvent"
+                    }
+                  ],
+                  "title": "Response Get Event Schema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Event Schema",
+        "tags": [
+          "events"
         ]
       }
     },
@@ -11369,6 +12787,101 @@
           }
         ],
         "summary": "Preview Timelapse",
+        "tags": [
+          "timelapse"
+        ]
+      },
+      "post": {
+        "description": "Validate and estimate a draft; nothing is saved and it works during a run.",
+        "operationId": "preview_timelapse_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimelapseSetup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelapseConfigResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Preview Timelapse Draft",
         "tags": [
           "timelapse"
         ]

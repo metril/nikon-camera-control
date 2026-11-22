@@ -66,6 +66,14 @@ describe('App shell', () => {
     w.unmount()
   })
 
+  it('Space also captures while live view is running (regression)', async () => {
+    const { w, camera, capture } = await setup()
+    camera.state = 'liveview'
+    press(' ')
+    expect(capture.capture).toHaveBeenCalledTimes(1)
+    w.unmount()
+  })
+
   it('g/t switch tabs, update the hash and keep views alive with activation hooks', async () => {
     const { w } = await setup()
     press('g')

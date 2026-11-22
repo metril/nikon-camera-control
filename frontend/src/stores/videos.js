@@ -38,5 +38,27 @@ export const useVideosStore = defineStore('videos', () => {
     downloadBlob(blob, name)
   }
 
-  return { items, total, lastError, fetch, render, remove, download }
+  /**
+   * Resolve a video to something usable as <video src>. Without an API key it is the plain URL;
+   * with one the file is fetched as a blob (headers) and exposed as an object URL.
+   * Returns { url, release }; release() revokes the object URL (call it when done).
+   */
+  async function acquire(sessionId, name) {
+    if (!useAuthStore().apiKey) return { url: videoUrl(sessionId, name), release() {} }
+    const blob = await guard(lastError, () =>
+      api.downloadVideo({ path: { session_id: sessionId, name }, parseAs: 'blob' }),
+    )
+    const url = URL.createObjectURL(blob)
+    let released = false
+    return {
+      url,
+      release() {
+        if (released) return
+        released = true
+        URL.revokeObjectURL(url)
+      },
+    }
+  }
+
+  return { items, total, lastError, fetch, render, remove, download, acquire }
 })

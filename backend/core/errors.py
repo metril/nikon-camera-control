@@ -37,6 +37,7 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     UNSUPPORTED_MEDIA = "UNSUPPORTED_MEDIA"
     FORBIDDEN = "FORBIDDEN"
+    BULB_SHUTTER_OPEN = "BULB_SHUTTER_OPEN"
 
 
 class AppError(Exception):
@@ -106,6 +107,14 @@ class CameraOperationFailed(AppError):
     http_status = 502
     recoverable = True
     default_message = "Camera operation failed"
+
+
+class ShutterOpen(CameraOperationFailed):
+    """A bulb exposure could not be closed: the shutter may still be open."""
+
+    code = ErrorCode.BULB_SHUTTER_OPEN
+    recoverable = False
+    default_message = "Could not close the shutter"
 
 
 class StorageFull(AppError):

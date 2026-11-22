@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
+import { useCameraStore } from '@/stores/camera'
 import { useFocusStore } from '@/stores/focus'
 import { useToastsStore } from '@/stores/toasts'
 import AdvCard from './AdvCard.vue'
@@ -73,7 +74,13 @@ async function zero() {
   }
 }
 
-onMounted(() => focus.fetchStatus().catch(() => {}))
+const camera = useCameraStore()
+// the position is only readable with a connected camera (503 otherwise)
+watch(
+  () => camera.connected,
+  (on) => on && focus.fetchStatus().catch(() => {}),
+  { immediate: true },
+)
 </script>
 
 <template>

@@ -3,8 +3,7 @@ import { computed, watch, onMounted } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useEventsStore } from '@/stores/events'
 import { useToastsStore } from '@/stores/toasts'
-import { useAsync } from '@/composables/useAsync'
-import { useVisiblePolling } from '@/composables/useVisibility'
+import { useAsync, useVisiblePolling } from '@/composables'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { formatBytes } from './format'
@@ -53,9 +52,10 @@ function onToggle() {
 }
 
 const refresh = () => {
-  if (camera.connected) camera.fetchStorage().catch(() => {})
+  // the card is unavailable (409) while another feature holds the camera
+  if (camera.connected && !camera.leasedBy) camera.fetchStorage().catch(() => {})
 }
-watch(() => camera.connected, refresh)
+watch(() => [camera.connected, camera.leasedBy], refresh)
 onMounted(refresh)
 useVisiblePolling(refresh, 60000)
 </script>

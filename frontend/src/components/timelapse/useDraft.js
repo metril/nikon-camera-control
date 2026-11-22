@@ -23,10 +23,22 @@ const initial = () => ({
 export const draft = reactive(initial())
 export const applied = reactive({ result: null, key: null, errors: {}, busy: false })
 
+/** Server estimate of the current draft (nothing saved). */
+export const preview = reactive({ result: null, key: null, errors: {}, busy: false })
+/** Latest server numbers: the preview of this draft, else the saved configuration. */
+export const resultNow = computed(() => preview.result ?? applied.result)
+/** The server has seen exactly this draft (previewed or saved). */
+export const fresh = computed(
+  () => !!draftKey.value && (preview.key === draftKey.value || applied.key === draftKey.value),
+)
+
 export function resetDraft() {
   Object.assign(draft, initial())
   Object.assign(applied, { result: null, key: null, errors: {}, busy: false })
+  Object.assign(preview, { result: null, key: null, errors: {}, busy: false })
+  previewSeq++
 }
+let previewSeq = 0
 
 const finitePositive = (n) => typeof n === 'number' && Number.isFinite(n) && n > 0
 
@@ -112,6 +124,26 @@ export function fieldErrors(e) {
   return out
 }
 
+/** Ask the server to validate/estimate the draft. Nothing is saved; stale answers are dropped. */
+export async function previewDraft() {
+  const setup = buildSetup()
+  if (!setup) return null
+  const key = JSON.stringify(setup)
+  const seq = ++previewSeq
+  preview.busy = true
+  try {
+    const result = await useTimelapseStore().previewDraft(setup)
+    if (seq !== previewSeq) return null
+    Object.assign(preview, { result, key, errors: {} })
+    return result
+  } catch (e) {
+    if (seq === previewSeq) Object.assign(preview, { key: null, errors: fieldErrors(e) })
+    throw e
+  } finally {
+    if (seq === previewSeq) preview.busy = false
+  }
+}
+
 /** Send the draft to the server and keep the normalised result. Rejects after recording errors. */
 export async function applyDraft() {
   const setup = buildSetup()
@@ -123,6 +155,7 @@ export async function applyDraft() {
     applied.result = result
     applied.key = key
     applied.errors = {}
+    Object.assign(preview, { result, key, errors: {} })
     return result
   } catch (e) {
     applied.errors = fieldErrors(e)

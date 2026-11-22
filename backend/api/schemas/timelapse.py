@@ -167,3 +167,6 @@ class TimelapseStatus(BaseModel):
     measured_set_duration_s: float | None = Field(
         default=None, description="Rolling average of the real duration of one shot set."
     )
+    failure_budget: int = Field(
+        default=5, description="Consecutive capture failures that end the run as failed."
+    )

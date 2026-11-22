@@ -34,7 +34,11 @@ describe('BulbCard', () => {
     const { wrapper } = setup()
     const bulb = useBulbStore()
     const jobs = useJobsStore()
-    bulb.start = vi.fn().mockResolvedValue(job())
+    bulb.start = vi.fn(async () => {
+      bulb.jobId = 'j1'
+      useJobsStore().upsert(job())
+      return job()
+    })
     jobs.cancel = vi.fn().mockResolvedValue({})
     await button(wrapper, 'Start bulb exposure').trigger('click')
     await flushPromises()
@@ -53,7 +57,11 @@ describe('BulbCard', () => {
   it('stops its timer on unmount', async () => {
     const { wrapper } = setup()
     const bulb = useBulbStore()
-    bulb.start = vi.fn().mockResolvedValue(job())
+    bulb.start = vi.fn(async () => {
+      bulb.jobId = 'j1'
+      useJobsStore().upsert(job())
+      return job()
+    })
     await button(wrapper, 'Start bulb exposure').trigger('click')
     await flushPromises()
     expect(vi.getTimerCount()).toBeGreaterThan(0)

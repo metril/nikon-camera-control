@@ -12,6 +12,7 @@ import { useBulbStore } from './bulb'
 import { useFocusStore } from './focus'
 import { useConfigStore } from './config'
 import { useVideosStore } from './videos'
+import { useCameraAdminStore } from './cameraAdmin'
 import { useToastsStore } from './toasts'
 import { useAuthStore } from './auth'
 
@@ -42,11 +43,13 @@ export const useEventsStore = defineStore('events', () => {
         bg(camera.fetchStatus())
         bg(camera.fetchBattery())
         bg(useSettingsStore().fetchCommon())
+        bg(useCameraAdminStore().refresh())
         return
       case 'camera_disconnected':
         camera.onDisconnected(data)
         useLiveViewStore().reset()
         useFocusStore().clear()
+        useCameraAdminStore().reset()
         return
       case 'battery':
         return camera.onBattery(data)
@@ -86,8 +89,16 @@ export const useEventsStore = defineStore('events', () => {
 
   /** Re-sync everything that events cannot replay (called on every (re)connect). */
   function resync() {
-    bg(useCameraStore().fetchStatus())
-    bg(useSettingsStore().fetchCommon())
+    // camera-backed data needs a connected camera: ask only once the status says so
+    bg(
+      useCameraStore()
+        .fetchStatus()
+        .then((st) => {
+          if (!st?.connected) return
+          bg(useSettingsStore().fetchCommon())
+          bg(useCameraAdminStore().refresh())
+        }),
+    )
     bg(useJobsStore().fetch())
     bg(useTimelapseStore().fetchStatus())
     bg(useLiveViewStore().fetchStatus())

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useCameraStore } from '@/stores/camera'
 import { usePresetsStore } from '@/stores/presets'
 import { useSettingsStore } from '@/stores/settings'
 import { useToastsStore } from '@/stores/toasts'
@@ -154,9 +155,10 @@ async function onFile(ev) {
   }
 }
 
+const camera = useCameraStore()
 onMounted(() => {
   presets.fetch().catch(() => {})
-  if (!settings.common.length) settings.fetchCommon().catch(() => {})
+  if (camera.connected && !settings.common.length) settings.fetchCommon().catch(() => {})
 })
 </script>
 

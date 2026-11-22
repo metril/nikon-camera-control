@@ -158,3 +158,16 @@ async def test_file_named_thumbnail_is_downloadable_not_shadowed(
     r = await client.get(f"{F}/a.jpg/thumbnail")
     assert r.status_code == 200
     assert r.content == b"raw-bytes"
+
+
+async def test_nested_paths_with_encoded_slashes_resolve(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    # the generated client percent-encodes the whole path, slashes included (%2F)
+    _jpg(_out(app) / "sessions" / "s1" / "deep" / "f.jpg")
+    for enc in ("sessions/s1/deep/f.jpg", "sessions%2Fs1%2Fdeep%2Ff.jpg"):
+        assert (await client.get(f"{F}/{enc}")).status_code == 200
+        r = await client.get(f"{T}/{enc}", params={"size": 128})
+        assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert (await client.delete(f"{F}/sessions%2Fs1%2Fdeep%2Ff.jpg")).status_code == 200
+    assert (await client.get(f"{F}/sessions%2Fs1%2Fdeep%2Ff.jpg")).status_code == 404

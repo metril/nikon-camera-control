@@ -83,6 +83,32 @@ export type AutofocusResult = {
 };
 
 /**
+ * BatteryData
+ */
+export type BatteryData = {
+    /**
+     * Level
+     */
+    level?: number | number | string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * BatteryEvent
+ */
+export type BatteryEvent = {
+    data: BatteryData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'battery';
+};
+
+/**
  * BatteryOut
  */
 export type BatteryOut = {
@@ -401,6 +427,36 @@ export type CameraConfigPatch = {
 };
 
 /**
+ * CameraConnectedData
+ */
+export type CameraConnectedData = {
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Serial
+     */
+    serial?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * CameraConnectedEvent
+ */
+export type CameraConnectedEvent = {
+    data: CameraConnectedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'camera_connected';
+};
+
+/**
  * CameraDateTimeIn
  */
 export type CameraDateTimeIn = {
@@ -467,6 +523,32 @@ export type CameraDateTimeOut = {
 };
 
 /**
+ * CameraDisconnectedData
+ */
+export type CameraDisconnectedData = {
+    /**
+     * Reason
+     */
+    reason?: string;
+    [key: string]: unknown;
+};
+
+/**
+ * CameraDisconnectedEvent
+ */
+export type CameraDisconnectedEvent = {
+    data: CameraDisconnectedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'camera_disconnected';
+};
+
+/**
  * CameraFileEntry
  */
 export type CameraFileEntry = {
@@ -517,9 +599,59 @@ export type CameraFileOut = {
 };
 
 /**
+ * CameraFileRef
+ */
+export type CameraFileRef = {
+    /**
+     * Folder
+     */
+    folder: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * CameraState
  */
 export type CameraState = 'disconnected' | 'connecting' | 'idle' | 'liveview' | 'capturing' | 'recording' | 'bulb' | 'busy' | 'error';
+
+/**
+ * CameraStateData
+ */
+export type CameraStateData = {
+    /**
+     * Connected
+     *
+     * Only on the initial snapshot.
+     */
+    connected?: boolean | null;
+    /**
+     * Previous
+     */
+    previous?: string | null;
+    /**
+     * State
+     */
+    state: string;
+    [key: string]: unknown;
+};
+
+/**
+ * CameraStateEvent
+ */
+export type CameraStateEvent = {
+    data: CameraStateData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'camera_state';
+};
 
 /**
  * CameraStatusOut
@@ -558,6 +690,36 @@ export type CameraStatusOut = {
      */
     serial?: string | null;
     state: CameraState;
+};
+
+/**
+ * CaptureCompleteData
+ */
+export type CaptureCompleteData = {
+    /**
+     * Bulb
+     */
+    bulb?: boolean | null;
+    /**
+     * Files
+     */
+    files?: Array<CameraFileRef>;
+    [key: string]: unknown;
+};
+
+/**
+ * CaptureCompleteEvent
+ */
+export type CaptureCompleteEvent = {
+    data: CaptureCompleteData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'capture_complete';
 };
 
 /**
@@ -600,6 +762,40 @@ export type CaptureRequest = {
      * Prefix for file names; unsafe characters become _
      */
     filename_prefix?: string | null;
+};
+
+/**
+ * CaptureStartedData
+ */
+export type CaptureStartedData = {
+    /**
+     * Bulb
+     */
+    bulb?: boolean | null;
+    /**
+     * Seconds
+     */
+    seconds?: number | null;
+    /**
+     * Warnings
+     */
+    warnings?: Array<string> | null;
+    [key: string]: unknown;
+};
+
+/**
+ * CaptureStartedEvent
+ */
+export type CaptureStartedEvent = {
+    data: CaptureStartedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'capture_started';
 };
 
 /**
@@ -672,6 +868,38 @@ export type ClipOut = {
      * Bytes on the card; 0 if unknown
      */
     size: number;
+};
+
+/**
+ * ConfigChangedData
+ */
+export type ConfigChangedData = {
+    /**
+     * Config
+     */
+    config: {
+        [key: string]: unknown;
+    };
+    /**
+     * Restart Required
+     */
+    restart_required?: Array<string>;
+    [key: string]: unknown;
+};
+
+/**
+ * ConfigChangedEvent
+ */
+export type ConfigChangedEvent = {
+    data: ConfigChangedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'config_changed';
 };
 
 /**
@@ -828,6 +1056,40 @@ export type ErrorBody = {
      * Request Id
      */
     request_id?: string | null;
+};
+
+/**
+ * ErrorData
+ */
+export type ErrorData = {
+    /**
+     * Cause
+     */
+    cause?: string | null;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Message
+     */
+    message: string;
+    [key: string]: unknown;
+};
+
+/**
+ * ErrorEvent
+ */
+export type ErrorEvent = {
+    data: ErrorData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'error';
 };
 
 /**
@@ -1132,6 +1394,74 @@ export type InfoOut = {
 };
 
 /**
+ * JobCancelledEvent
+ */
+export type JobCancelledEvent = {
+    data: JobEventData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'job_cancelled';
+};
+
+/**
+ * JobCompletedEvent
+ */
+export type JobCompletedEvent = {
+    data: JobEventData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'job_completed';
+};
+
+/**
+ * JobCreatedEvent
+ */
+export type JobCreatedEvent = {
+    data: JobEventData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'job_created';
+};
+
+/**
+ * JobEventData
+ */
+export type JobEventData = {
+    job: JobOut;
+    [key: string]: unknown;
+};
+
+/**
+ * JobFailedEvent
+ */
+export type JobFailedEvent = {
+    data: JobEventData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'job_failed';
+};
+
+/**
  * JobOut
  */
 export type JobOut = {
@@ -1178,6 +1508,21 @@ export type JobOut = {
      */
     started?: string | null;
     status: JobStatus;
+};
+
+/**
+ * JobProgressEvent
+ */
+export type JobProgressEvent = {
+    data: JobEventData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'job_progress';
 };
 
 /**
@@ -1354,6 +1699,54 @@ export type LiveViewStatusOut = {
      * Target Fps
      */
     target_fps: number;
+};
+
+/**
+ * LiveviewStartedData
+ */
+export type LiveviewStartedData = {
+    [key: string]: unknown;
+};
+
+/**
+ * LiveviewStartedEvent
+ */
+export type LiveviewStartedEvent = {
+    data: LiveviewStartedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'liveview_started';
+};
+
+/**
+ * LiveviewStoppedData
+ */
+export type LiveviewStoppedData = {
+    /**
+     * Frames
+     */
+    frames?: number;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveviewStoppedEvent
+ */
+export type LiveviewStoppedEvent = {
+    data: LiveviewStoppedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'liveview_stopped';
 };
 
 /**
@@ -1656,6 +2049,40 @@ export type PresetOut = {
 };
 
 /**
+ * PresetsChangedData
+ */
+export type PresetsChangedData = {
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Id
+     */
+    id?: string | null;
+    /**
+     * Kind
+     */
+    kind?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * PresetsChangedEvent
+ */
+export type PresetsChangedEvent = {
+    data: PresetsChangedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'presets_changed';
+};
+
+/**
  * QuickBracketing
  *
  * Per-type value lists (a missing or empty list disables that type).
@@ -1708,6 +2135,24 @@ export type RangeOut = {
 };
 
 /**
+ * RecordedClip
+ */
+export type RecordedClip = {
+    /**
+     * Folder
+     */
+    folder: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Size
+     */
+    size?: number;
+};
+
+/**
  * RecordingStartRequest
  */
 export type RecordingStartRequest = {
@@ -1723,6 +2168,36 @@ export type RecordingStartRequest = {
      * Stop automatically after this many seconds (default and maximum 1799, the D500's 29 min 59 s clip limit)
      */
     max_seconds?: number | null;
+};
+
+/**
+ * RecordingStartedData
+ */
+export type RecordingStartedData = {
+    /**
+     * Download After
+     */
+    download_after?: boolean;
+    /**
+     * Max Seconds
+     */
+    max_seconds?: number | null;
+    [key: string]: unknown;
+};
+
+/**
+ * RecordingStartedEvent
+ */
+export type RecordingStartedEvent = {
+    data: RecordingStartedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'recording_started';
 };
 
 /**
@@ -1783,6 +2258,48 @@ export type RecordingStatus = {
      * Problem noticed while recording/stopping
      */
     warning?: string | null;
+};
+
+/**
+ * RecordingStoppedData
+ */
+export type RecordingStoppedData = {
+    /**
+     * Clips
+     */
+    clips?: Array<RecordedClip>;
+    /**
+     * Duration S
+     */
+    duration_s?: number;
+    /**
+     * Job Id
+     */
+    job_id?: string | null;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Warning
+     */
+    warning?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * RecordingStoppedEvent
+ */
+export type RecordingStoppedEvent = {
+    data: RecordingStoppedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'recording_stopped';
 };
 
 /**
@@ -2109,6 +2626,36 @@ export type SessionVideo = {
 };
 
 /**
+ * SettingChangedData
+ */
+export type SettingChangedData = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Value
+     */
+    value?: string | number | number | boolean | null;
+    [key: string]: unknown;
+};
+
+/**
+ * SettingChangedEvent
+ */
+export type SettingChangedEvent = {
+    data: SettingChangedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'setting_changed';
+};
+
+/**
  * SettingOut
  */
 export type SettingOut = {
@@ -2365,6 +2912,21 @@ export type SummaryOut = {
 };
 
 /**
+ * TimelapseCompletedEvent
+ */
+export type TimelapseCompletedEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_completed';
+};
+
+/**
  * TimelapseConfig
  */
 export type TimelapseConfig = {
@@ -2437,6 +2999,151 @@ export type TimelapseConfigResult = {
 };
 
 /**
+ * TimelapseData
+ *
+ * Common counters on every time-lapse event; extras depend on the type.
+ */
+export type TimelapseData = {
+    /**
+     * Code
+     *
+     * timelapse_warning
+     */
+    code?: string | null;
+    /**
+     * Consecutive Failures
+     *
+     * timelapse_warning
+     */
+    consecutive_failures?: number | null;
+    /**
+     * Error
+     *
+     * timelapse_error
+     */
+    error?: string | null;
+    /**
+     * Failures
+     */
+    failures?: number;
+    /**
+     * Frames Done
+     */
+    frames_done?: number;
+    /**
+     * Index
+     *
+     * timelapse_frame
+     */
+    index?: number | null;
+    /**
+     * Interrupted
+     *
+     * timelapse_stopped
+     */
+    interrupted?: boolean | null;
+    /**
+     * Message
+     *
+     * timelapse_warning
+     */
+    message?: string | null;
+    /**
+     * Planned Shots
+     *
+     * timelapse_started
+     */
+    planned_shots?: number | null;
+    /**
+     * Reason
+     *
+     * timelapse_paused
+     */
+    reason?: string | null;
+    /**
+     * Session Id
+     */
+    session_id?: string | null;
+    /**
+     * Set Index
+     *
+     * timelapse_frame
+     */
+    set_index?: number | null;
+    /**
+     * Sets Done
+     */
+    sets_done?: number;
+    /**
+     * Step
+     *
+     * timelapse_frame
+     */
+    step?: number | null;
+    [key: string]: unknown;
+};
+
+/**
+ * TimelapseErrorEvent
+ */
+export type TimelapseErrorEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_error';
+};
+
+/**
+ * TimelapseFrameEvent
+ */
+export type TimelapseFrameEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_frame';
+};
+
+/**
+ * TimelapsePausedEvent
+ */
+export type TimelapsePausedEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_paused';
+};
+
+/**
+ * TimelapseResumedEvent
+ */
+export type TimelapseResumedEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_resumed';
+};
+
+/**
  * TimelapseSetup
  */
 export type TimelapseSetup = {
@@ -2479,6 +3186,21 @@ export type TimelapseSetup = {
 };
 
 /**
+ * TimelapseStartedEvent
+ */
+export type TimelapseStartedEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_started';
+};
+
+/**
  * TimelapseState
  */
 export type TimelapseState = 'idle' | 'configured' | 'running' | 'paused' | 'stopping' | 'completed' | 'stopped' | 'failed';
@@ -2493,6 +3215,12 @@ export type TimelapseStatus = {
      * Error
      */
     error?: string | null;
+    /**
+     * Failure Budget
+     *
+     * Consecutive capture failures that end the run as failed.
+     */
+    failure_budget?: number;
     last_frame?: LastFrame | null;
     /**
      * Measured Set Duration S
@@ -2516,6 +3244,36 @@ export type TimelapseStatus = {
      * The configuration was resolved against a connected camera.
      */
     validated?: boolean;
+};
+
+/**
+ * TimelapseStoppedEvent
+ */
+export type TimelapseStoppedEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_stopped';
+};
+
+/**
+ * TimelapseWarningEvent
+ */
+export type TimelapseWarningEvent = {
+    data: TimelapseData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'timelapse_warning';
 };
 
 /**
@@ -3879,6 +4637,107 @@ export type GetConfigSchemaResponses = {
 };
 
 export type GetConfigSchemaResponse = GetConfigSchemaResponses[keyof GetConfigSchemaResponses];
+
+export type GetEventSchemaData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/events/schema';
+};
+
+export type GetEventSchemaErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetEventSchemaError = GetEventSchemaErrors[keyof GetEventSchemaErrors];
+
+export type GetEventSchemaResponses = {
+    /**
+     * Response Get Event Schema
+     *
+     * Successful Response
+     */
+    200: ({
+        type: 'camera_state';
+    } & CameraStateEvent) | ({
+        type: 'camera_connected';
+    } & CameraConnectedEvent) | ({
+        type: 'camera_disconnected';
+    } & CameraDisconnectedEvent) | ({
+        type: 'setting_changed';
+    } & SettingChangedEvent) | ({
+        type: 'battery';
+    } & BatteryEvent) | ({
+        type: 'capture_started';
+    } & CaptureStartedEvent) | ({
+        type: 'capture_complete';
+    } & CaptureCompleteEvent) | ({
+        type: 'liveview_started';
+    } & LiveviewStartedEvent) | ({
+        type: 'liveview_stopped';
+    } & LiveviewStoppedEvent) | ({
+        type: 'timelapse_started';
+    } & TimelapseStartedEvent) | ({
+        type: 'timelapse_paused';
+    } & TimelapsePausedEvent) | ({
+        type: 'timelapse_resumed';
+    } & TimelapseResumedEvent) | ({
+        type: 'timelapse_stopped';
+    } & TimelapseStoppedEvent) | ({
+        type: 'timelapse_completed';
+    } & TimelapseCompletedEvent) | ({
+        type: 'timelapse_frame';
+    } & TimelapseFrameEvent) | ({
+        type: 'timelapse_warning';
+    } & TimelapseWarningEvent) | ({
+        type: 'timelapse_error';
+    } & TimelapseErrorEvent) | ({
+        type: 'recording_started';
+    } & RecordingStartedEvent) | ({
+        type: 'recording_stopped';
+    } & RecordingStoppedEvent) | ({
+        type: 'job_created';
+    } & JobCreatedEvent) | ({
+        type: 'job_progress';
+    } & JobProgressEvent) | ({
+        type: 'job_completed';
+    } & JobCompletedEvent) | ({
+        type: 'job_failed';
+    } & JobFailedEvent) | ({
+        type: 'job_cancelled';
+    } & JobCancelledEvent) | ({
+        type: 'config_changed';
+    } & ConfigChangedEvent) | ({
+        type: 'presets_changed';
+    } & PresetsChangedEvent) | ({
+        type: 'error';
+    } & ErrorEvent);
+};
+
+export type GetEventSchemaResponse = GetEventSchemaResponses[keyof GetEventSchemaResponses];
 
 export type ListFilesData = {
     body?: never;
@@ -6100,6 +6959,51 @@ export type PreviewTimelapseResponses = {
 };
 
 export type PreviewTimelapseResponse = PreviewTimelapseResponses[keyof PreviewTimelapseResponses];
+
+export type PreviewTimelapseDraftData = {
+    body: TimelapseSetup;
+    path?: never;
+    query?: never;
+    url: '/api/v1/timelapse/preview';
+};
+
+export type PreviewTimelapseDraftErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type PreviewTimelapseDraftError = PreviewTimelapseDraftErrors[keyof PreviewTimelapseDraftErrors];
+
+export type PreviewTimelapseDraftResponses = {
+    /**
+     * Successful Response
+     */
+    200: TimelapseConfigResult;
+};
+
+export type PreviewTimelapseDraftResponse = PreviewTimelapseDraftResponses[keyof PreviewTimelapseDraftResponses];
 
 export type ResumeTimelapseData = {
     body?: never;

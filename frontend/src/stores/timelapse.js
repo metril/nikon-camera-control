@@ -32,6 +32,8 @@ export const useTimelapseStore = defineStore('timelapse', () => {
   const act = (fn) => guard(lastError, async () => (apply(await fn()), status.value))
 
   const setConfig = (body) => guard(lastError, () => api.setTimelapseConfig({ body }))
+  /** Validate + estimate a draft without saving it (works during a run). */
+  const previewDraft = (body) => guard(lastError, () => api.previewTimelapseDraft({ body }))
   const fetchPreview = () =>
     guard(lastError, async () => (preview.value = await api.previewTimelapse()))
   const fetchPresets = () =>
@@ -75,6 +77,7 @@ export const useTimelapseStore = defineStore('timelapse', () => {
     lastError,
     fetchStatus,
     setConfig,
+    previewDraft,
     fetchPreview,
     fetchPresets,
     start,

@@ -26,10 +26,9 @@ const quick = [
   { label: '5 min', s: 300 },
   { label: '10 min', s: 600 },
 ]
-const jobId = ref(null)
 const starting = ref(false)
 const stopping = ref(false)
-const lookupId = computed(() => jobId.value || bulb.status?.job_id || null)
+const lookupId = computed(() => bulb.jobId || bulb.status?.job_id || null)
 const { job, running: jobRunning } = useJob(lookupId)
 const running = computed(() => jobRunning.value || (!job.value && bulb.active))
 const secondsOk = computed(() => finite(form.seconds) && form.seconds >= 1 && form.seconds <= 3600)
@@ -72,18 +71,12 @@ watch(
 onUnmounted(() => clearInterval(timer))
 
 // --- outcome
-const SHUTTER_OPEN = /could not (close|confirm)/i
+// Contract with the backend: the shutter-open failure is job.error_code === 'BULB_SHUTTER_OPEN'
+// and warnings are job.result.warnings.
 const shutterOpen = computed(
-  () =>
-    job.value?.status === 'failed' &&
-    (job.value.error_code === 'BULB_SHUTTER_OPEN' || SHUTTER_OPEN.test(job.value.error || '')),
+  () => job.value?.status === 'failed' && job.value.error_code === 'BULB_SHUTTER_OPEN',
 )
-const warnings = computed(() => {
-  const w = [...(job.value?.result?.warnings || [])]
-  if (bulb.status?.warning) w.push(bulb.status.warning)
-  if (job.value?.warning) w.push(job.value.warning)
-  return [...new Set(w)]
-})
+const warnings = computed(() => [...new Set(job.value?.result?.warnings || [])])
 const resultPath = computed(() => job.value?.result?.files?.[0] || null)
 const thumb = ref(null)
 watch(
@@ -92,7 +85,7 @@ watch(
     thumb.value = null
     if (!p) return
     try {
-      thumb.value = await files.thumbnailSrc(p, 'medium')
+      thumb.value = await files.thumbnailSrc(p, 400)
     } catch {
       /* thumbnail is optional */
     }
@@ -103,13 +96,11 @@ watch(
 async function start() {
   starting.value = true
   try {
-    const j = await bulb.start({
+    await bulb.start({
       seconds: form.seconds,
       download: form.download,
       filename_prefix: form.prefix.trim() || null,
     })
-    jobId.value = j.id
-    jobs.upsert(j)
     reanchor(form.seconds, form.seconds)
   } catch (e) {
     toasts.error(e)

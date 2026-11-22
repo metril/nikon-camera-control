@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useCameraStore } from '@/stores/camera'
 import { useFocusStore } from '@/stores/focus'
 import { useJobsStore } from '@/stores/jobs'
 import { useToastsStore } from '@/stores/toasts'
@@ -84,7 +85,13 @@ async function cancel() {
   }
 }
 
-onMounted(() => focus.fetchStatus().catch(() => {}))
+const camera = useCameraStore()
+// the position is only readable with a connected camera (503 otherwise)
+watch(
+  () => camera.connected,
+  (on) => on && focus.fetchStatus().catch(() => {}),
+  { immediate: true },
+)
 </script>
 
 <template>

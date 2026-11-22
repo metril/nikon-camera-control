@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import UiCard from '@/components/ui/UiCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
@@ -12,7 +12,6 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useVideosStore } from '@/stores/videos'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useToastsStore } from '@/stores/toasts'
-import { videoUrl } from '@/api'
 
 const sessions = useSessionsStore()
 const videos = useVideosStore()
@@ -22,6 +21,33 @@ const renaming = ref(null) // {id, name}
 const renderFor = ref(null)
 const playing = ref(null) // {session_id, name}
 const openId = ref(null)
+const playSrc = ref(null)
+let releasePlay = () => {}
+let playGen = 0
+
+function dropPlay() {
+  releasePlay()
+  releasePlay = () => {}
+  playSrc.value = null
+}
+// The video URL may need the API key header, so it comes from the store (blob URL when keyed).
+watch(playing, async (p) => {
+  dropPlay()
+  const mine = ++playGen
+  if (!p) return
+  try {
+    const r = await videos.acquire(p.session_id, p.name)
+    if (mine !== playGen) return r.release()
+    releasePlay = r.release
+    playSrc.value = r.url
+  } catch (e) {
+    toasts.error(e)
+  }
+})
+onUnmounted(() => {
+  playGen++
+  dropPlay()
+})
 
 const attempt = async (fn) => {
   try {
@@ -133,12 +159,7 @@ const detailVideos = (s) => (sessions.detail?.id === s.id ? sessions.detail.vide
       @done="onRendered"
     />
     <UiModal :open="!!playing" :title="playing?.name || ''" @close="playing = null">
-      <video
-        v-if="playing"
-        :src="videoUrl(playing.session_id, playing.name)"
-        controls
-        class="w-full"
-      />
+      <video v-if="playSrc" :src="playSrc" controls class="w-full" />
     </UiModal>
   </UiCard>
 </template>

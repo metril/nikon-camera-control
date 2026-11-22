@@ -12,9 +12,9 @@ export const useToastsStore = defineStore('toasts', () => {
     timers.delete(id)
     items.value = items.value.filter((t) => t.id !== id)
   }
-  function push(kind, message, ms) {
+  function push(kind, message, ms, extra = {}) {
     const id = nextId++
-    items.value = [...items.value.slice(-4), { id, kind, message }]
+    items.value = [...items.value.slice(-4), { id, kind, message, ...extra }]
     if (ms > 0)
       timers.set(
         id,
@@ -24,8 +24,15 @@ export const useToastsStore = defineStore('toasts', () => {
   }
   const success = (message, ms = 3000) => push('success', message, ms)
   const info = (message, ms = 4000) => push('info', message, ms)
-  const error = (e, ms = 6000) =>
-    push('error', typeof e === 'string' ? e : e?.message || 'Error', ms)
+  /** Errors are sticky (dismissed by the user); an ApiError keeps code, status and requestId. */
+  function error(e) {
+    if (typeof e === 'string') return push('error', e, 0)
+    return push('error', e?.message || 'Error', 0, {
+      code: e?.code ?? null,
+      status: e?.status ?? null,
+      requestId: e?.requestId ?? null,
+    })
+  }
 
   return { items, push, success, info, error, dismiss }
 })

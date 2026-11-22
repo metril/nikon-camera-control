@@ -9,7 +9,18 @@ import UiBadge from '@/components/ui/UiBadge.vue'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useCameraStore } from '@/stores/camera'
 import { useToastsStore } from '@/stores/toasts'
-import { draft, applied, localErrors, draftKey, dirty, applyDraft } from './useDraft'
+import {
+  draft,
+  applied,
+  preview,
+  resultNow,
+  fresh,
+  localErrors,
+  draftKey,
+  dirty,
+  applyDraft,
+  previewDraft,
+} from './useDraft'
 import { quickShots, formatBytes, formatDuration } from './bracketUtils'
 
 const DEBOUNCE_MS = 600
@@ -22,12 +33,12 @@ const limitOptions = [
   { value: 'duration', label: 'Duration' },
 ]
 const locked = computed(() => timelapse.isActive)
-const result = computed(() => applied.result)
+const result = resultNow
 const minInterval = computed(() => result.value?.min_interval_s ?? 0.1)
 
-const errors = computed(() => ({ ...applied.errors, ...localErrors.value }))
+const errors = computed(() => ({ ...preview.errors, ...applied.errors, ...localErrors.value }))
 const shotsPerSet = computed(() => {
-  if (result.value && !dirty.value) return result.value.estimate.shots_per_set
+  if (result.value && fresh.value) return result.value.estimate.shots_per_set
   const b = draft.bracket
   if (b.mode === 'quick') return quickShots(b.quick) || 1
   if (b.mode === 'steps') return b.steps.length
@@ -41,7 +52,7 @@ const sets = computed(() =>
 const fin = (n) => (Number.isFinite(n) && n >= 0 ? n : null)
 const estimate = computed(() => {
   const est = result.value?.estimate
-  if (est && !dirty.value) return est
+  if (est && fresh.value) return est
   const s = fin(sets.value)
   return {
     total_sets: s,
@@ -61,19 +72,32 @@ const show = (v, f = String) => (v == null || !Number.isFinite(Number(v)) ? '-' 
 
 let timer = null
 const clear = () => clearTimeout(timer)
-async function apply(quiet) {
+async function apply() {
   clear()
   if (!draftKey.value || locked.value) return
   try {
     await applyDraft()
   } catch (e) {
-    if (!quiet) toasts.error(e)
+    toasts.error(e)
   }
 }
-watch(draftKey, (k) => {
-  clear()
-  if (k && k !== applied.key && !locked.value) timer = setTimeout(() => apply(true), DEBOUNCE_MS)
-})
+/** The estimate comes from the preview route; the configuration is only saved on Apply/Start. */
+async function refreshPreview() {
+  if (!draftKey.value || fresh.value) return
+  try {
+    await previewDraft()
+  } catch {
+    /* field errors are shown inline from preview.errors */
+  }
+}
+watch(
+  draftKey,
+  (k) => {
+    clear()
+    if (k && !fresh.value) timer = setTimeout(refreshPreview, DEBOUNCE_MS)
+  },
+  { immediate: true },
+)
 onUnmounted(clear)
 
 const setNum = (key, v) => (draft[key] = v ?? NaN)
@@ -177,7 +201,7 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
         variant="primary"
         :loading="applied.busy"
         :disabled="locked || !draftKey || !dirty"
-        @click="apply(false)"
+        @click="apply"
       >
         Apply configuration
       </UiButton>

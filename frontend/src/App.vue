@@ -11,7 +11,7 @@ import { useCaptureStore } from '@/stores/capture'
 import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
 import { useJobsStore } from '@/stores/jobs'
-import { useHotkeys } from '@/composables/useHotkeys'
+import { useHotkeys } from '@/composables'
 import UiModal from '@/components/ui/UiModal.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import StatusBar from '@/components/shell/StatusBar.vue'
@@ -58,7 +58,9 @@ useHotkeys({
   ' ': shortcut(() => {
     if (activeTab.value !== 'shoot') return
     if (camera.leasedBy) return toasts.info(`Busy: ${camera.leasedBy}`)
-    if (camera.isReady) capture.capture().catch((e) => toasts.error(e))
+    // same gate as the Capture button: live view does not block shooting
+    if (camera.connected && ['idle', 'liveview'].includes(camera.state) && !capture.inFlight)
+      capture.capture().catch((e) => toasts.error(e))
   }),
   g: shortcut(() => select('gallery')),
   t: shortcut(() => select('timelapse')),

@@ -53,6 +53,14 @@ async def set_timelapse_config(body: TimelapseSetup, svc: TimelapseDep) -> Timel
     return await svc.configure(body)
 
 
+@router.post(
+    "/preview", operation_id="preview_timelapse_draft", response_model=TimelapseConfigResult
+)
+async def preview_timelapse_draft(body: TimelapseSetup, svc: TimelapseDep) -> TimelapseConfigResult:
+    """Validate and estimate a draft; nothing is saved and it works during a run."""
+    return await svc.preview_draft(body)
+
+
 @router.get("/preview", operation_id="preview_timelapse", response_model=TimelapseConfigResult)
 async def preview_timelapse(svc: TimelapseDep) -> TimelapseConfigResult:
     return svc.preview()

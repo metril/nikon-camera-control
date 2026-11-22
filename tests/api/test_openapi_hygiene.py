@@ -47,6 +47,8 @@ def test_json_2xx_responses_have_named_schemas(spec: dict[str, Any]) -> None:
                 continue
             s = js.get("schema", {})
             named = "$ref" in s or (s.get("type") == "array" and "$ref" in s.get("items", {}))
+            # a discriminated union of named models (the typed event catalogue) is named too
+            named = named or ("oneOf" in s and all("$ref" in x for x in s["oneOf"]))
             if not named:
                 bad.append(f"{m.upper()} {path} {code}: {s}")
     assert bad == []

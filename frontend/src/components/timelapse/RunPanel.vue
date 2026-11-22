@@ -9,11 +9,10 @@ import { useTimelapseStore } from '@/stores/timelapse'
 import { useCameraStore } from '@/stores/camera'
 import { useFilesStore } from '@/stores/files'
 import { useToastsStore } from '@/stores/toasts'
-import { draft, applied, draftKey, dirty, applyDraft } from './useDraft'
+import { draft, applied, resultNow, draftKey, dirty, applyDraft } from './useDraft'
 import { useNow } from './useCountdown'
 import { formatDuration } from './bracketUtils'
 
-const MAX_CONSECUTIVE = 5 // fallback; the server owns the real budget
 const timelapse = useTimelapseStore()
 const camera = useCameraStore()
 const files = useFilesStore()
@@ -53,11 +52,12 @@ const nextIn = computed(() => {
   if (!t || state.value !== 'running') return null
   return Math.max(0, Math.ceil((Date.parse(t) - now.value) / 1000))
 })
+const failureBudget = computed(() => status.value?.failure_budget ?? 5)
 const eta = computed(() => status.value?.timing?.eta_s)
 
 const warning = computed(() => timelapse.warning)
 const suggested = computed(() => {
-  const v = status.value?.measured_set_duration_s || applied.result?.min_interval_s
+  const v = status.value?.measured_set_duration_s || resultNow.value?.min_interval_s
   return Number.isFinite(v) && v > 0 ? Math.ceil(v * 10) / 10 : null
 })
 
@@ -158,7 +158,7 @@ watch(
           <dt class="text-xs text-slate-400">Failures</dt>
           <dd>
             {{ counters.failures ?? 0 }} ({{ counters.consecutive_failures ?? 0 }}/{{
-              MAX_CONSECUTIVE
+              failureBudget
             }}
             in a row)
           </dd>

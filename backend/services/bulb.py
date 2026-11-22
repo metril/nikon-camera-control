@@ -30,6 +30,7 @@ from backend.core.errors import (
     CameraNotConnected,
     CameraOperationFailed,
     InvalidState,
+    ShutterOpen,
 )
 from backend.core.events import EventBus
 from backend.core.jobs import HeldContext, Job, JobContext, JobManager
@@ -266,7 +267,7 @@ class BulbService:
         )
         if self._camera.state == CameraState.BULB:
             await self._camera.transition(CameraState.ERROR)
-        raise CameraOperationFailed(msg, details={"cause": last.message if last else ""})
+        raise ShutterOpen(msg, details={"cause": last.message if last else ""})
 
     async def _close_shielded(self, run: _Run) -> asyncio.CancelledError | None:
         """Run the close sequence to completion even if this task is cancelled again (bounded
@@ -281,7 +282,7 @@ class BulbService:
                 cancel = e
         if not task.done():
             log.error("bulb close did not finish within %.0fs", CLOSE_WAIT_S)
-            raise CameraOperationFailed("COULD NOT CONFIRM THE SHUTTER CLOSED: check the camera.")
+            raise ShutterOpen("COULD NOT CONFIRM THE SHUTTER CLOSED: check the camera.")
         task.result()
         return cancel
 

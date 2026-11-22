@@ -351,7 +351,7 @@ async def test_close_failure_reported_loudly(
         job = (await c.post(B, json={"seconds": 2})).json()
         j = await wait_job(c, job["id"])
         assert j["status"] == "failed"
-        assert "SHUTTER" in j["error"]
+        assert "SHUTTER" in j["error"] and j["error_code"] == "BULB_SHUTTER_OPEN"
         codes = []
         while True:
             try:

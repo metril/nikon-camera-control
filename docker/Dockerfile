@@ -1,92 +1,43 @@
-# Nikon D500 Camera Control Application
-# Multi-stage build with pinned versions for reproducibility
+# Nikon D500 camera controller. Build from the repo root:
+#   docker build -f docker/Dockerfile -t nikon-camera-control:dev .
+# No environment-based app configuration: everything is set in the web UI (data/config.json).
 
-# =============================================================================
-# Stage 1: Build Frontend
-# =============================================================================
-FROM oven/bun:1-slim AS frontend-builder
-
+# --- Stage 1: frontend bundle ------------------------------------------------
+FROM oven/bun:1.3.10-slim AS frontend
 WORKDIR /app/frontend
-
-# Copy package files
-COPY frontend/package.json ./
-
-# Install dependencies
-RUN bun install
-
-# Copy frontend source
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
 COPY frontend/ ./
-
-# Build production bundle
 RUN bun run build
 
-# =============================================================================
-# Stage 2: Build Python Dependencies
-# =============================================================================
-FROM python:3.11-slim-bookworm AS python-builder
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libgphoto2-dev \
-    libusb-1.0-0-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create virtual environment
+# --- Stage 2: Python venv (gphoto2 wheels bundle libgphoto2; no compiler needed) ---
+FROM python:3.12.13-slim-bookworm AS venv
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
-# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt
 
-# =============================================================================
-# Stage 3: Runtime
-# =============================================================================
-FROM python:3.11-slim-bookworm
-
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgphoto2-6 \
-    libusb-1.0-0 \
-    ffmpeg \
-    usbutils \
+# --- Stage 3: runtime ---------------------------------------------------------
+FROM python:3.12.13-slim-bookworm
+# ffmpeg renders time-lapse videos; libusb is loaded by the bundled libgphoto2 port driver.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libusb-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
-
-# Copy virtual environment from builder
-COPY --from=python-builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser
-
-# Set working directory
+# Fixed ids so host volume ownership is predictable. plugdev (gid 46 on Debian/Ubuntu)
+# is the group the udev rule grants USB access to.
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid 1000 --groups plugdev --no-create-home --shell /usr/sbin/nologin app \
+    && mkdir -p /app/data /app/output \
+    && chown -R app:app /app
+COPY --from=venv /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
-
-# Copy application code
-COPY backend/ ./backend/
-
-# Copy built frontend from frontend-builder
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist/
-
-# Create output directory
-RUN mkdir -p /app/output && chown appuser:appuser /app/output
-
-# Environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV OUTPUT_PATH=/app/output
-ENV LOG_LEVEL=INFO
-
-# Expose port
+COPY --chown=app:app backend/ ./backend/
+COPY --from=frontend --chown=app:app /app/frontend/dist ./frontend/dist/
+USER app
+VOLUME ["/app/data", "/app/output"]
 EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/api/v1/health')" || exit 1
-
-# Run as root for USB access (udev rules on host handle permissions)
-# USER appuser
-
+# Fails on any non-2xx (urlopen raises HTTPError) or connection error.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request as u,sys; sys.exit(0 if 200 <= u.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).status < 300 else 1)"]
 CMD ["uvicorn", "backend.asgi:create", "--factory", "--host", "0.0.0.0", "--port", "8000"]

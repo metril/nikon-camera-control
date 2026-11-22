@@ -44,6 +44,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `NOT_FOUND` | by handler | - | Produced by the framework error handlers |
 | `UNSUPPORTED_MEDIA` | 415 | `UnsupportedMedia` | No thumbnail can be generated for this file type |
 | `FORBIDDEN` | 403 | `Forbidden` | This operation is not allowed |
+| `BULB_SHUTTER_OPEN` | 502 | `ShutterOpen` | Could not close the shutter |
 
 ## Endpoints
 
@@ -92,6 +93,12 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | POST | `/api/v1/config/reset` | `reset_config` | Reset Config |
 | POST | `/api/v1/config/api-key` | `create_api_key` | Create Api Key |
 | DELETE | `/api/v1/config/api-key` | `delete_api_key` | Delete Api Key |
+
+### events
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/events/schema` | `get_event_schema` | Get Event Schema |
 
 ### files
 
@@ -185,6 +192,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/timelapse` | `get_timelapse_status` | Get Timelapse Status |
 | PUT | `/api/v1/timelapse/config` | `set_timelapse_config` | Set Timelapse Config |
 | GET | `/api/v1/timelapse/preview` | `preview_timelapse` | Preview Timelapse |
+| POST | `/api/v1/timelapse/preview` | `preview_timelapse_draft` | Preview Timelapse Draft |
 | GET | `/api/v1/timelapse/presets` | `list_timelapse_presets` | List Timelapse Presets |
 | POST | `/api/v1/timelapse/start` | `start_timelapse` | Start Timelapse |
 | POST | `/api/v1/timelapse/pause` | `pause_timelapse` | Pause Timelapse |
@@ -722,6 +730,28 @@ operation_id: `delete_api_key`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `ApiKeyDeletedOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+## events
+
+### `GET /api/v1/events/schema`
+
+operation_id: `get_event_schema`
+
+No-op: returns a sample event. Its response model is the discriminated union of every
+event delivered on ``/ws/events`` (discriminator ``type``); it exists so the spec and the
+generated client carry the event types.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `CameraStateEvent \| CameraConnectedEvent \| CameraDisconnectedEvent \| SettingChangedEvent \| BatteryEvent \| CaptureStartedEvent \| CaptureCompleteEvent \| LiveviewStartedEvent \| LiveviewStoppedEvent \| TimelapseStartedEvent \| TimelapsePausedEvent \| TimelapseResumedEvent \| TimelapseStoppedEvent \| TimelapseCompletedEvent \| TimelapseFrameEvent \| TimelapseWarningEvent \| TimelapseErrorEvent \| RecordingStartedEvent \| RecordingStoppedEvent \| JobCreatedEvent \| JobProgressEvent \| JobCompletedEvent \| JobFailedEvent \| JobCancelledEvent \| ConfigChangedEvent \| PresetsChangedEvent \| ErrorEvent` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -1667,6 +1697,34 @@ operation_id: `set_timelapse_config`
 ### `GET /api/v1/timelapse/preview`
 
 operation_id: `preview_timelapse`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `TimelapseConfigResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/timelapse/preview`
+
+operation_id: `preview_timelapse_draft`
+
+Validate and estimate a draft; nothing is saved and it works during a run.
+
+**Request body** (`application/json`): `TimelapseSetup`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `name` | string | yes |  | `minLength=1`, `maxLength=200` | Session name. |
+| `interval_s` | number | yes |  | `<=86400.0`, `>0.0` | Seconds between shot sets. |
+| `total_frames` | integer \| null | no |  | `>=1.0`, `<=100000.0` | Number of intervals (bracket sets). |
+| `duration_s` | integer \| null | no |  | `>=1.0` | Hard deadline for starting new sets. |
+| `bracketing` | NoBracketing \| StepsBracketing \| QuickBracketing \| PresetBracketing | no |  |  |  |
 
 **Responses**
 

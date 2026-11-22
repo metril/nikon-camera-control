@@ -52,6 +52,11 @@ describe('RunPanel', () => {
     expect(b.w.find('[data-test="start-block"]').text()).toContain('recording')
   })
 
+  it('shows the server failure budget, not a constant', () => {
+    const { w } = setup('running', { failure_budget: 8 })
+    expect(w.text()).toContain('0/8')
+  })
+
   it('Stop needs confirmation', async () => {
     const { tl, w } = setup('running')
     const stop = w.findAll('button').find((b) => b.text() === 'Stop')

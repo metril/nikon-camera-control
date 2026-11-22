@@ -218,6 +218,22 @@ class TimelapseRunner:
         except AppError:
             return shot_bytes_for(None)
 
+    async def preview_draft(self, cfg: TimelapseSetup) -> TimelapseConfigResult:
+        """Validate and estimate ``cfg`` with no side effects (usable while a run is active).
+
+        While a run is active the camera is leased, so the draft is checked offline only
+        (``validated`` false)."""
+        busy = self._state in _ACTIVE or self._start_lock.locked()
+        connected = self._camera.status().connected and not busy
+        shot_bytes = await self._shot_bytes() if connected else shot_bytes_for(None)
+        resolved = await resolve_config(
+            cfg,
+            self._cfg.config.timelapse,
+            settings=self._settings if connected else None,
+            shot_bytes=shot_bytes,
+        )
+        return resolved.result()
+
     def preview(self) -> TimelapseConfigResult:
         if self._resolved is None:
             raise InvalidState("No time-lapse configuration has been set")
@@ -258,7 +274,13 @@ class TimelapseRunner:
             error=self._error,
             validated=bool(r and r.validated),
             measured_set_duration_s=self._measured(),
+            failure_budget=self._budget_now(),
         )
+
+    def _budget_now(self) -> int:
+        if self._state in _ACTIVE or self._session_id is not None:
+            return self._budget
+        return self._cfg.config.timelapse.failure_budget
 
     def _measured(self) -> float | None:
         if not self._durations:

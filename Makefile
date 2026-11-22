@@ -1,6 +1,6 @@
 BIN := .venv/bin
 
-.PHONY: lint test api api-check ci
+.PHONY: lint test api api-check ci frontend-install frontend-lint frontend-test frontend-build docker-build
 
 lint:
 	$(BIN)/ruff check .
@@ -19,4 +19,21 @@ api-check:
 	$(BIN)/python -m scripts.gen_api --check
 	cd frontend && bun run gen:api:check
 
-ci: lint api-check test
+frontend-install:
+	cd frontend && bun install --frozen-lockfile
+
+frontend-lint: frontend-install
+	cd frontend && bun run lint && bun run format:check
+
+frontend-test: frontend-install
+	cd frontend && bun run test
+
+frontend-build: frontend-install
+	cd frontend && bun run build
+
+docker-build:
+	docker build -f docker/Dockerfile -t nikon-camera-control:dev .
+
+# Mirrors .github/workflows/ci.yml (lint, backend, frontend jobs). The docker job needs a
+# daemon, so run `make docker-build` separately.
+ci: lint api-check test frontend-lint frontend-test frontend-build

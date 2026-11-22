@@ -7,7 +7,6 @@ import UiToggle from '@/components/ui/UiToggle.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
-import { api, downloadBlob } from '@/api'
 import { useCameraStore } from '@/stores/camera'
 import { useCameraFilesStore } from '@/stores/cameraFiles'
 import { useJobsStore } from '@/stores/jobs'
@@ -81,11 +80,7 @@ watch(
 async function downloadOne(f) {
   busyFile.value = f.name
   try {
-    const blob = await api.downloadCameraFile({
-      path: { folder: f.folder, name: f.name },
-      parseAs: 'blob',
-    })
-    downloadBlob(blob, f.name)
+    await cf.download(f.folder, f.name)
   } catch (e) {
     toasts.error(e)
   } finally {
