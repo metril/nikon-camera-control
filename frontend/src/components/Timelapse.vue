@@ -493,11 +493,6 @@ async function configure() {
       payload.duration_seconds = durationMinutes.value * 60
     }
 
-    // Include bracket config if enabled
-    if (bracketEnabled.value && bracketPresets.value[bracketPreset.value]) {
-      payload.bracket_config = bracketPresets.value[bracketPreset.value]
-    }
-
     const response = await fetch('/api/timelapse/configure', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

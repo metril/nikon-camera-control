@@ -306,7 +306,7 @@ async def start_timelapse():
     if timelapse_handler is None:
         raise HTTPException(status_code=503, detail="Time-lapse handler not initialized")
 
-    if not camera_controller.connected:
+    if not camera_controller.is_connected:
         raise HTTPException(status_code=409, detail="Camera not connected")
 
     try:

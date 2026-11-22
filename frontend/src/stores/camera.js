@@ -7,6 +7,7 @@ export const useCameraStore = defineStore('camera', () => {
   const state = ref('DISCONNECTED')
   const model = ref(null)
   const serial = ref(null)
+  const batteryLevel = ref(null)
   const lastActivity = ref(null)
 
   // Settings
@@ -43,6 +44,18 @@ export const useCameraStore = defineStore('camera', () => {
   })
 
   // Actions
+  async function fetchBattery() {
+    try {
+      const response = await fetch('/api/settings/battery/level')
+      if (response.ok) {
+        const data = await response.json()
+        batteryLevel.value = data.battery_level ?? null
+      }
+    } catch (e) {
+      batteryLevel.value = null
+    }
+  }
+
   async function fetchStatus() {
     try {
       const response = await fetch('/api/camera/status')
@@ -54,6 +67,7 @@ export const useCameraStore = defineStore('camera', () => {
         serial.value = data.serial
         lastActivity.value = data.last_activity
         error.value = null
+        if (data.connected) fetchBattery()
       }
     } catch (e) {
       error.value = e.message
@@ -70,6 +84,7 @@ export const useCameraStore = defineStore('camera', () => {
         state.value = data.state
         model.value = data.model
         serial.value = data.serial
+        if (data.connected) fetchBattery()
         return true
       } else {
         const err = await response.json()
@@ -90,6 +105,7 @@ export const useCameraStore = defineStore('camera', () => {
         state.value = 'DISCONNECTED'
         model.value = null
         serial.value = null
+        batteryLevel.value = null
         liveViewActive.value = false
       }
     } catch (e) {
@@ -194,6 +210,7 @@ export const useCameraStore = defineStore('camera', () => {
     state,
     model,
     serial,
+    batteryLevel,
     lastActivity,
     settings,
     settingsLoading,

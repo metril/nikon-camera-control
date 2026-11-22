@@ -1,0 +1,32 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-n auto -q"
+markers = [
+    "ffmpeg: requires ffmpeg binary",
+    "hardware: requires a physical camera",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
+ignore = [
+    "B008",  # FastAPI Depends() in defaults
+    "S603",  # subprocess with list args
+    "S607",  # partial executable path (ffmpeg)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["gphoto2", "gphoto2.*"]
+ignore_missing_imports = true

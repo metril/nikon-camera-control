@@ -13,7 +13,7 @@ const statusColor = computed(() => {
 
 const statusText = computed(() => {
   if (isConnecting.value) return 'Connecting...'
-  if (camera.connected) return camera.cameraModel || 'Connected'
+  if (camera.connected) return camera.model || 'Connected'
   if (camera.error) return camera.error
   return 'Disconnected'
 })
@@ -70,7 +70,7 @@ async function toggleConnection() {
       <div class="flex items-center gap-4">
         <!-- Quick Stats (when connected) -->
         <div v-if="camera.connected" class="hidden sm:flex items-center gap-4 text-sm text-camera-muted">
-          <div v-if="camera.batteryLevel !== null" class="flex items-center gap-1">
+          <div v-if="camera.batteryLevel != null" class="flex items-center gap-1">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8V6a2 2 0 00-2-2H9a2 2 0 00-2 2v2M17 8v10a2 2 0 01-2 2H9a2 2 0 01-2-2V8m10 0H7m5 4v4" />
             </svg>
