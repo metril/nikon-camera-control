@@ -37,6 +37,7 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     UNSUPPORTED_MEDIA = "UNSUPPORTED_MEDIA"
     FORBIDDEN = "FORBIDDEN"
+    FORBIDDEN_ORIGIN = "FORBIDDEN_ORIGIN"
     BULB_SHUTTER_OPEN = "BULB_SHUTTER_OPEN"
 
 
@@ -185,6 +186,12 @@ class Forbidden(AppError):
     code = ErrorCode.FORBIDDEN
     http_status = 403
     default_message = "This operation is not allowed"
+
+
+class ForbiddenOrigin(AppError):
+    code = ErrorCode.FORBIDDEN_ORIGIN
+    http_status = 403
+    default_message = "Cross-origin request not allowed"
 
 
 class Unauthorized(AppError):

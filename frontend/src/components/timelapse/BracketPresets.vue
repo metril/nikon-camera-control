@@ -14,7 +14,7 @@ const selected = ref('')
 const newName = ref('')
 const busy = ref(false)
 
-const items = computed(() => presets.items.filter((p) => p.kind === 'bracket'))
+const items = computed(() => presets.bracketPresets)
 const current = computed(() => items.value.find((p) => p.id === selected.value))
 const options = computed(() => [
   { value: '', label: 'Choose a preset...' },
@@ -22,7 +22,7 @@ const options = computed(() => [
 ])
 const content = computed(() => (draft.bracket.mode === 'preset' ? null : contentBracketing()))
 
-onMounted(() => presets.fetch('bracket').catch((e) => toasts.error(e)))
+onMounted(() => presets.fetch().catch((e) => toasts.error(e)))
 
 async function run(fn) {
   busy.value = true

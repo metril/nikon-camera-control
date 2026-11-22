@@ -15,7 +15,7 @@ from backend.api.schemas.config import (
     ConfigSchemaOut,
     ConfigUpdateOut,
 )
-from backend.core.config_store import AppConfig
+from backend.core.config_store import AppConfig, changed_fields
 from backend.core.security import generate_api_key, hash_api_key, require_api_key
 
 # No key configured -> require_api_key is a no-op (first-time setup from the UI).
@@ -53,16 +53,24 @@ async def update_config(
     bus: EventBusDep,
     patch: ConfigPatch,
 ) -> ConfigUpdateOut:
+    old = store.config
     new, restart = store.update(patch.model_dump(exclude_unset=True))
     _changed(bus, new, restart)
-    return ConfigUpdateOut(config=_out(new), restart_required=restart)
+    return ConfigUpdateOut(
+        config=_out(new), restart_required=restart, changed=changed_fields(old, new)
+    )
 
 
 @router.post("/reset", operation_id="reset_config", response_model=ConfigUpdateOut)
 async def reset_config(store: ConfigStoreDep, bus: EventBusDep) -> ConfigUpdateOut:
+    """Restore defaults (the API key is kept); ``changed`` lists what was reset, e.g.
+    ``demo_camera`` when the demo camera was on."""
+    old = store.config
     new, restart = store.reset()
     _changed(bus, new, restart)
-    return ConfigUpdateOut(config=_out(new), restart_required=restart)
+    return ConfigUpdateOut(
+        config=_out(new), restart_required=restart, changed=changed_fields(old, new)
+    )
 
 
 @router.post("/api-key", operation_id="create_api_key", response_model=ApiKeyOut)

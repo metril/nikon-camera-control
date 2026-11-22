@@ -53,7 +53,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function set(name, value) {
     let q = queues.get(name)
     if (!q) {
-      q = { latest: value, base: get(name), waiters: [], running: false }
+      q = { latest: value, base: get(name), event: null, waiters: [], running: false }
       queues.set(name, q)
     } else {
       q.latest = value
@@ -71,16 +71,20 @@ export const useSettingsStore = defineStore('settings', () => {
       let out
       for (;;) {
         const sent = q.latest
+        q.event = null
         out = await api.setSetting({ path: { name }, body: { value: sent } })
+        // the camera's canonical value is the new rollback point for a later failed write
+        q.base = out && typeof out === 'object' && 'value' in out ? out.value : sent
         if (q.latest === sent) break
       }
       queues.delete(name)
       lastError.value = null
       if (out && typeof out === 'object') patchLocal(name, out)
+      if (q.event) patchLocal(name, { value: q.event.value }) // camera changed after our last write
       q.waiters.forEach((w) => w.resolve(out))
     } catch (e) {
       queues.delete(name)
-      patchLocal(name, { value: q.base })
+      patchLocal(name, { value: q.event ? q.event.value : q.base })
       lastError.value = e
       q.waiters.forEach((w) => w.reject(e))
     }
@@ -88,7 +92,11 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // --- event handler
   function onSettingChanged({ name, value }) {
-    if (queues.has(name)) return // our own write is in flight; its response wins
+    const q = queues.get(name)
+    if (q) {
+      q.event = { value } // our own write is in flight; applied when the queue drains
+      return
+    }
     patchLocal(name, { value })
   }
 

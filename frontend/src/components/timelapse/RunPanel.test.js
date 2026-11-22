@@ -25,7 +25,7 @@ function setup(state, extra = {}, cam = {}) {
   }
   const c = useCameraStore()
   Object.assign(c, { connected: true, leasedBy: null, ...cam })
-  useFilesStore().thumbnailSrc.mockResolvedValue('blob:x')
+  useFilesStore().acquireThumbnail.mockResolvedValue({ url: 'blob:x', release() {} })
   return { tl, w: mount(RunPanel, { global: { plugins: [pinia] } }) }
 }
 const labels = (w) => w.findAll('button').map((b) => b.text())

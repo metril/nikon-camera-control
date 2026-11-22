@@ -87,11 +87,20 @@ const lastFile = computed(() => {
 })
 watch(
   lastFile,
-  async (p) => {
+  async (p, _old, onCleanup) => {
     thumb.value = null
+    let stale = false
+    let release = () => {}
+    onCleanup(() => {
+      stale = true
+      release()
+    })
     if (!p) return
     try {
-      thumb.value = await files.thumbnailSrc(p, 400)
+      const h = await files.acquireThumbnail(p, 400)
+      if (stale) return h.release()
+      release = h.release
+      thumb.value = h.url
     } catch {
       thumb.value = null
     }

@@ -40,13 +40,15 @@ export const useFilesStore = defineStore('files', () => {
   }
 
   /**
-   * Resolve a thumbnail to something usable as <img src>. Without an API key this is a plain
-   * URL; with one it is fetched as a blob (headers) and cached as an object URL (LRU, revoked).
+   * Resolve a thumbnail to something usable as <img src>: `{ url, release }`. Without an API
+   * key this is a plain URL; with one it is fetched as a blob (headers) and cached as a
+   * reference-counted object URL. Call release() when the image is unmounted or its src changes;
+   * the URL is revoked only once evicted AND unreferenced.
    */
-  async function thumbnailSrc(path, size) {
-    if (!useAuthStore().apiKey) return thumbnailUrl(path, size)
+  async function acquireThumbnail(path, size) {
+    if (!useAuthStore().apiKey) return { url: thumbnailUrl(path, size), release() {} }
     const key = `${path}|${size ?? ''}`
-    const hit = cache.get(key)
+    const hit = cache.acquire(key)
     if (hit) return hit
     if (!inflight.has(key)) {
       inflight.set(
@@ -54,16 +56,16 @@ export const useFilesStore = defineStore('files', () => {
         api
           .getThumbnail({ path: { path }, query: size ? { size } : {}, parseAs: 'blob' })
           .then((blob) => {
-            const url = URL.createObjectURL(blob)
-            cache.set(key, url)
-            return url
+            if (!cache.has(key)) cache.set(key, URL.createObjectURL(blob))
           })
           .finally(() => inflight.delete(key)),
       )
     }
-    return inflight.get(key)
+    await inflight.get(key)
+    const h = cache.acquire(key)
+    if (!h) throw new Error('Thumbnail was evicted before use')
+    return h
   }
-  const clearThumbnails = () => cache.clear()
 
   /** Download a file; uses a blob when an API key is needed, a plain link otherwise. */
   async function download(path, name = path.split('/').pop()) {
@@ -88,8 +90,7 @@ export const useFilesStore = defineStore('files', () => {
     load,
     reload,
     remove,
-    thumbnailSrc,
-    clearThumbnails,
+    acquireThumbnail,
     download,
   }
 })

@@ -2,11 +2,15 @@
 # Install on the HOST:
 #   sudo cp docker/udev/99-nikon.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
-# Also make sure the user running Docker's device is in plugdev (the container adds the group itself).
+# The container user is not root: compose `group_add` must be the NUMERIC gid that owns the
+# camera node. Find it with the camera plugged in:  stat -c %g /dev/bus/usb/BBB/DDD
+# (BBB/DDD from `lsusb`). `getent group plugdev` shows the gid this rule's GROUP maps to; if
+# it is not 46 (the compose default), or plugdev does not exist (Fedora, Arch: create it with
+# `sudo groupadd plugdev` first, or change GROUP below), set group_add to that gid.
 
 # 04b0 is Nikon's USB vendor id. Matching the vendor (not a product id) covers the D500
 # and any other Nikon body without maintaining a product list. Access is limited to the
-# plugdev group (0660); it is not world-writable.
+# group named below (0660); it is not world-writable.
 SUBSYSTEM=="usb", ATTR{idVendor}=="04b0", MODE="0660", GROUP="plugdev"
 
 # Keep desktop auto-mounters (gvfs-gphoto2-volume-monitor) away from the camera. They open

@@ -34,13 +34,21 @@ const why = computed(() => {
     return s.value.readonly ? 'Read-only on the camera' : 'Not writable through the API'
   return ''
 })
+// Select/number/toggle render their own associated <label>; the others need a heading.
+const segmented = computed(() => kind.value === 'choice' && short.value && s.value.type === 'radio')
+const showHeading = computed(() => kind.value === 'readonly' || segmented.value)
 const emitChange = (v) => emit('change', s.value.name, v)
 </script>
 
 <template>
   <div class="flex flex-col gap-1" :title="why" :data-setting="s.name">
-    <div class="flex items-center gap-2">
-      <span :id="`lbl-${s.name}`" class="text-xs font-medium text-camera-muted">{{ s.label }}</span>
+    <div v-if="showHeading || saving" class="flex items-center gap-2">
+      <span
+        v-if="showHeading"
+        :id="`lbl-${s.name}`"
+        class="text-xs font-medium text-camera-muted"
+        >{{ s.label }}</span
+      >
       <UiSpinner v-if="saving" size="sm" data-testid="saving" aria-label="Saving" />
     </div>
     <template v-if="kind === 'choice'">
@@ -69,7 +77,8 @@ const emitChange = (v) => emit('change', s.value.name, v)
       :max="s.range.max"
       :step="s.range.step"
       :disabled="off"
-      @update:model-value="(v) => v !== null && emitChange(v)"
+      snap
+      @commit="(v) => v !== null && v !== Number(s.value) && emitChange(v)"
     />
     <UiToggle
       v-else-if="kind === 'toggle'"

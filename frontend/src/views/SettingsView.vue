@@ -108,7 +108,20 @@ async function resetDefaults() {
       class="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 text-sm"
       data-test="restart"
     >
-      Restart required for: <strong>{{ config.restartRequired.join(', ') }}</strong>
+      <div class="flex flex-wrap items-center gap-2">
+        <span>
+          Restart required for: <strong>{{ config.restartRequired.join(', ') }}</strong>
+        </span>
+        <UiButton
+          class="ml-auto"
+          size="sm"
+          variant="ghost"
+          data-test="dismiss-restart"
+          @click="config.dismissRestart()"
+        >
+          Dismiss
+        </UiButton>
+      </div>
     </div>
 
     <UiEmpty v-if="loadError" title="Settings could not be loaded" :hint="loadError">
@@ -143,6 +156,15 @@ async function resetDefaults() {
         </div>
       </UiCard>
 
+      <p
+        v-if="config.resetChanged?.length"
+        role="status"
+        class="rounded-lg border border-camera-border bg-camera-surface p-3 text-sm"
+        data-test="reset-changed"
+      >
+        Reset changed: <strong>{{ config.resetChanged.join(', ') }}</strong>
+      </p>
+
       <div
         class="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-lg border border-camera-border bg-camera-surface p-3"
       >
@@ -169,13 +191,16 @@ async function resetDefaults() {
         <UiConfirmButton
           class="ml-auto"
           variant="danger"
-          confirm-text="Reset all?"
+          confirm-text="Reset all, incl. demo camera?"
           :loading="resetting"
           data-test="reset"
           @confirm="resetDefaults"
         >
           Reset to defaults
         </UiConfirmButton>
+        <p class="basis-full text-xs text-camera-muted">
+          Reset restores every setting, including the demo camera switch.
+        </p>
       </div>
     </template>
     <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings...</p>

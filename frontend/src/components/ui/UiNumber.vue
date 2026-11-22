@@ -10,8 +10,11 @@ const props = defineProps({
   step: { type: Number, default: 1 },
   unit: { type: String, default: '' },
   disabled: Boolean,
+  /** Snap committed values to the step grid (anchored at min, or 0). */
+  snap: Boolean,
 })
-const emit = defineEmits(['update:modelValue'])
+/** update:modelValue fires per keystroke; commit fires once when the edit is final. */
+const emit = defineEmits(['update:modelValue', 'commit'])
 const id = uid('number')
 
 const fmt = (v) => (v == null || !Number.isFinite(v) ? '' : String(v))
@@ -37,27 +40,42 @@ watch(
   },
 )
 
+const decimals = () => (String(props.step).split('.')[1] || '').length
+function snapTo(n) {
+  if (!props.snap || !(props.step > 0)) return n
+  const anchor = props.min ?? 0
+  return Number((anchor + Math.round((n - anchor) / props.step) * props.step).toFixed(decimals()))
+}
+let dirty = false
+
 function onInput(e) {
   text.value = e.target.value
+  dirty = true
   const n = parse(text.value)
   if (n !== undefined) emit('update:modelValue', n)
 }
+/** Enter / blur / change: normalise the text and, if edited, emit the final value once. */
 function commit() {
   const n = parse(text.value)
   if (n === undefined) {
     text.value = fmt(props.modelValue)
+    dirty = false
     return
   }
-  const c = n === null ? null : clamp(n)
+  const c = n === null ? null : snapTo(clamp(n))
   text.value = fmt(c)
+  if (!dirty && c === (props.modelValue ?? null)) return
   emit('update:modelValue', c)
+  if (dirty) emit('commit', c)
+  dirty = false
 }
 function bump(dir) {
   const base = parse(text.value) ?? props.min ?? 0
-  const decimals = (String(props.step).split('.')[1] || '').length
-  const next = clamp(Number((base + dir * props.step).toFixed(decimals)))
+  const next = snapTo(clamp(Number((base + dir * props.step).toFixed(decimals()))))
   text.value = fmt(next)
+  dirty = false
   emit('update:modelValue', next)
+  emit('commit', next)
 }
 </script>
 
@@ -77,6 +95,7 @@ function bump(dir) {
         @input="onInput"
         @change="commit"
         @blur="commit"
+        @keydown.enter="commit"
         @keydown.up.prevent="bump(1)"
         @keydown.down.prevent="bump(-1)"
       />

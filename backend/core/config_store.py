@@ -170,6 +170,11 @@ def _changed_paths(old: Any, new: Any, prefix: str = "") -> list[str]:
     return [] if old == new else [prefix.rstrip(".")]
 
 
+def changed_fields(old: AppConfig, new: AppConfig) -> list[str]:
+    """Dotted paths of the fields that differ between two configs."""
+    return _changed_paths(old.model_dump(mode="json"), new.model_dump(mode="json"))
+
+
 def _drop_invalid(data: dict[str, Any], exc: ValidationError) -> bool:
     """Remove every field ``exc`` complains about (unknown or invalid); True if any removed."""
     removed = False

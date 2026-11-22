@@ -30,6 +30,7 @@ const SOCKET = {
   connecting: { tone: 'info', text: 'Connecting' },
   closed: { tone: 'warn', text: 'Offline' },
   unauthorized: { tone: 'error', text: 'Key needed' },
+  forbidden: { tone: 'error', text: 'Origin not allowed' },
 }
 const socket = computed(() => SOCKET[events.status] || SOCKET.closed)
 
@@ -71,6 +72,15 @@ useVisiblePolling(refresh, 60000)
     >
     <span class="flex items-center gap-1 text-camera-muted" data-test="socket">
       Events <UiBadge :tone="socket.tone">{{ socket.text }}</UiBadge>
+    </span>
+    <span
+      v-if="events.status === 'forbidden'"
+      class="basis-full text-camera-error"
+      role="alert"
+      data-test="origin-blocked"
+    >
+      The server rejected this page's origin. Add it to the allowed origins (cors_origins) in the
+      server config, then reload.
     </span>
     <UiButton
       class="ml-auto"

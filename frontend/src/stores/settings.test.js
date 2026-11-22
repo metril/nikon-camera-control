@@ -81,4 +81,29 @@ describe('settings write queue', () => {
     s.onSettingChanged({ name: 'iso', value: 640 })
     expect(s.get('iso')).toBe(640)
   })
+
+  it('rolls back to the last CONFIRMED value when a coalesced later write fails', async () => {
+    const d1 = deferred()
+    const d2 = deferred()
+    api.setSetting.mockReturnValueOnce(d1.promise).mockReturnValueOnce(d2.promise)
+    const p1 = s.set('iso', 200)
+    const p2 = s.set('iso', 400)
+    const r1 = expect(p1).rejects.toThrow()
+    const r2 = expect(p2).rejects.toThrow()
+    d1.resolve({ name: 'iso', value: 200 }) // A confirmed
+    await vi.waitFor(() => expect(api.setSetting).toHaveBeenCalledTimes(2))
+    d2.reject(new ApiError({ code: 'X', message: 'x' })) // B fails
+    await Promise.all([r1, r2])
+    expect(s.get('iso')).toBe(200) // not 100
+  })
+
+  it('applies a setting_changed that arrived during a failed write once the queue drains', async () => {
+    const d = deferred()
+    api.setSetting.mockReturnValue(d.promise)
+    const p = expect(s.set('iso', 200)).rejects.toThrow()
+    s.onSettingChanged({ name: 'iso', value: 640 })
+    d.reject(new ApiError({ code: 'X', message: 'x' }))
+    await p
+    expect(s.get('iso')).toBe(640)
+  })
 })

@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onActivated, onDeactivated, onUnmounte
 import { api, downloadBlob } from '@/api'
 import { createLiveViewSocket } from '@/api/ws.js'
 import { useCameraStore } from '@/stores/camera'
+import { useAuthStore } from '@/stores/auth'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
 import { useVisibility } from '@/composables'
@@ -14,6 +15,7 @@ const STALE_MS = 3000
 const HIDDEN_CLOSE_MS = 5000
 
 const camera = useCameraStore()
+const auth = useAuthStore()
 const liveview = useLiveViewStore()
 const toasts = useToastsStore()
 const visible = useVisibility()
@@ -115,6 +117,15 @@ watch(
   },
   { immediate: true },
 )
+// A new key (rotated in Settings, or typed into the prompt) needs a fresh handshake; also when
+// the same key is re-entered after a 4401 (required flips back to false).
+watch(
+  () => [auth.apiKey, auth.required],
+  ([key, required], [prevKey, prevRequired]) => {
+    if (!shouldRun.value) return
+    if (key !== prevKey || (prevRequired && !required)) socket.restart()
+  },
+)
 watch(
   () => socket.status.value,
   (s) => {
@@ -136,6 +147,7 @@ onDeactivated(() => (active.value = false))
 const state = computed(() => {
   const ss = socket.status.value
   if (!camera.connected) return { key: 'disconnected', label: 'Camera disconnected', tone: 'error' }
+  if (ss === 'forbidden') return { key: 'forbidden', label: 'Origin not allowed', tone: 'error' }
   if (ss === 'unauthorized') return { key: 'unauthorized', label: 'Unauthorized', tone: 'error' }
   if (!wanted.value) return { key: 'stopped', label: 'Stopped', tone: 'neutral' }
   if (hiddenLong.value) return { key: 'paused', label: 'Paused: tab hidden', tone: 'warn' }
@@ -163,7 +175,9 @@ const dropped = computed(() => {
 })
 const showStale = computed(() => state.value.key === 'stale')
 const showPlaceholder = computed(
-  () => !hasFrame.value || ['stopped', 'disconnected', 'unauthorized'].includes(state.value.key),
+  () =>
+    !hasFrame.value ||
+    ['stopped', 'disconnected', 'unauthorized', 'forbidden'].includes(state.value.key),
 )
 
 async function start() {
@@ -341,6 +355,9 @@ onUnmounted(() => {
             >
           </template>
         </UiEmpty>
+        <p v-else-if="state.key === 'forbidden'" class="text-sm" role="alert">
+          This page's origin is not allowed by the server (cors_origins).
+        </p>
         <p v-else-if="state.key === 'unauthorized'" class="text-sm">
           Unauthorized - check the API key.
         </p>

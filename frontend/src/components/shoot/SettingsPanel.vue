@@ -44,8 +44,11 @@ const leaseReason = computed(() =>
 )
 const visible = (s) => s.type !== 'section' && s.type !== 'button'
 
+// Non-writable toggles are action widgets (autofocusdrive, bulb, movie ...): not useful as rows.
+const commonVisible = (s) => visible(s) && !(s.type === 'toggle' && !s.writable)
+
 const grouped = computed(() => {
-  const list = settings.common.filter(visible)
+  const list = settings.common.filter(commonVisible)
   const used = new Set()
   const out = GROUPS.map((g) => {
     const items = g.names.map((n) => list.find((s) => s.name === n)).filter(Boolean)

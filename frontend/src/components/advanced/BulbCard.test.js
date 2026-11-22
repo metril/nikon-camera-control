@@ -16,7 +16,9 @@ function setup(opts) {
     setup: () => {
       const b = useBulbStore()
       b.fetchStatus = vi.fn().mockResolvedValue()
-      useFilesStore().thumbnailSrc = vi.fn().mockResolvedValue('blob:thumb')
+      useFilesStore().acquireThumbnail = vi
+        .fn()
+        .mockResolvedValue({ url: 'blob:thumb', release() {} })
     },
   })
 }

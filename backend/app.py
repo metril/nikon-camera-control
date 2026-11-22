@@ -6,16 +6,18 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend import __version__
 from backend.api.errors import install_error_handlers
+from backend.api.origin import OriginGuardMiddleware
 from backend.api.v1 import api_router
 from backend.api.v1.sessions import build_sessions_service
 from backend.camera.backend import CameraBackend
@@ -54,10 +56,15 @@ def _install_spa(app: FastAPI, dist: Path) -> None:
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
-    @app.get("/{path:path}", include_in_schema=False)
-    async def spa(path: str) -> Response:
+    # All methods: an unknown /api path must give the 404 envelope, not 405.
+    @app.api_route(
+        "/{path:path}",
+        methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        include_in_schema=False,
+    )
+    async def spa(request: Request, path: str) -> Response:
         head = path.split("/", 1)[0]
-        if head in ("api", "docs", "openapi.json"):
+        if request.method not in ("GET", "HEAD") or head in ("api", "docs", "openapi.json"):
             raise HTTPException(status_code=404)
         try:
             candidate = (root / path).resolve()
@@ -171,9 +178,12 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.config_store = store
+    app.state.started_at = datetime.now(UTC)
     app.state.data_dir = data
     app.state.output_dir = output
 
+    # Added before install_error_handlers so the request-id middleware stays outermost.
+    app.add_middleware(OriginGuardMiddleware, config_store=store)
     install_error_handlers(app)
     origins = list(store.config.cors_origins)
     if origins:

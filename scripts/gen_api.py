@@ -238,7 +238,11 @@ def render_docs(spec: Json, app: Any) -> str:
         "",
         "When an API key is configured, send it as the `X-API-Key` request header. WebSocket "
         "clients cannot set headers, so they offer the subprotocol `apikey.<key>`. A rejected "
-        "WebSocket is accepted and then closed with code 4401.",
+        "WebSocket is accepted and then closed with code 4401; an open socket is closed with 4401 "
+        "when the key changes. Cross-origin protection: POST/PUT/PATCH/DELETE and WebSocket "
+        "requests that carry an `Origin` header must be same-origin (same host:port as `Host`) "
+        "or listed in `cors_origins`; otherwise HTTP gets 403 `FORBIDDEN_ORIGIN` and a WebSocket "
+        "is closed with 4403 before it is accepted. Requests without `Origin` are unaffected.",
         "",
         "## Error envelope",
         "",

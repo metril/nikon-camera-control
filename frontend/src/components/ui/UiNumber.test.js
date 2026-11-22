@@ -38,4 +38,35 @@ describe('UiNumber', () => {
     expect(w.text()).toContain('s')
     expect(w.find('label').attributes('for')).toBe(w.find('input').attributes('id'))
   })
+
+  it('commit fires once per finished edit (Enter then blur), never per keystroke', async () => {
+    const w = mount(UiNumber, {
+      props: { modelValue: 100, min: 100, max: 3200, step: 100, snap: true },
+    })
+    const input = w.find('input')
+    for (const v of ['1', '15', '150', '1500']) {
+      input.element.value = v
+      await input.trigger('input')
+    }
+    expect(w.emitted('commit')).toBeUndefined()
+    await input.trigger('keydown', { key: 'Enter' })
+    await input.trigger('blur')
+    await input.trigger('change')
+    expect(w.emitted('commit')).toEqual([[1500]])
+  })
+
+  it('commit clamps and snaps to step; spinner keys commit immediately', async () => {
+    const w = mount(UiNumber, {
+      props: { modelValue: 100, min: 100, max: 3200, step: 100, snap: true },
+    })
+    const input = w.find('input')
+    await input.setValue('1540')
+    await input.trigger('blur')
+    expect(w.emitted('commit').at(-1)).toEqual([1500])
+    await input.setValue('99999')
+    await input.trigger('blur')
+    expect(w.emitted('commit').at(-1)).toEqual([3200])
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    expect(w.emitted('commit').at(-1)).toEqual([3100])
+  })
 })

@@ -120,6 +120,20 @@ describe('SettingsView', () => {
     expect(config.reset).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the restart banner across later config changes, dismissable; shows reset changes and the demo warning', async () => {
+    const { w, config } = await setup()
+    config.onChanged({ config: cfg(), restart_required: ['liveview.target_fps'] })
+    config.onChanged({ config: cfg(), restart_required: [] })
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="restart"]').text()).toContain('liveview.target_fps')
+    await w.find('[data-test="dismiss-restart"]').trigger('click')
+    expect(w.find('[data-test="restart"]').exists()).toBe(false)
+    config.resetChanged = ['video.crf']
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="reset-changed"]').text()).toContain('video.crf')
+    expect(w.text()).toContain('demo camera')
+  })
+
   it('shows a generated key once and requires confirmation', async () => {
     const { w, config } = await setup()
     config.createApiKey = vi.fn(async () => 'secret-key-123')

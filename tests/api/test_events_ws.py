@@ -1,5 +1,5 @@
 import pytest
-from starlette.testclient import TestClient
+from starlette.testclient import TestClient, WebSocketTestSession
 from starlette.websockets import WebSocketDisconnect
 
 from backend.core.security import hash_api_key
@@ -80,3 +80,29 @@ def test_slow_subscriber_closed_1013(ws_client: TestClient) -> None:
             for _ in range(2000):
                 ws.receive_json()
         assert ei.value.code == 1013
+
+
+@pytest.mark.parametrize("path", ["/api/v1/ws/events", "/api/v1/ws/liveview"])
+def test_socket_closed_4401_when_key_rotated(ws_client: TestClient, path: str) -> None:
+    store = ws_client.app.state.config_store  # type: ignore[attr-defined]
+    store.set_api_key_hash(hash_api_key("k1"))
+    with ws_client.websocket_connect(path, subprotocols=["apikey.k1"]) as ws:
+        ws.receive_json()
+        store.set_api_key_hash(hash_api_key("k2"))
+        assert _closed_code(ws) == 4401
+
+
+@pytest.mark.parametrize("path", ["/api/v1/ws/events", "/api/v1/ws/liveview"])
+def test_open_socket_closed_4401_when_key_first_created(ws_client: TestClient, path: str) -> None:
+    with ws_client.websocket_connect(path) as ws:
+        ws.receive_json()
+        assert ws_client.post("/api/v1/config/api-key").status_code == 200
+        assert _closed_code(ws) == 4401
+
+
+def _closed_code(ws: WebSocketTestSession) -> int | None:
+    for _ in range(20):
+        msg = ws.receive()
+        if msg["type"] == "websocket.close":
+            return int(msg["code"])
+    return None

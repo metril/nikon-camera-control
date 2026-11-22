@@ -32,9 +32,9 @@ mkdir -p data output && sudo chown 1000:1000 data output
 docker compose up -d --build
 ```
 
-Open http://localhost:8000 and press Connect. Replugging the camera does not require a container restart.
+Open http://localhost:8000 and press Connect. Replugging or power-cycling the camera does not require a container restart (the compose file bind-mounts `/dev/bus/usb`, so the new device node is visible).
 
-`docker/data` and `docker/output` are bind-mounted (paths relative to the compose file). The container runs as uid/gid 1000 in the `plugdev` group; no privileged mode, no extra capabilities, no environment variables.
+`docker/data` and `docker/output` are bind-mounted (paths relative to the compose file). The container runs as uid/gid 1000 and gets USB access through `group_add`, which must be the **numeric gid that owns the camera node on the host** (default `"46"`, Debian/Ubuntu `plugdev`). With the camera plugged in, check `stat -c %g /dev/bus/usb/BBB/DDD` (BBB/DDD from `lsusb`); if it is not 46 (or `plugdev` does not exist, e.g. Fedora/Arch), edit `group_add` in `docker/docker-compose.yml`. The udev rule is what sets that group on the node. No privileged mode, no extra capabilities, no environment variables.
 
 ## First-run setup in the web UI
 
@@ -83,6 +83,8 @@ Run with the demo camera: put `{"demo_camera": true}` in `data/config.json`, the
 cd frontend && bun run dev                                    # terminal 2 -> http://localhost:5173
 ```
 
+The Vite proxy (`/api`, including WebSockets) keeps the browser's `Host` (`changeOrigin: false`) so it matches the `Origin` header; the backend rejects cross-origin unsafe requests (see Security notes), so do not turn `changeOrigin` on. If you open the dev server from another host name, add that origin to `cors_origins`.
+
 Hardware tests (skipped by default; one camera, so no xdist): `.venv/bin/pytest -m hardware --real-camera -n 0 -s tests/hardware`. Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Data layout
@@ -93,8 +95,10 @@ Hardware tests (skipped by default; one camera, so no xdist): `.venv/bin/pytest 
 ## Security notes
 
 - No authentication until a key is generated. Meant for a trusted LAN; do not expose it to the internet. Put it behind a reverse proxy with TLS if you need remote access.
-- The container is non-root, not privileged, and gets only `/dev/bus/usb` (see the trade-off comment in `docker/docker-compose.yml`).
-- `docker/udev/99-nikon.rules` grants the `plugdev` group (mode 0660), not everyone.
+- The container is non-root, not privileged, and gets only the `/dev/bus/usb` tree and the USB character-device cgroup rule (see the trade-off comment in `docker/docker-compose.yml`).
+- `docker/udev/99-nikon.rules` grants the `plugdev` group (mode 0660), not everyone; `group_add` in the compose file must be that group's numeric gid on the host.
+- Cross-origin protection: POST/PUT/PATCH/DELETE requests and WebSocket handshakes that carry an `Origin` header must be same-origin (same host:port as `Host`, scheme ignored) or listed in `cors_origins` (read live), otherwise they get 403 `FORBIDDEN_ORIGIN` (WebSocket: close code 4403). This stops other web pages on the LAN from driving the camera in open mode. Requests without `Origin` (curl, scripts) are unaffected, so it is not a substitute for an API key. Behind a reverse proxy that rewrites `Host`, add the public origin to `cors_origins`.
+- Rotating, removing or creating the API key closes open WebSockets with code 4401.
 
 ## Known limitations
 
@@ -114,6 +118,6 @@ Hardware tests (skipped by default; one camera, so no xdist): `.venv/bin/pytest 
 - **"Device claimed by another process":** a desktop auto-mounter (gvfs) or `gphoto2` has the camera; `pkill -f gvfs-gphoto2-volume-monitor` and retry.
 - **Settings not applying:** mode dial (above). Aperture needs A or M, shutter speed S or M; Auto-ISO can override manual ISO.
 - **Live view freezes:** the 60 s link timeout may have hit; keep keepalive enabled; disconnect and reconnect.
-- **Container cannot reach USB:** `ls -la /dev/bus/usb/*/` should show group `plugdev` and mode 0660 on the camera node. `docker compose logs -f` shows connect errors. If the host's plugdev gid is not 46, put its numeric gid under `group_add`.
+- **Container cannot reach USB:** `ls -la /dev/bus/usb/*/` should show mode 0660 and the group whose numeric gid (`stat -c %g`) equals `group_add` in the compose file (default 46). `docker compose logs -f` shows connect errors.
 - **Cannot write data/output:** `sudo chown -R 1000:1000 data output`.
 - **Locked out:** delete `data/api_key.json`.

@@ -10,6 +10,7 @@ import { useCaptureStore } from './capture'
 import { useConfigStore } from './config'
 import { useToastsStore } from './toasts'
 import { useRecordingStore } from './recording'
+import { usePresetsStore } from './presets'
 
 const stub = (store, ...names) =>
   names.forEach((n) => vi.spyOn(store, n).mockImplementation(() => {}))
@@ -27,6 +28,7 @@ describe('event dispatcher', () => {
     stub(useJobsStore(), 'onJobEvent')
     stub(useTimelapseStore(), 'onEvent')
     stub(useToastsStore(), 'error')
+    stub(usePresetsStore(), 'refetch')
   })
 
   it('routes events to the owning stores', () => {
@@ -50,6 +52,11 @@ describe('event dispatcher', () => {
     expect(useJobsStore().onJobEvent).toHaveBeenCalledTimes(5)
     ev.dispatch({ type: 'timelapse_frame', data: { frames_done: 3 } })
     expect(useTimelapseStore().onEvent).toHaveBeenCalledWith('timelapse_frame', { frames_done: 3 })
+  })
+
+  it('presets_changed refreshes the presets store', () => {
+    ev.dispatch({ type: 'presets_changed', data: { action: 'created', id: 'p', kind: 'settings' } })
+    expect(usePresetsStore().refetch).toHaveBeenCalled()
   })
 
   it('error events become toasts; unknown/malformed events are ignored', () => {

@@ -5,7 +5,7 @@
  *   - onActivated()/onDeactivated() (Vue lifecycle hooks, fire on first mount too), and/or
  *   - inject('activeTab') - a readonly ref with the current tab id ('shoot' | 'timelapse' | ...).
  */
-import { computed, provide, readonly, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, readonly, ref, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
 import { useToastsStore } from '@/stores/toasts'
@@ -43,6 +43,32 @@ const current = computed(() => VIEWS[activeTab.value])
 provide('activeTab', readonly(activeTab))
 // Cross-tab navigation for views: inject('navigate')('gallery'). Also handled: open-gallery/open-timelapse/open-settings events.
 provide('navigate', select)
+
+// The tab bar scrolls horizontally on narrow screens: keep the active tab visible and show
+// fade edges while more tabs lie off-screen.
+const navRef = ref(null)
+const moreLeft = ref(false)
+const moreRight = ref(false)
+function updateEdges() {
+  const el = navRef.value
+  if (!el) return
+  moreLeft.value = el.scrollLeft > 4
+  moreRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+}
+function revealActive() {
+  nextTick(() => {
+    navRef.value
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+    updateEdges()
+  })
+}
+watch(activeTab, revealActive)
+onMounted(() => {
+  revealActive()
+  window.addEventListener('resize', updateEdges)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', updateEdges))
 
 const helpOpen = ref(false)
 const jobsOpen = ref(false)
@@ -100,7 +126,7 @@ const SHORTCUTS = [
             d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
           />
         </svg>
-        <h1 class="text-lg font-semibold">Nikon Camera Control</h1>
+        <h1 class="min-w-0 text-lg font-semibold">Nikon Camera Control</h1>
         <a
           v-if="auth.authEnabled === false"
           href="#/settings"
@@ -109,7 +135,9 @@ const SHORTCUTS = [
           title="No API key set — anyone on the network can control the camera"
         >
           <UiBadge tone="warn"
-            >No API key set — anyone on the network can control the camera</UiBadge
+            >No API key set<span class="hidden sm:inline">
+              — anyone on the network can control the camera</span
+            ></UiBadge
           >
         </a>
         <button
@@ -132,23 +160,42 @@ const SHORTCUTS = [
           ?
         </button>
       </div>
-      <nav aria-label="Primary" class="-mb-3 mt-3 flex gap-1 overflow-x-auto">
-        <a
-          v-for="t in TABS"
-          :key="t.id"
-          :href="`#/${t.id}`"
-          :aria-current="activeTab === t.id ? 'page' : undefined"
-          class="whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors"
-          :class="
-            activeTab === t.id
-              ? 'border-camera-accent text-camera-text'
-              : 'border-transparent text-camera-muted hover:text-camera-text'
-          "
-          @click.prevent="select(t.id)"
+      <div class="relative -mb-3 mt-3">
+        <span
+          v-if="moreLeft"
+          class="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-camera-surface to-transparent"
+          aria-hidden="true"
+          data-test="tabs-more-left"
+        />
+        <span
+          v-if="moreRight"
+          class="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-camera-surface to-transparent"
+          aria-hidden="true"
+          data-test="tabs-more-right"
+        />
+        <nav
+          ref="navRef"
+          aria-label="Primary"
+          class="flex gap-1 overflow-x-auto"
+          @scroll.passive="updateEdges"
         >
-          {{ t.label }}
-        </a>
-      </nav>
+          <a
+            v-for="t in TABS"
+            :key="t.id"
+            :href="`#/${t.id}`"
+            :aria-current="activeTab === t.id ? 'page' : undefined"
+            class="whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors"
+            :class="
+              activeTab === t.id
+                ? 'border-camera-accent text-camera-text'
+                : 'border-transparent text-camera-muted hover:text-camera-text'
+            "
+            @click.prevent="select(t.id)"
+          >
+            {{ t.label }}
+          </a>
+        </nav>
+      </div>
     </header>
 
     <div class="border-b border-camera-border bg-camera-bg px-4 py-2">

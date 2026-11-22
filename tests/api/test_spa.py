@@ -50,6 +50,13 @@ async def test_unknown_api_paths_are_json_404(spa_client: httpx.AsyncClient) -> 
     assert (await spa_client.get("/api/v1/openapi.json")).status_code == 200
 
 
+async def test_non_get_unknown_api_paths_are_json_404(spa_client: httpx.AsyncClient) -> None:
+    for method, p in (("POST", "/api/v1/nope"), ("DELETE", "/api/nope"), ("PUT", "/api")):
+        r = await spa_client.request(method, p)
+        assert r.status_code == 404, (method, p)
+        assert r.json()["error"]["code"] == "NOT_FOUND"
+
+
 @pytest.mark.parametrize(
     "path",
     [

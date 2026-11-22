@@ -17,15 +17,24 @@ const failed = ref(false)
 const visible = ref(props.eager)
 let observer = null
 let gen = 0
+let release = () => {}
+
+function drop() {
+  release()
+  release = () => {}
+}
 
 async function load() {
   if (!visible.value || !props.supported) return
   const mine = ++gen
   failed.value = false
   src.value = null
+  drop()
   try {
-    const url = await files.thumbnailSrc(props.path, props.size)
-    if (mine === gen) src.value = url
+    const h = await files.acquireThumbnail(props.path, props.size)
+    if (mine !== gen) return h.release()
+    release = h.release
+    src.value = h.url
   } catch {
     if (mine === gen) failed.value = true
   }
@@ -53,6 +62,7 @@ onMounted(() => {
 onUnmounted(() => {
   gen++
   observer?.disconnect()
+  drop()
 })
 watch(() => [props.path, props.size], load)
 </script>

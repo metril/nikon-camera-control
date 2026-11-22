@@ -32,6 +32,16 @@ async def test_info(client: httpx.AsyncClient) -> None:
     assert body["output_free_bytes"] > 0 and isinstance(body["ffmpeg_available"], bool)
 
 
+async def test_info_started_at_is_utc_and_stable(client: httpx.AsyncClient) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    a = (await client.get("/api/v1/info")).json()["started_at"]
+    t = datetime.fromisoformat(a)
+    assert t.utcoffset() == timedelta(0)
+    assert abs((datetime.now(UTC) - t).total_seconds()) < 60
+    assert (await client.get("/api/v1/info")).json()["started_at"] == a
+
+
 async def test_openapi_metadata(client: httpx.AsyncClient) -> None:
     spec = (await client.get("/api/v1/openapi.json")).json()
     assert spec["info"]["version"] == __version__

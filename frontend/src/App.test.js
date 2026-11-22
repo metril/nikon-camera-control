@@ -113,4 +113,16 @@ describe('App shell', () => {
     expect(a.text()).toContain('No API key set')
     w.unmount()
   })
+
+  it('scrolls the active tab into view in the horizontally scrollable tab bar', async () => {
+    const spy = vi.fn()
+    Element.prototype.scrollIntoView = spy
+    const { w } = await setup()
+    spy.mockClear()
+    press('g')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith({ inline: 'center', block: 'nearest' })
+    expect(spy.mock.contexts.at(-1).textContent).toContain('Gallery')
+    w.unmount()
+  })
 })

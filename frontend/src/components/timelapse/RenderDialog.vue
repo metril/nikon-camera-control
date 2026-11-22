@@ -10,12 +10,14 @@ import UiProgress from '@/components/ui/UiProgress.vue'
 import { useVideosStore } from '@/stores/videos'
 import { useJobsStore } from '@/stores/jobs'
 import { useToastsStore } from '@/stores/toasts'
+import { useConfigStore } from '@/stores/config'
 
 const props = defineProps({ open: Boolean, session: { type: Object, default: null } })
 const emit = defineEmits(['close', 'done'])
 const videos = useVideosStore()
 const jobs = useJobsStore()
 const toasts = useToastsStore()
+const config = useConfigStore()
 
 const form = ref({
   fps: 24,
@@ -36,7 +38,20 @@ const running = computed(() => ['queued', 'pending', 'running'].includes(job.val
 const opts = (a) => a.map((v) => ({ value: v, label: v || 'default' }))
 const codecs = opts(['h264', 'h265', 'prores', 'vp9'])
 const qualities = opts(['', 'low', 'medium', 'high'])
-const presets = opts(['', 'ultrafast', 'veryfast', 'fast', 'medium', 'slow', 'veryslow'])
+const presets = opts([
+  '',
+  'ultrafast',
+  'superfast',
+  'veryfast',
+  'faster',
+  'fast',
+  'medium',
+  'slow',
+  'slower',
+  'veryslow',
+])
+// config.video.codec (ffmpeg names) -> render request codec enum
+const CODEC_MAP = { libx264: 'h264', libx265: 'h265', 'libvpx-vp9': 'vp9' }
 const resolutions = opts(['source', '2160p', '1080p', '720p'])
 const frames = opts(['middle', 'first', 'last'])
 
@@ -79,9 +94,26 @@ watch(
   () => job.value?.status,
   (s) => s === 'completed' && emit('done'),
 )
+/** Defaults come from Settings > video.* (fetched if not loaded yet). */
+async function applyVideoDefaults() {
+  if (!config.config) await Promise.resolve(config.fetch?.()).catch(() => {})
+  const v = config.config?.video
+  if (!v || !props.open) return
+  const f = form.value
+  if (CODEC_MAP[v.codec]) f.codec = CODEC_MAP[v.codec]
+  if (Number.isFinite(v.fps)) f.fps = v.fps
+  if (Number.isFinite(v.crf)) f.crf = v.crf
+  f.quality = ''
+  if (presets.some((p) => p.value === v.preset)) f.preset = v.preset
+}
 watch(
   () => props.open,
-  (o) => o && !running.value && (jobId.value = null),
+  (o) => {
+    if (!o) return
+    if (!running.value) jobId.value = null
+    applyVideoDefaults()
+  },
+  { immediate: true },
 )
 const num = (key, v) => (form.value[key] = v ?? NaN)
 </script>

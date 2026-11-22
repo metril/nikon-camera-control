@@ -5,7 +5,6 @@ import LocalFiles from './LocalFiles.vue'
 import { useFilesStore } from '@/stores/files'
 import { useToastsStore } from '@/stores/toasts'
 import { useCaptureStore } from '@/stores/capture'
-import { useAuthStore } from '@/stores/auth'
 
 const item = (n, extra = {}) => ({
   path: `a/${n}.jpg`,
@@ -19,6 +18,7 @@ const item = (n, extra = {}) => ({
 })
 
 let wrapper
+const release = vi.fn()
 function setup({ items = [item('one'), item('two'), item('three')], total } = {}) {
   const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
   const files = useFilesStore(pinia)
@@ -27,7 +27,7 @@ function setup({ items = [item('one'), item('two'), item('three')], total } = {}
   })
   files.items = items
   files.total = total ?? items.length
-  vi.spyOn(files, 'thumbnailSrc').mockResolvedValue('blob:x')
+  vi.spyOn(files, 'acquireThumbnail').mockResolvedValue({ url: 'blob:x', release })
   const toasts = useToastsStore(pinia)
   vi.spyOn(toasts, 'error')
   vi.spyOn(toasts, 'success')
@@ -69,12 +69,12 @@ describe('LocalFiles', () => {
   it('does not fetch thumbnails for off-screen tiles (IntersectionObserver)', async () => {
     const { files } = setup()
     await flushPromises()
-    expect(files.thumbnailSrc).not.toHaveBeenCalled()
+    expect(files.acquireThumbnail).not.toHaveBeenCalled()
   })
 
   it('failed thumbnail shows the placeholder and the grid still renders', async () => {
     const { files, pinia } = setup()
-    files.thumbnailSrc.mockRejectedValueOnce(new Error('boom'))
+    files.acquireThumbnail.mockRejectedValueOnce(new Error('boom'))
     // fall back to eager loading when no IntersectionObserver
     vi.stubGlobal('IntersectionObserver', undefined)
     wrapper.unmount()
@@ -91,7 +91,7 @@ describe('LocalFiles', () => {
     wrapper.unmount()
     wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
     await flushPromises()
-    expect(files.thumbnailSrc).not.toHaveBeenCalled()
+    expect(files.acquireThumbnail).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid=thumb-placeholder]').exists()).toBe(true)
   })
 
@@ -175,13 +175,18 @@ describe('LocalFiles', () => {
     expect(toasts.success).toHaveBeenCalledWith('File deleted')
   })
 
-  it('releases cached thumbnail object URLs on unmount', async () => {
-    const { files } = setup()
-    vi.spyOn(files, 'clearThumbnails')
-    useAuthStore().apiKey = 'k'
-    await flushPromises()
+  it('releases its own thumbnail references on unmount and never clears the shared cache', async () => {
+    const { files, pinia } = setup()
+    files.clearThumbnails = vi.fn()
+    vi.stubGlobal('IntersectionObserver', undefined)
     wrapper.unmount()
-    expect(files.clearThumbnails).toHaveBeenCalled()
+    release.mockClear()
+    wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
+    await flushPromises()
+    expect(release).not.toHaveBeenCalled()
+    wrapper.unmount()
+    expect(release).toHaveBeenCalledTimes(3)
+    expect(files.clearThumbnails).not.toHaveBeenCalled()
     wrapper = null
   })
 

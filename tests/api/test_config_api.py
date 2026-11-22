@@ -113,3 +113,13 @@ async def test_reset_reports_restart_required(app: FastAPI, client: httpx.AsyncC
     sub.close()
     assert ev.data["restart_required"] == ["cors_origins"]
     assert (await client.post(f"{U}/reset")).json()["restart_required"] == []
+
+
+async def test_patch_and_reset_report_changed_fields(client: httpx.AsyncClient) -> None:
+    r = await client.patch(U, json={"demo_camera": False, "liveview": {"target_fps": 7}})
+    assert sorted(r.json()["changed"]) == ["demo_camera", "liveview.target_fps"]
+    assert (await client.patch(U, json={"demo_camera": False})).json()["changed"] == []
+    rr = await client.post(f"{U}/reset")
+    assert "liveview.target_fps" in rr.json()["changed"]
+    await client.patch(U, json={"demo_camera": True})
+    assert "demo_camera" in (await client.post(f"{U}/reset")).json()["changed"]

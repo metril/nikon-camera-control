@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
@@ -62,7 +62,6 @@ const setFilter = (key, value) => load({ [key]: value, page: 1 })
 const goPage = (page) => load({ page })
 
 onMounted(() => load())
-onUnmounted(() => files.clearThumbnails())
 
 // Refresh when a capture lands or a job completes.
 watch(

@@ -12,7 +12,9 @@ export default defineConfig({
       // REST and WebSocket (/api/v1/ws/*) both live under /api
       '/api': {
         target: 'http://localhost:8000',
-        changeOrigin: true,
+        // keep the browser's Host (localhost:5173) so it matches the Origin header; the
+        // backend rejects cross-origin unsafe requests and WebSockets (see README)
+        changeOrigin: false,
         ws: true,
       },
     },

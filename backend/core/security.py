@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import hmac
@@ -131,7 +132,7 @@ async def ws_authorize(websocket: WebSocket) -> bool:
     would leak it into access logs). Returns True if allowed (always in open mode); the
     caller then accepts, echoing ``ws_subprotocol``. On failure it accepts and closes
     with 4401 (closing before accept would surface as HTTP 403) and returns False; the
-    caller must then return.
+    caller must then return. After accepting, use ``KeyWatch`` to end the socket on a key change.
     """
     key_hash = _current_hash(websocket.app.state)
     if not key_hash:
@@ -143,6 +144,32 @@ async def ws_authorize(websocket: WebSocket) -> bool:
     await websocket.accept(subprotocol=proto)
     await websocket.close(code=4401, reason="Missing or invalid API key")
     return False
+
+
+class KeyWatch:
+    """Fires ``changed`` when the API key hash differs from the one at creation.
+
+    Create it right after a successful ``ws_authorize`` (before any await) so a socket opened
+    with an old key, or in open mode, is closed with 4401 once the key is rotated, removed or
+    first created. Call ``close()`` when the socket handler ends.
+    """
+
+    def __init__(self, websocket: WebSocket) -> None:
+        store = websocket.app.state.config_store
+        loop = asyncio.get_running_loop()
+        self.changed = asyncio.Event()
+        start = store.config.api_key_hash
+
+        def on_config(new: object, old: object) -> None:
+            if getattr(new, "api_key_hash", None) != start:
+                loop.call_soon_threadsafe(self.changed.set)
+
+        self._unsubscribe = store.subscribe(on_config)
+        if store.config.api_key_hash != start:  # changed between the two reads
+            self.changed.set()
+
+    def close(self) -> None:
+        self._unsubscribe()
 
 
 def ws_subprotocol(websocket: WebSocket) -> str | None:

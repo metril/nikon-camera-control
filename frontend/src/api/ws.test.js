@@ -178,3 +178,65 @@ describe('event socket', () => {
     s.close()
   })
 })
+
+describe('socket close codes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    FakeWS.instances = []
+    vi.stubGlobal('WebSocket', FakeWS)
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('4403 is terminal: no reconnect loop and no key prompt', () => {
+    const auth = useAuthStore()
+    const s = createEventSocket()
+    s.start()
+    last().drop(4403)
+    expect(s.status.value).toBe('forbidden')
+    expect(auth.required).toBe(false)
+    vi.advanceTimersByTime(60_000)
+    expect(FakeWS.instances).toHaveLength(1)
+  })
+
+  it('4401 while this browser rotates the key reconnects without prompting', () => {
+    const auth = useAuthStore()
+    const s = createEventSocket()
+    s.start()
+    auth.keyChanging = true
+    last().drop(4401)
+    expect(auth.required).toBe(false)
+    auth.setKey('fresh')
+    auth.keyChanging = false
+    vi.advanceTimersByTime(20_000)
+    expect(FakeWS.instances).toHaveLength(2)
+    expect(last().protocols).toContain('apikey.fresh')
+    s.close()
+  })
+
+  it('4401 after the key changed since connect reconnects with the new key', () => {
+    const auth = useAuthStore()
+    const s = createLiveViewSocket()
+    s.start()
+    auth.setKey('fresh')
+    last().drop(4401)
+    expect(auth.required).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(FakeWS.instances).toHaveLength(2)
+    expect(last().protocols).toContain('apikey.fresh')
+    s.close()
+  })
+
+  it('4401 with an unchanged key asks for the key', () => {
+    const auth = useAuthStore()
+    const s = createEventSocket()
+    s.start()
+    last().drop(4401)
+    expect(s.status.value).toBe('unauthorized')
+    expect(auth.required).toBe(true)
+  })
+})

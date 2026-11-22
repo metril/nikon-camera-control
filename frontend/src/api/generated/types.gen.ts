@@ -975,6 +975,12 @@ export type ConfigType = 'radio' | 'menu' | 'text' | 'range' | 'toggle' | 'date'
  * ConfigUpdateOut
  */
 export type ConfigUpdateOut = {
+    /**
+     * Changed
+     *
+     * Dotted paths of every field this call changed
+     */
+    changed?: Array<string>;
     config: ConfigOut;
     /**
      * Restart Required
@@ -1387,6 +1393,12 @@ export type InfoOut = {
      * Free disk space of the output dir
      */
     output_free_bytes: number | null;
+    /**
+     * Started At
+     *
+     * UTC time this server process started; a change means it restarted
+     */
+    started_at: string;
     /**
      * Version
      */

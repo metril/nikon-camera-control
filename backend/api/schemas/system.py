@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -22,3 +23,6 @@ class InfoOut(BaseModel):
     auth_enabled: bool
     output_free_bytes: int | None = Field(description="Free disk space of the output dir")
     ffmpeg_available: bool
+    started_at: datetime = Field(
+        description="UTC time this server process started; a change means it restarted"
+    )

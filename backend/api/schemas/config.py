@@ -32,6 +32,9 @@ class ConfigOut(BaseModel):
 class ConfigUpdateOut(BaseModel):
     config: ConfigOut
     restart_required: list[str] = Field(description="Changed fields that need an app restart")
+    changed: list[str] = Field(
+        default_factory=list, description="Dotted paths of every field this call changed"
+    )
 
 
 class ConfigSchemaOut(BaseModel):

@@ -282,6 +282,9 @@ export const createApiKey = <ThrowOnError extends boolean = false>(options?: Opt
 
 /**
  * Reset Config
+ *
+ * Restore defaults (the API key is kept); ``changed`` lists what was reset, e.g.
+ * ``demo_camera`` when the demo camera was on.
  */
 export const resetConfig = <ThrowOnError extends boolean = false>(options?: Options<ResetConfigData, ThrowOnError>): RequestResult<ResetConfigResponses, ResetConfigErrors, ThrowOnError> => (options?.client ?? client).post<ResetConfigResponses, ResetConfigErrors, ThrowOnError>({
     security: [{ name: 'X-API-Key', type: 'apiKey' }],

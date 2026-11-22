@@ -10,23 +10,27 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
-    # USB access, narrowly:
-    # - Map only the USB bus tree (not --privileged, no extra capabilities).
-    # - The container user (uid 1000) is NOT root, so it needs a group that can open the
-    #   device nodes. docker/udev/99-nikon.rules makes the camera node 0660 root:plugdev on
-    #   the host; "plugdev" here is resolved against the HOST group list by name only if
-    #   it exists there, otherwise use the numeric gid (`getent group plugdev`).
-    # Trade-off: /dev/bus/usb exposes every USB device node to the container, not just the
-    # camera, because the node path changes on every replug and compose cannot follow it.
-    # Replug recovery works without restarting the container. If you want it tighter, map
-    # the single node (/dev/bus/usb/BBB/DDD) and restart the container after each replug.
-    devices:
-      - /dev/bus/usb:/dev/bus/usb
+    # USB access, narrowly (no --privileged, no extra capabilities):
+    # - The whole /dev/bus/usb tree is BIND-MOUNTED (not `devices:`), so the container sees
+    #   the new device node the camera gets after every replug or power cycle. `devices:`
+    #   would only expose nodes that exist when the container starts.
+    # - device_cgroup_rules allows the container to open USB character devices (major 189)
+    #   and nothing else. Trade-off: every USB device node is visible to the container, not
+    #   just the camera, because the node path changes on every replug.
+    # - The container user (uid 1000) is not root, so it needs the group that owns the camera
+    #   node on the HOST. group_add takes a NUMERIC gid: a group NAME would be looked up in
+    #   the container's /etc/group (plugdev = 46 on Debian), not the host's. Find the gid with
+    #   the camera plugged in:   stat -c %g /dev/bus/usb/BBB/DDD   (BBB/DDD from `lsusb`)
+    #   docker/udev/99-nikon.rules sets that group (plugdev) on the node; on hosts where it is
+    #   not 46 (or plugdev does not exist: Fedora, Arch) put the real gid here instead.
+    device_cgroup_rules:
+      - "c 189:* rmw"
     group_add:
-      - plugdev
+      - "46"
     # No /var/run/dbus mount: libgphoto2 does not use it. The host's gvfs-gphoto2 monitor
     # may grab the camera; the udev rule marks it as not-a-media-player to prevent that.
     volumes:
+      - /dev/bus/usb:/dev/bus/usb
       # Paths are relative to this file (docker/). Both must be writable by uid/gid 1000:
       #   mkdir -p data output && sudo chown 1000:1000 data output
       - ./data:/app/data      # config.json, api_key.json, presets, caches

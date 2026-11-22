@@ -15,6 +15,7 @@ vi.mock('@/api/ws.js', async (importOriginal) => {
         handlers,
         start: vi.fn(() => (status.value = 'open')),
         close: vi.fn(() => (status.value = 'closed')),
+        restart: vi.fn(),
       }
       sockets.push(s)
       return s
@@ -26,6 +27,7 @@ import LiveViewPanel from './LiveViewPanel.vue'
 import { useCameraStore } from '@/stores/camera'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
+import { useAuthStore } from '@/stores/auth'
 
 let n
 function setup(connected = true) {
@@ -96,6 +98,33 @@ describe('LiveViewPanel', () => {
     s.handlers.onFrame(new ArrayBuffer(4))
     await w.find('img').trigger('error')
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:1')
+  })
+
+  it('restarts the socket when the API key changes or is entered after a 4401', async () => {
+    const { pinia } = setup()
+    const auth = useAuthStore()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    auth.setKey('new-key')
+    await flushPromises()
+    expect(s.restart).toHaveBeenCalledTimes(1)
+    s.status.value = 'unauthorized'
+    auth.markRequired()
+    await flushPromises()
+    auth.setKey('new-key') // same key re-entered: required flips back to false
+    await flushPromises()
+    expect(s.restart).toHaveBeenCalledTimes(2)
+    w.unmount()
+  })
+
+  it('shows a terminal origin-not-allowed state', async () => {
+    const { pinia } = setup()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    s.status.value = 'forbidden'
+    await flushPromises()
+    expect(w.text()).toContain('origin is not allowed')
+    w.unmount()
   })
 
   it('closes the socket when deactivated and reopens on activate', async () => {

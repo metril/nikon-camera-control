@@ -14,7 +14,10 @@ function setup({ connected = true, leasedBy = null } = {}) {
   camera.leasedBy = leasedBy
   const capture = useCaptureStore()
   const files = useFilesStore()
-  vi.spyOn(files, 'thumbnailSrc').mockImplementation(async (p) => `thumb:${p}`)
+  vi.spyOn(files, 'acquireThumbnail').mockImplementation(async (p) => ({
+    url: `thumb:${p}`,
+    release() {},
+  }))
   return { pinia, camera, capture, files }
 }
 const mnt = (pinia) => mount(CaptureControls, { global: { plugins: [pinia] } })

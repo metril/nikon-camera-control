@@ -5,7 +5,7 @@
 
 ## Authentication
 
-When an API key is configured, send it as the `X-API-Key` request header. WebSocket clients cannot set headers, so they offer the subprotocol `apikey.<key>`. A rejected WebSocket is accepted and then closed with code 4401.
+When an API key is configured, send it as the `X-API-Key` request header. WebSocket clients cannot set headers, so they offer the subprotocol `apikey.<key>`. A rejected WebSocket is accepted and then closed with code 4401; an open socket is closed with 4401 when the key changes. Cross-origin protection: POST/PUT/PATCH/DELETE and WebSocket requests that carry an `Origin` header must be same-origin (same host:port as `Host`) or listed in `cors_origins`; otherwise HTTP gets 403 `FORBIDDEN_ORIGIN` and a WebSocket is closed with 4403 before it is accepted. Requests without `Origin` are unaffected.
 
 ## Error envelope
 
@@ -44,6 +44,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `NOT_FOUND` | by handler | - | Produced by the framework error handlers |
 | `UNSUPPORTED_MEDIA` | 415 | `UnsupportedMedia` | No thumbnail can be generated for this file type |
 | `FORBIDDEN` | 403 | `Forbidden` | This operation is not allowed |
+| `FORBIDDEN_ORIGIN` | 403 | `ForbiddenOrigin` | Cross-origin request not allowed |
 | `BULB_SHUTTER_OPEN` | 502 | `ShutterOpen` | Could not close the shutter |
 
 ## Endpoints
@@ -690,6 +691,9 @@ operation_id: `get_config_schema`
 ### `POST /api/v1/config/reset`
 
 operation_id: `reset_config`
+
+Restore defaults (the API key is kept); ``changed`` lists what was reset, e.g.
+``demo_camera`` when the demo camera was on.
 
 **Responses**
 

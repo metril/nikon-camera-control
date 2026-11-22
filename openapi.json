@@ -1616,6 +1616,14 @@
       },
       "ConfigUpdateOut": {
         "properties": {
+          "changed": {
+            "description": "Dotted paths of every field this call changed",
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
           "config": {
             "$ref": "#/components/schemas/ConfigOut"
           },
@@ -2217,6 +2225,12 @@
             "description": "Free disk space of the output dir",
             "title": "Output Free Bytes"
           },
+          "started_at": {
+            "description": "UTC time this server process started; a change means it restarted",
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -2227,7 +2241,8 @@
           "backend",
           "auth_enabled",
           "output_free_bytes",
-          "ffmpeg_available"
+          "ffmpeg_available",
+          "started_at"
         ],
         "title": "InfoOut",
         "type": "object"
@@ -7953,6 +7968,7 @@
     },
     "/api/v1/config/reset": {
       "post": {
+        "description": "Restore defaults (the API key is kept); ``changed`` lists what was reset, e.g.\n``demo_camera`` when the demo camera was on.",
         "operationId": "reset_config",
         "responses": {
           "200": {

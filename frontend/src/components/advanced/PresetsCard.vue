@@ -18,8 +18,8 @@ const presets = usePresetsStore()
 const settings = useSettingsStore()
 const toasts = useToastsStore()
 
-const settingsPresets = computed(() => presets.items.filter((p) => p.kind === 'settings'))
-const bracketPresets = computed(() => presets.items.filter((p) => p.kind === 'bracket'))
+const settingsPresets = computed(() => presets.settingsPresets)
+const bracketPresets = computed(() => presets.bracketPresets)
 
 // --- apply
 const applying = ref(null)

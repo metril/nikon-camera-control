@@ -15,6 +15,7 @@ import { useVideosStore } from './videos'
 import { useCameraAdminStore } from './cameraAdmin'
 import { useToastsStore } from './toasts'
 import { useAuthStore } from './auth'
+import { usePresetsStore } from './presets'
 
 /** Background refresh: failures land in the store's lastError; nothing to await or throw. */
 const bg = (p) => p?.catch?.(() => {})
@@ -80,6 +81,8 @@ export const useEventsStore = defineStore('events', () => {
         return
       case 'config_changed':
         return useConfigStore().onChanged(data)
+      case 'presets_changed':
+        return bg(usePresetsStore().refetch())
       case 'error':
         return useToastsStore().error(data.message || data.code || 'Error')
       default:
@@ -99,6 +102,7 @@ export const useEventsStore = defineStore('events', () => {
           bg(useCameraAdminStore().refresh())
         }),
     )
+    bg(useAuthStore().fetchInfo()) // boot identifier: clears a stale restart banner
     bg(useJobsStore().fetch())
     bg(useTimelapseStore().fetchStatus())
     bg(useLiveViewStore().fetchStatus())

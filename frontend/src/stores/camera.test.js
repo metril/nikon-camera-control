@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useCameraStore } from './camera'
 import { useEventsStore } from './events'
 import { useSettingsStore } from './settings'
+import { useCameraAdminStore } from './cameraAdmin'
 import { vi } from 'vitest'
 
 describe('camera store', () => {
@@ -16,6 +17,7 @@ describe('camera store', () => {
       [cam, 'fetchStatus'],
       [cam, 'fetchBattery'],
       [useSettingsStore(), 'fetchCommon'],
+      [useCameraAdminStore(), 'refresh'],
     ])
       vi.spyOn(st, n).mockResolvedValue(null)
     ev.dispatch({ type: 'camera_connected', data: { model: 'D500', serial: '123' } })

@@ -51,4 +51,5 @@ async def get_info(request: Request, store: ConfigStoreDep) -> InfoOut:
         auth_enabled=cfg.api_key_hash is not None,
         output_free_bytes=_free_bytes(request.app.state.output_dir),
         ffmpeg_available=shutil.which("ffmpeg") is not None,
+        started_at=request.app.state.started_at,
     )

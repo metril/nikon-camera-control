@@ -46,8 +46,10 @@ async function loadPreview() {
       src.value = r.url
     } else if (it.has_thumbnail !== false) {
       // json/mp4 etc. have no thumbnail: the server answers 415, so do not ask
-      const url = await files.thumbnailSrc(it.path, 1024)
-      if (mine === gen) src.value = url
+      const h = await files.acquireThumbnail(it.path, 1024)
+      if (mine !== gen) return h.release()
+      release = h.release
+      src.value = h.url
     }
   } catch {
     if (mine === gen) failed.value = true

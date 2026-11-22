@@ -28,7 +28,7 @@ const sources = [
 const shotOptions = [3, 5, 7].map((n) => ({ value: n, label: `${n} shots` }))
 const evOptions = [1, 2, 3].map((n) => ({ value: n, label: `${n} EV step` }))
 
-const bracketPresets = computed(() => presets.items.filter((p) => p.kind === 'bracket'))
+const bracketPresets = computed(() => presets.bracketPresets)
 const presetOptions = computed(() =>
   bracketPresets.value.map((p) => ({ value: p.id, label: p.name })),
 )

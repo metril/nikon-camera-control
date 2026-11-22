@@ -10,7 +10,7 @@ from fastapi import APIRouter, WebSocket
 from backend.api.deps import ws_get_camera_service, ws_get_event_bus
 from backend.api.schemas.common import Event, EventType
 from backend.core.events import Subscription
-from backend.core.security import ws_authorize, ws_subprotocol
+from backend.core.security import KeyWatch, ws_authorize, ws_subprotocol
 
 router = APIRouter(tags=["events"])
 
@@ -24,6 +24,7 @@ async def events_ws(websocket: WebSocket) -> None:
     Client may send ``{"type":"ping"}`` and gets ``{"type":"pong"}``."""
     if not await ws_authorize(websocket):
         return
+    watch = KeyWatch(websocket)
     await websocket.accept(subprotocol=ws_subprotocol(websocket))
     sub = ws_get_event_bus(websocket).subscribe()  # before the snapshot: no gap
     send_lock = asyncio.Lock()
@@ -55,7 +56,16 @@ async def events_ws(websocket: WebSocket) -> None:
             if isinstance(msg, dict) and msg.get("type") == "ping":
                 await send(json.dumps({"type": "pong"}))
 
-    tasks = [asyncio.create_task(writer(sub)), asyncio.create_task(reader())]
+    async def key_guard() -> None:
+        await watch.changed.wait()
+        async with send_lock:
+            await websocket.close(code=4401, reason="API key changed")
+
+    tasks = [
+        asyncio.create_task(writer(sub)),
+        asyncio.create_task(reader()),
+        asyncio.create_task(key_guard()),
+    ]
     for t in tasks:
         t.add_done_callback(_consume)
     try:
@@ -65,6 +75,7 @@ async def events_ws(websocket: WebSocket) -> None:
     finally:
         # synchronous cleanup: awaits here could be cancelled again by the teardown scope
         sub.close()
+        watch.close()
         for t in tasks:
             t.cancel()
 

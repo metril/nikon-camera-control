@@ -5,6 +5,7 @@ const PING_MS = 20_000
 const BACKOFF_BASE_MS = 500
 const BACKOFF_CAP_MS = 15_000
 export const CLOSE_UNAUTHORIZED = 4401
+export const CLOSE_FORBIDDEN = 4403 // Origin not allowed: terminal, retrying cannot help
 
 export function backoffDelay(attempt, rand = Math.random) {
   const exp = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** attempt)
@@ -18,7 +19,7 @@ function wsUrl(path) {
 }
 
 /**
- * Reconnecting WebSocket. status: connecting | open | closed | unauthorized.
+ * Reconnecting WebSocket. status: connecting | open | closed | unauthorized | forbidden.
  * close() is final: cancels timers and never reconnects.
  */
 function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}) {
@@ -28,6 +29,7 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
   let reconnectTimer = null
   let pingTimer = null
   let stopped = true
+  let usedKey = ''
 
   function clearTimers() {
     clearTimeout(reconnectTimer)
@@ -39,6 +41,7 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
     if (stopped) return
     const auth = useAuthStore()
     const protocols = auth.apiKey ? ['apikey', `apikey.${auth.apiKey}`] : undefined
+    usedKey = auth.apiKey
     status.value = 'connecting'
     const sock = new WebSocket(wsUrl(path), protocols)
     ws = sock
@@ -73,10 +76,23 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
       clearInterval(pingTimer)
       pingTimer = null
       if (stopped) return
+      if (ev.code === CLOSE_FORBIDDEN) {
+        stopped = true
+        status.value = 'forbidden'
+        return
+      }
       if (ev.code === CLOSE_UNAUTHORIZED) {
+        const auth = useAuthStore()
+        // The key was created/rotated: the server drops every socket. If this browser already holds
+        // (or is about to hold) the new key, reconnect with it instead of prompting.
+        if (auth.keyChanging || (auth.apiKey && auth.apiKey !== usedKey)) {
+          status.value = 'connecting'
+          reconnectTimer = setTimeout(connect, auth.keyChanging ? backoffDelay(attempt++) : 0)
+          return
+        }
         stopped = true
         status.value = 'unauthorized'
-        useAuthStore().markRequired()
+        auth.markRequired()
         return
       }
       status.value = 'connecting'
@@ -110,7 +126,7 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
           /* already closed */
         }
       }
-      if (status.value !== 'unauthorized') status.value = 'closed'
+      if (status.value !== 'unauthorized' && status.value !== 'forbidden') status.value = 'closed'
     },
     send(data) {
       if (ws && ws.readyState === 1) ws.send(typeof data === 'string' ? data : JSON.stringify(data))

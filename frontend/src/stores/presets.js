@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { api } from '@/api'
 import { guard } from './helpers'
 
@@ -7,10 +7,13 @@ export const usePresetsStore = defineStore('presets', () => {
   const items = ref([])
   const warning = ref(null)
   const lastError = ref(null)
+  const settingsPresets = computed(() => items.value.filter((p) => p.kind === 'settings'))
+  const bracketPresets = computed(() => items.value.filter((p) => p.kind === 'bracket'))
 
-  async function fetch(kind) {
+  /** Always loads every preset kind: the store is shared by several views. */
+  async function fetch() {
     return guard(lastError, async () => {
-      const out = await api.listPresets({ query: kind ? { kind } : {} })
+      const out = await api.listPresets({ query: {} })
       items.value = out.items
       warning.value = out.warning ?? null
       return out
@@ -46,6 +49,9 @@ export const usePresetsStore = defineStore('presets', () => {
 
   return {
     items,
+    settingsPresets,
+    bracketPresets,
+    refetch,
     warning,
     lastError,
     fetch,

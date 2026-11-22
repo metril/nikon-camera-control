@@ -21,7 +21,11 @@ const deleteAfter = ref(false)
 const prefix = ref('')
 const thumbs = ref({}) // path -> src
 let gone = false
-onUnmounted(() => (gone = true))
+const releases = []
+onUnmounted(() => {
+  gone = true
+  releases.splice(0).forEach((r) => r())
+})
 
 const busyReason = computed(() =>
   camera.leasedBy ? `Busy: ${String(camera.leasedBy).replace(/[-_]/g, ' ')} running` : '',
@@ -64,9 +68,11 @@ watch(
     for (const f of list) {
       if (f.kind !== 'image' || thumbs.value[f.path]) continue
       files
-        .thumbnailSrc(f.path, 160)
-        .then((src) => {
-          if (!gone) thumbs.value = { ...thumbs.value, [f.path]: src }
+        .acquireThumbnail(f.path, 160)
+        .then((h) => {
+          if (gone) return h.release()
+          releases.push(h.release)
+          thumbs.value = { ...thumbs.value, [f.path]: h.url }
         })
         .catch(() => {})
     }

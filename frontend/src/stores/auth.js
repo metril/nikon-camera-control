@@ -25,6 +25,8 @@ export const useAuthStore = defineStore('auth', () => {
   const apiKey = ref(readKey())
   /** True after a 401 / ws 4401: the UI should prompt for the key. */
   const required = ref(false)
+  /** True while this browser is creating/rotating the key: sockets closed with 4401 just reconnect. */
+  const keyChanging = ref(false)
   const authEnabled = ref(null)
   const info = ref(null)
   const lastError = ref(null)
@@ -54,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     apiKey,
     required,
+    keyChanging,
     authEnabled,
     info,
     lastError,
