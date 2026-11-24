@@ -50,6 +50,7 @@ _NO_MF_DRIVE = frozenset({"AF-C", "AF-A"})
 _LVAF = "liveviewaffocus"  # live view's own focus mode widget (D500)
 _LVAF_SERVO = "Full-time-servo AF"  # manualfocusdrive fails -110 in this mode
 _LVAF_SINGLE = "Single-servo AF"
+_RETRY_S = 0.3  # retry of a restore the camera was too busy for
 _SIZE = re.compile(r"(\d+)x(\d+)")
 _MODEL_SIZES = {"D500": (5568, 3712)}
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -83,6 +84,8 @@ class FocusService:
         self._size: tuple[tuple[Any, Any], tuple[int, int]] | None = None
         self._lva_orig: str | None = None  # live view AF mode to restore after we switched it
         self._lva_watch: asyncio.Task[None] | None = None
+        self._lva_written: ConfigWidget | None = None  # set by the camera thread, flushed after
+        self._lva_expect: Any = None  # value of our own last write (its SETTING_CHANGED)
 
     @property
     def relative_position(self) -> int:
@@ -145,37 +148,101 @@ class FocusService:
             ) from e
         if self._lva_orig is None:
             self._lva_orig = cur
+        with contextlib.suppress(AppError):
+            self._lva_written = b.get_config(_LVAF)
 
-    async def _restore_lva(self, owner: str | None = None) -> None:
-        orig, self._lva_orig = self._lva_orig, None
+    def _publish_lva(self, widget: ConfigWidget | None) -> None:
+        """Put a widget the app wrote behind the settings API's back into the cache and event
+        stream; remembered so the watcher does not take it for a user change."""
+        if widget is not None:
+            self._lva_expect = widget.value
+            self._camera.note_setting(widget)
+
+    def _flush_lva(self) -> None:
+        w, self._lva_written = self._lva_written, None
+        self._publish_lva(w)
+
+    async def _restore_lva(self, owner: str | None = None) -> bool:
+        """Put the original Live View AF mode back, only if it is still the one we set. True when
+        done or nothing left to do; False when it must be retried (leased by someone else, or
+        no connection): the original is kept until a write succeeds."""
+        orig = self._lva_orig
         if orig is None:
-            return
+            return True
+
+        def _do(b: Any) -> ConfigWidget | None:
+            if str(b.get_config(_LVAF).value) != _LVAF_SINGLE:
+                return None  # the user changed it meanwhile: leave it
+            b.set_config(_LVAF, orig)
+            return b.get_config(_LVAF)
+
         try:
-            await self._camera.call(
-                lambda b: b.set_config(_LVAF, orig), priority=Priority.CONTROL, owner=owner
-            )
+            w = await self._camera.call(_do, priority=Priority.CONTROL, owner=owner)
+        except (CameraBusy, CameraNotConnected):
+            return False
         except AppError as e:
             log.warning("could not restore live view AF mode %r: %s", orig, e)
+            if self._lva_orig == orig:
+                self._lva_orig = None
+            return True
+        if self._lva_orig == orig:
+            self._lva_orig = None
+        self._publish_lva(w)
+        return True
 
-    def _watch_liveview_end(self) -> None:
+    def _watch_liveview_end(self, now: bool = False) -> None:
         """Single MF taps in a live view the user started would toggle the mode every time, so
-        keep single-servo until live view ends (back to IDLE), then restore. A lost connection
-        just forgets it (the camera resets itself)."""
+        keep single-servo until live view ends (back to IDLE), then restore; ``now`` retries at
+        once. A busy camera or a lost connection keeps the original (the body keeps the menu
+        value across USB drops) and retries; a user change of the mode or a deliberate
+        disconnect forgets it."""
         if self._lva_watch is not None and not self._lva_watch.done():
-            return
+            if not now:
+                return
+            self._lva_watch.cancel()
         sub = self._camera.bus.subscribe()
 
         async def watch() -> None:
+            due = now or self._camera.state == _S.IDLE
             async with sub:
-                async for ev in sub:
+                while self._lva_orig is not None:
+                    if due:
+                        if await self._restore_lva():
+                            return
+                        if self._camera.status().connected:
+                            await asyncio.sleep(_RETRY_S)
+                            continue
+                        due = False  # wait for the reconnect
+                    ev = await sub.__anext__()
                     if ev.type == EventType.CAMERA_DISCONNECTED:
-                        self._lva_orig = None
+                        if ev.data.get("reason") == "disconnect":
+                            self._lva_orig = None
+                            return
+                    elif ev.type == EventType.CAMERA_CONNECTED:
+                        due = True
+                    elif ev.type == EventType.CAMERA_STATE and ev.data.get("state") == "idle":
+                        due = True
+                    elif (
+                        ev.type == EventType.SETTING_CHANGED
+                        and ev.data.get("name") == _LVAF
+                        and ev.data.get("value") != self._lva_expect
+                    ):
+                        self._lva_orig = None  # the user chose a mode: theirs wins
                         return
-                    if ev.type == EventType.CAMERA_STATE and ev.data.get("state") == "idle":
-                        break
-            await self._restore_lva()
+
+        def done(t: asyncio.Task[None]) -> None:
+            if not t.cancelled() and t.exception() is not None:
+                log.warning("live view AF restore watcher failed: %s", t.exception())
 
         self._lva_watch = asyncio.create_task(watch(), name="focus-lva-restore")
+        self._lva_watch.add_done_callback(done)
+
+    async def aclose(self) -> None:
+        w, self._lva_watch = self._lva_watch, None
+        self._lva_orig = None
+        if w is not None and not w.done():
+            w.cancel()
+            await asyncio.gather(w, return_exceptions=True)
 
     async def get_range(self) -> tuple[int, int, int]:
         """(min, max, step) of ``manualfocusdrive``; cached. Read at KEEPALIVE priority so it
@@ -281,10 +348,11 @@ class FocusService:
 
                 await self._drive_tracked(_drive, steps, owner)
             finally:
+                self._flush_lva()
                 if owner is None:  # a running stack restores at its end
                     if entered:
                         await self._restore_lva()
-                    elif self._lva_orig is not None:
+                    if self._lva_orig is not None:
                         self._watch_liveview_end()
                 if entered and self._camera.state == _S.LIVEVIEW:
                     with contextlib.suppress(AppError):
@@ -387,6 +455,16 @@ class FocusService:
         dest = await asyncio.to_thread(self._make_dest, name)
         folder = dest.relative_to(self._store.root()).as_posix()
         files = moves = 0
+
+        def result() -> dict[str, Any]:
+            return {
+                "folder": folder,
+                "file_count": files,
+                "total_steps_moved": moves * abs(delta),
+                "returned_to_start": return_to_start and self._pos == start_pos,
+                "net_steps": self._pos - start_pos,
+            }
+
         try:
             for i in range(shots):
                 if ctx.cancelled:
@@ -396,19 +474,18 @@ class FocusService:
                     dest, owner=OWNER, name_prefix=f"{prefix}{i + 1:03d}-"
                 )
                 files += len(paths)
+                ctx.set_partial_result(result())
                 if i < shots - 1:
                     await self.move(delta, owner=OWNER)
                     moves += 1
+                    ctx.set_partial_result(result())
                     await self._sleep(settle_s)
         finally:
             await self._cleanup(return_to_start, start_pos, prior)
-        return {
-            "folder": folder,
-            "file_count": files,
-            "total_steps_moved": moves * abs(delta),
-            "returned_to_start": return_to_start and self._pos == start_pos,
-            "net_steps": self._pos - start_pos,
-        }
+            ctx.set_partial_result(result())
+            if self._lva_orig is not None:  # restore failed (busy, timeout): retry in background
+                self._watch_liveview_end(now=True)
+        return result()
 
     async def _cleanup(self, return_to_start: bool, start_pos: int, prior: CameraState) -> None:
         """Bounded, best effort; never masks the original outcome."""
@@ -427,4 +504,5 @@ class FocusService:
             log.warning("focus stack cleanup incomplete: %s", e)
         finally:
             if self._lva_orig is not None:  # the return moves failed or timed out
-                await self._restore_lva(OWNER)
+                with contextlib.suppress(AppError):
+                    await self._restore_lva(OWNER)

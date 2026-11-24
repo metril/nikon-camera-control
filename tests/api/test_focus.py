@@ -6,8 +6,10 @@ from typing import Any
 import httpx
 from fastapi import FastAPI
 
+from backend.api.schemas.common import EventType
 from backend.camera.fake import FakeCamera
 from backend.core.errors import CameraOperationFailed
+from backend.core.state import CameraState
 from backend.services.focus import FocusService
 
 F = "/api/v1/focus"
@@ -458,3 +460,112 @@ async def test_stack_restores_servo_on_failure(
     job = await wait_job(connected_client, r.json()["id"])
     assert job["status"] == "failed"
     assert fake_camera._values["liveviewaffocus"] == SERVO
+
+
+async def _mf_in_user_liveview(
+    app: FastAPI, c: httpx.AsyncClient, fake: FakeCamera
+) -> FocusService:
+    svc = install(app)
+    fake._values["liveviewaffocus"] = SERVO
+    assert (await c.post("/api/v1/liveview/start")).status_code < 300
+    assert (await c.post(f"{F}/mf", json={"steps": 10})).status_code == 200
+    assert fake._values["liveviewaffocus"] == SINGLE and svc._lva_orig == SERVO
+    return svc
+
+
+async def _until(cond: Any) -> None:
+    for _ in range(200):
+        if cond():
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("condition not reached")
+
+
+async def test_restore_kept_while_leased_then_retried(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = await _mf_in_user_liveview(app, connected_client, fake_camera)
+    cam = app.state.camera_service
+    async with cam.lease("someone-else"):
+        await cam.transition(CameraState.IDLE)
+        await asyncio.sleep(0.5)
+        assert svc._lva_orig == SERVO and fake_camera._values["liveviewaffocus"] == SINGLE
+    await _until(lambda: fake_camera._values["liveviewaffocus"] == SERVO)
+    assert svc._lva_orig is None
+
+
+async def test_user_change_of_mode_is_not_overwritten(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = await _mf_in_user_liveview(app, connected_client, fake_camera)
+    await app.state.camera_service.set_setting("liveviewaffocus", "Manual Focus (fixed)")
+    await _until(lambda: svc._lva_orig is None)
+    await app.state.camera_service.transition(CameraState.IDLE)
+    await asyncio.sleep(0.2)
+    assert fake_camera._values["liveviewaffocus"] == "Manual Focus (fixed)"
+
+
+async def test_app_writes_publish_setting_changed(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = install(app)
+    fake_camera._values["liveviewaffocus"] = SERVO
+    seen: list[Any] = []
+    sub = app.state.camera_service.bus.subscribe()
+
+    async def collect() -> None:
+        async for ev in sub:
+            if ev.type == EventType.SETTING_CHANGED and ev.data["name"] == "liveviewaffocus":
+                seen.append(ev.data["value"])
+
+    t = asyncio.create_task(collect())
+    assert (await connected_client.post(f"{F}/mf", json={"steps": 10})).status_code == 200
+    await _until(lambda: seen == [SINGLE, SERVO])
+    assert svc._lva_orig is None
+    t.cancel()
+
+
+async def test_usb_loss_keeps_original_and_explicit_disconnect_drops_it(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = await _mf_in_user_liveview(app, connected_client, fake_camera)
+    cam = app.state.camera_service
+    cam._lost("usb")
+    await asyncio.sleep(0.1)
+    assert svc._lva_orig == SERVO
+    await cam.connect()
+    await _until(lambda: fake_camera._values["liveviewaffocus"] == SERVO)
+    svc = await _mf_in_user_liveview(app, connected_client, fake_camera)
+    await cam.disconnect()
+    await _until(lambda: svc._lva_orig is None)
+
+
+async def test_aclose_cancels_watcher(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = await _mf_in_user_liveview(app, connected_client, fake_camera)
+    watch = svc._lva_watch
+    assert watch is not None and not watch.done()
+    await svc.aclose()
+    assert watch.done() and svc._lva_orig is None
+
+
+async def test_cancelled_stack_keeps_partial_result(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    svc = install(app)
+    gate = asyncio.Event()
+
+    async def slow(_: float) -> None:
+        gate.set()
+        await asyncio.sleep(30)
+
+    svc._sleep = slow
+    jid = (await c.post(f"{F}/stack", json=STACK)).json()["id"]
+    await gate.wait()
+    assert (await c.delete(f"/api/v1/jobs/{jid}")).status_code == 200
+    j = await wait_job(c, jid)
+    assert j["status"] == "cancelled"
+    assert j["result"]["file_count"] == 1 and j["result"]["folder"]
+    assert j["result"]["returned_to_start"] is True and j["result"]["net_steps"] == 0

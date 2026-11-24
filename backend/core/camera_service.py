@@ -1113,6 +1113,11 @@ class CameraService:
         self._store_widget(widget)
         return widget
 
+    def note_setting(self, widget: ConfigWidget) -> None:
+        """Record a widget written outside ``set_setting`` (cache + SETTING_CHANGED)."""
+        self._store_widget(widget)
+        self._bus.publish(EventType.SETTING_CHANGED, {"name": widget.name, "value": widget.value})
+
     async def set_setting(
         self, name: str, value: str | int | float | bool, *, owner: str | None = None
     ) -> ConfigWidget:
