@@ -113,7 +113,7 @@ async def _verified(
     report one). Any error counts as not verified."""
 
     def size(b: CameraBackend) -> int:
-        return next((i.size for i in b.list_files(f.folder) if i.name == f.name), 0)
+        return b.file_info(f.folder, f.name).size
 
     try:
         want = await camera.call(size, owner=owner)

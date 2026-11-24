@@ -59,6 +59,12 @@ export type ApplyResult = {
      */
     preset_id: string;
     /**
+     * Skipped
+     *
+     * Settings preset: read-only or unsupported settings that were left alone.
+     */
+    skipped?: Array<SkippedSetting>;
+    /**
      * Steps
      *
      * Bracket preset: steps resolved against the camera (nothing was started).
@@ -3243,6 +3249,22 @@ export type SettingsPresetIn = {
     values: {
         [key: string]: boolean | number | number | string;
     };
+};
+
+/**
+ * SkippedSetting
+ */
+export type SkippedSetting = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Reason
+     *
+     * Why it was not applied (read-only now, or not on this body).
+     */
+    reason: string;
 };
 
 /**

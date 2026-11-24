@@ -40,6 +40,7 @@ from backend.api.schemas.presets import (
     PresetIn,
     SettingsPreset,
     SettingsPresetIn,
+    SkippedSetting,
 )
 from backend.api.schemas.timelapse import (
     BracketStep,
@@ -333,11 +334,12 @@ class PresetService:
     async def apply(self, preset_id: str) -> ApplyResult:
         p = await self.get(preset_id)
         if isinstance(p, SettingsPreset):
-            res = await self._settings.set_many(dict(p.values))
+            res = await self._settings.set_many(dict(p.values), skip_unusable=True)
             return ApplyResult(
                 kind="settings",
                 preset_id=p.id,
                 applied=[AppliedSetting(name=v.name, value=v.value) for v in res.applied],
+                skipped=[SkippedSetting(name=x.name, reason=x.reason) for x in res.skipped],
             )
         steps = await validate_steps(bracket_steps(p.bracketing), self._settings)
         return ApplyResult(
@@ -354,7 +356,7 @@ class PresetService:
         if body.names is None:
             for n in DEFAULT_FROM_CAMERA:
                 try:
-                    values.update(await self._settings.snapshot([n]))
+                    values.update(await self._settings.snapshot([n], skip_readonly=True))
                 except SettingNotFound:
                     continue  # this body does not have the widget
         else:

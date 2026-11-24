@@ -1,5 +1,6 @@
 """Capture downloads: RAM/card targets, late RAW+JPEG files, keep-card-copy, host location loss."""
 
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -80,10 +81,10 @@ async def test_keep_card_copy_false_deletes_only_after_verified_download(
         )
         assert len(res.local) == 2 and fake_camera._files[CARD_FOLDER] == {}
         # a size the camera disagrees with is not verified: the card copy stays
-        real = fake_camera.list_files
-        fake_camera.list_files = lambda f: [  # type: ignore[method-assign]
-            type(i)(i.folder, i.name, i.size + 1) for i in real(f)
-        ]
+        real = fake_camera.file_info
+        fake_camera.file_info = lambda folder, name: dataclasses.replace(  # type: ignore[method-assign]
+            real(folder, name), size=real(folder, name).size + 1
+        )
         await _svc(app, FixedRoot(tmp_dirs.output_dir), keep=False).capture(
             download=True, delete_from_camera=False, filename_prefix=None
         )

@@ -40,6 +40,7 @@ JOB_KIND = "focus-stack"
 RETURN_TIMEOUT_S = 60.0
 DRIVE_WAIT_S = 30.0  # bound on waiting for an in-flight drive after a cancel
 _S = CameraState
+_NO_MF_DRIVE = frozenset({"AF-C", "AF-A"})
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
 
 Sleep = Callable[[float], Awaitable[object]]
@@ -86,6 +87,21 @@ class FocusService:
         if st.leased_by is not None and st.leased_by != owner:
             raise CameraBusy(details={"leased_by": st.leased_by})
 
+    async def _require_drivable(self) -> None:
+        """MF drive only works in AF-S or M on the D500: in AF-C/AF-A it fails with -110 (busy)
+        after a long wait. Fail early with a clear message instead. Unreadable mode: go on."""
+        try:
+            w = await self._camera.refresh_setting("focusmode")
+        except AppError:
+            return
+        mode = str(w.value or "").strip().upper()
+        if mode in _NO_MF_DRIVE:
+            raise InvalidState(
+                f"Manual focus drive and focus stacking need focus mode AF-S or MF; "
+                f"the camera is in {w.value}. Change the focus mode on the body.",
+                details={"focusmode": w.value, "needs": ["AF-S", "MF"]},
+            )
+
     async def get_range(self) -> tuple[int, int, int]:
         """(min, max, step) of ``manualfocusdrive``; cached. Read at KEEPALIVE priority so it
         works while a lease is held."""
@@ -118,6 +134,8 @@ class FocusService:
                 details={"steps": steps, "min": lo, "max": hi, "step": step},
             )
         self._require_free(owner)
+        if owner is None:  # a running stack checked this once up front
+            await self._require_drivable()
         async with self._lock:
             prior = self._camera.state
             if prior not in (_S.IDLE, _S.LIVEVIEW):
@@ -183,6 +201,7 @@ class FocusService:
         self._store.root()  # NoTargetError (409) before any camera work
         sign = 1 if direction == "near_to_far" else -1
         delta = sign * steps_per_shot
+        await self._require_drivable()
         lo, hi, step = await self.get_range()
         if not lo <= delta <= hi or (delta - lo) % step:
             raise SettingInvalid(

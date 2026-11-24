@@ -89,12 +89,11 @@ async def test_listing_error_surfaces_not_partial(
     """Regression: backend errors used to be swallowed into a partial/empty list."""
     await _shoot(connected_client, app, "JPEG Fine")
     fake_camera.fail_next("list_files", exc=CameraOperationFailed("boom"))
-    r = await connected_client.get(F, params={"folder": "/", "recursive": "true"})
+    q = {"folder": "/store_00010001/DCIM/100ND500"}
+    r = await connected_client.get(F, params=q)
     assert r.status_code == 502 and r.json()["error"]["code"] == "CAMERA_OPERATION_FAILED"
     # failure is not cached
-    assert (await connected_client.get(F, params={"folder": "/", "recursive": "true"})).json()[
-        "total"
-    ] == 1
+    assert (await connected_client.get(F, params=q)).json()["total"] == 1
 
 
 async def test_not_connected(client: httpx.AsyncClient) -> None:
@@ -311,3 +310,34 @@ async def test_download_with_encoded_folder_as_generated_client_sends_it(
     enc = quote(CARD_FOLDER, safe="")  # '%2Fstore_...%2FDCIM...' : leading slash encoded too
     r = await connected_client.get(f"{F}/{enc}/{name}")
     assert r.status_code == 200 and r.content[:2] == b"\xff\xd8"
+
+
+async def test_root_listing_failure_is_not_an_error(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    """The D500 refuses list_files('/') (-1): the root only holds the storage folders."""
+    await _shoot(connected_client, app, "JPEG Fine")
+    fake_camera.fail_next("list_files", exc=CameraOperationFailed("Unspecified error"))
+    r = await connected_client.get(F)  # default folder "/"
+    assert r.status_code == 200 and r.json()["total"] == 0
+    fake_camera.fail_next("list_files", exc=CameraOperationFailed("Unspecified error"))
+    r = await connected_client.get(F, params={"recursive": "true"})
+    assert r.status_code == 200 and r.json()["total"] == 1  # walks into the storage folder
+    folders = (await connected_client.get("/api/v1/camera/folders")).json()["folders"]
+    assert [f["name"] for f in folders] == ["store_00010001"]
+
+
+async def test_listing_fetches_file_info_in_small_batches(
+    app: FastAPI,
+    fake_camera: FakeCamera,
+    connected_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import backend.services.camera_files as cf
+
+    monkeypatch.setattr(cf, "_INFO_BATCH", 2)
+    await _shoot(connected_client, app, "JPEG Fine", n=5)
+    before = fake_camera.calls.get("file_info", 0)
+    r = await connected_client.get(F, params={"folder": CARD_FOLDER})
+    assert r.json()["total"] == 5
+    assert fake_camera.calls.get("file_info", 0) - before == 5

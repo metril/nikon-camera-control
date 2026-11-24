@@ -47,6 +47,7 @@ CLOSE_RETRY_DELAY_S = 0.25
 CLOSE_WAIT_S = 90.0  # bound on a shielded close sequence
 CANCEL_COLLECT_GRACE_S = 5.0  # after a cancel, how long to wait for a frame still in flight
 _MANUAL = frozenset({"M", "MANUAL"})
+MODE_NAMES = ("expprogram", "autoexposuremode")  # widget names for the exposure program
 
 
 @dataclass
@@ -127,16 +128,19 @@ class BulbService:
     # ---- job ----
     async def _expprogram_warning(self) -> str | None:
         try:
-            prog = await self._camera.refresh_setting("expprogram")
+            name = await self._camera.resolve_setting("bulb-mode", MODE_NAMES)
+            prog = await self._camera.refresh_setting(name)
         except AppError as e:
-            log.info("could not read expprogram: %s", e.message)
+            log.info("could not read the exposure program: %s", e.message)
             return None
         if str(prog.value).strip().upper() in _MANUAL:
             return None
-        return (
-            f"Exposure program is {prog.value!r}, not M; bulb usually needs M "
-            "(turn the mode dial to M, it cannot be set remotely)."
+        how = (
+            "turn the mode dial to M"
+            if prog.readonly
+            else f"set the exposure program ({name}) to M in Settings or on the mode dial"
         )
+        return f"Exposure program is {prog.value!r}, not M; bulb usually needs M ({how})."
 
     async def _prepare_speed(self) -> str | None:
         """Best effort: select shutterspeed 'Bulb' if offered. Returns the value to restore."""

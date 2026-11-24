@@ -294,3 +294,15 @@ async def test_move_does_not_re_enable_viewfinder_already_on(
     fake_camera._values["viewfinder"] = False  # e.g. a capture switched it off
     await svc.move(5)
     assert fake_camera.viewfinder_on
+
+
+async def test_stack_and_mf_refused_in_af_c_with_clear_error(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera._values["focusmode"] = "AF-C"
+    r = await connected_client.post(f"{F}/stack", json=STACK)
+    assert r.status_code == 409 and "AF-S" in r.json()["error"]["message"]
+    r = await connected_client.post(f"{F}/mf", json={"steps": 3})
+    assert r.status_code == 409
+    assert (await connected_client.get("/api/v1/camera")).json()["leased_by"] is None

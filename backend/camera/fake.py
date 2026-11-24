@@ -11,6 +11,7 @@ list_folders, list_files, read_file, delete_file, storage_info (close never fail
 
 from __future__ import annotations
 
+import copy
 import io
 import random
 import threading
@@ -33,6 +34,7 @@ from backend.camera.backend import (
     StorageInfo,
 )
 from backend.core.errors import (
+    CameraBusy,
     CameraIOError,
     CameraNotConnected,
     CameraNotFound,
@@ -59,6 +61,8 @@ OPS = frozenset(
         "wait_for_event",
         "list_folders",
         "list_files",
+        "file_info",
+        "reset_device",
         "read_file",
         "delete_file",
         "storage_info",
@@ -306,6 +310,11 @@ def _nef(jpeg: bytes) -> bytes:
     return buf.getvalue()
 
 
+def _backup_name(name: str) -> str:
+    stem, dot, ext = name.rpartition(".")
+    return f"{stem}_1.{ext}"
+
+
 class FakeCamera:
     """Fake ``CameraBackend``. Fault-injection methods may be called from any thread."""
 
@@ -318,6 +327,11 @@ class FakeCamera:
         emit_capture_complete: bool = False,
         capture_exits_liveview: bool = True,
         late_second_file: bool = False,
+        d500_names: bool = False,
+        slot2_backup: bool = False,
+        event_chatter: bool = False,
+        shutter_shift: bool = False,
+        viewfinder_busy_after_capture: int = 0,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
         Default False mirrors real PTP bodies, where capture() usually consumes it.
@@ -326,6 +340,15 @@ class FakeCamera:
         re-enable before the next preview, exactly like ``Gphoto2Backend``.
         ``late_second_file``: a RAW+JPEG shot returns the first file from capture(); the second
         one is announced by a later FILE_ADDED, on the next wait_for_event (D500 behaviour).
+        ``d500_names``: D500 widget names: no ``autoexposuremode``/``meteringmode``; a writable
+        ``expprogram`` (M/A/S/P) and ``exposuremetermode``. ``slot2_backup``: with the card as
+        target every file is announced twice (``DSC_0001.JPG`` + ``DSC_0001_1.JPG``, same size),
+        like a second card in backup mode. ``event_chatter``: wait_for_event keeps returning
+        UNKNOWN events (property/storage changes) while saving to the card, so a drain that
+        restarts its quiet window on them never ends. ``shutter_shift``: a ``shutterspeed`` write
+        lands one 1/3 stop faster than requested (except 1/8000 and Bulb), as seen on a real D500.
+        ``viewfinder_busy_after_capture``: after a capture, setting ``viewfinder`` raises
+        CameraBusy this many times (D500 answers -110 until the capture has settled).
         With capturetarget "Internal RAM" files land in "/" as capt0000.jpg, capt0001.nef..."""
         self._late_second = late_second_file
         self._late_complete = False
@@ -334,7 +357,26 @@ class FakeCamera:
         self._capture_exits_lv = capture_exits_liveview
         self._pv_flag = False  # mirrors Gphoto2Backend._viewfinder_on
         self._rng = random.Random(seed)  # noqa: S311
+        self._chatter = event_chatter
+        self._slot2 = slot2_backup
+        self._shutter_shift = shutter_shift
+        self._vf_busy_after_capture = viewfinder_busy_after_capture
+        self._vf_busy = 0
         self._specs = {s.name: s for s in _specs()}
+        if d500_names:
+            self._specs = {
+                n: sp
+                for n, sp in self._specs.items()
+                if n not in ("autoexposuremode", "meteringmode")
+            }
+            self._specs["expprogram"] = _Spec(
+                "capturesettings", "expprogram", "Exposure Program", ConfigType.RADIO, "M",
+                choices=("M", "A", "S", "P"),
+            )  # fmt: skip
+            self._specs["exposuremetermode"] = _Spec(
+                "capturesettings", "exposuremetermode", "Exposure Metering Mode", ConfigType.RADIO,
+                "Matrix", choices=("Matrix", "Center Weighted", "Spot"),
+            )  # fmt: skip
         self._values: dict[str, str | int | float | bool] = {
             n: s.value for n, s in self._specs.items()
         }
@@ -429,6 +471,14 @@ class FakeCamera:
         if op != "open" and not self._open:
             raise CameraNotConnected()
 
+    def clone(self) -> FakeCamera:
+        """A new backend object over the same camera (files, settings, fault state), closed.
+        Lets tests give every worker its own backend, like the real factory does."""
+        other = copy.copy(self)
+        other._open = False
+        other._pv_flag = False
+        return other
+
     # ---- lifecycle ----
 
     @property
@@ -443,6 +493,12 @@ class FakeCamera:
     def close(self) -> None:
         self._open = False
         self._pv_flag = False
+
+    def reset_device(self) -> None:
+        """Best-effort USB reset (also callable while closed). Like the real thing it aborts
+        transfers a hung call is blocked in, so every hang is released."""
+        self._count("reset_device")
+        self.release_all()
 
     def summary(self) -> str:
         self._enter("summary")
@@ -501,7 +557,13 @@ class FakeCamera:
         s = self._spec(name)
         if s.readonly:
             raise SettingNotAllowed(f"Setting {name!r} is read-only")
+        if name == "viewfinder" and self._vf_busy > 0:
+            self._vf_busy -= 1
+            raise CameraBusy("set_config(viewfinder): I/O in progress")
         new = self._coerce(s, value)
+        if self._shutter_shift and name == "shutterspeed" and new not in ("Bulb", "1/8000"):
+            i = s.choices.index(str(new))
+            new = s.choices[min(i + 1, len(s.choices) - 1)]
         old = self._values[name]
         if name in ("movie", "bulb") and old and not new:
             self._check_space()
@@ -636,6 +698,8 @@ class FakeCamera:
                 (f"capt{(base + i) % 10000:04d}.{nm.rsplit('.', 1)[1].lower()}", f)
                 for i, (nm, f) in enumerate(shots)
             ]
+        if self._slot2 and not ram:
+            shots = [x for nm, f in shots for x in ((nm, f), (_backup_name(nm), f))]
         made: list[CameraFilePath] = [self._add_file(*shots[0], folder)]
         for nm, f in shots[1:]:
             if self._late_second:
@@ -644,6 +708,7 @@ class FakeCamera:
                 made.append(self._add_file(nm, f, folder))
         if self._capture_exits_lv:
             self._values["viewfinder"] = False
+        self._vf_busy = self._vf_busy_after_capture
         if self._emit_complete and self._late:
             self._late_complete = True  # queued after the late FILE_ADDED, like the D500
         elif self._emit_complete:
@@ -707,6 +772,13 @@ class FakeCamera:
                 self._events.append(CameraEvent(EventType.CAPTURE_COMPLETE))
         with self._cond:
             if not self._events:
+                if (
+                    self._chatter
+                    and timeout_s > 0
+                    and str(self._values["capturetarget"]) != "Internal RAM"
+                ):
+                    time.sleep(min(0.005, max(0.0, timeout_s)))
+                    return CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": 99})
                 self._cond.wait_for(lambda: bool(self._events), timeout=max(0.0, timeout_s))
             if self._events:
                 return self._events.popleft()
@@ -736,6 +808,19 @@ class FakeCamera:
             CameraFileInfo(key, n, len(f.data), f.mtime, f.mime, f.width, f.height)
             for n, f in sorted(self._files.get(key, {}).items())
         ]
+
+    def list_file_names(self, folder: str) -> list[str]:
+        self._enter("list_files")
+        key = folder.rstrip("/") or "/"
+        if key not in _FOLDERS and key not in self._files:
+            raise FileNotFoundError_(f"Folder {folder!r} not found")
+        return sorted(self._files.get(key, {}))
+
+    def file_info(self, folder: str, name: str) -> CameraFileInfo:
+        self._enter("file_info")
+        f = self._get_file(folder, name)
+        key = folder.rstrip("/") or "/"
+        return CameraFileInfo(key, name, len(f.data), f.mtime, f.mime, f.width, f.height)
 
     def _get_file(self, folder: str, name: str) -> _File:
         try:

@@ -168,3 +168,24 @@ async def test_trigger_then_immediate_capture_and_trigger_in_live_view(
     await connected_client.post(f"{C}/trigger")
     assert len(await app.state.camera_service.capture()) == 1
     assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"
+
+
+async def test_stray_file_is_downloaded_in_background_and_announced(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera, tmp_dirs
+) -> None:
+    sub = app.state.event_bus.subscribe()
+    stray = fake_camera.press_shutter()
+    r = await connected_client.post(C, json={"download": False})  # builds CaptureService
+    assert r.status_code == 200
+    deadline = asyncio.get_running_loop().time() + 5
+    while len(list(tmp_dirs.output_dir.glob("**/*_" + stray[0].name))) != 1:
+        assert asyncio.get_running_loop().time() < deadline
+        await asyncio.sleep(0.02)
+    assert not app.state.camera_service.stray_files
+    seen = []
+    while not sub._queue.empty():
+        ev = sub._queue.get_nowait()
+        if ev is not None and ev.type.value == "capture_complete":
+            seen.append(ev.data["files"])
+    sub.close()
+    assert [{"folder": stray[0].folder, "name": stray[0].name}] in seen

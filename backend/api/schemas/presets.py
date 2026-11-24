@@ -88,11 +88,20 @@ class AppliedSetting(BaseModel):
     value: str | int | float | bool | None = Field(description="Value read back from the camera.")
 
 
+class SkippedSetting(BaseModel):
+    name: str
+    reason: str = Field(description="Why it was not applied (read-only now, or not on this body).")
+
+
 class ApplyResult(BaseModel):
     kind: Literal["settings", "bracket"]
     preset_id: str
     applied: list[AppliedSetting] = Field(
         default_factory=list, description="Settings preset: what the camera now reports."
+    )
+    skipped: list[SkippedSetting] = Field(
+        default_factory=list,
+        description="Settings preset: read-only or unsupported settings that were left alone.",
     )
     steps: list[ResolvedStep] = Field(
         default_factory=list,

@@ -88,6 +88,14 @@
             "title": "Preset Id",
             "type": "string"
           },
+          "skipped": {
+            "description": "Settings preset: read-only or unsupported settings that were left alone.",
+            "items": {
+              "$ref": "#/components/schemas/SkippedSetting"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
           "steps": {
             "description": "Bracket preset: steps resolved against the camera (nothing was started).",
             "items": {
@@ -5425,6 +5433,25 @@
           "values"
         ],
         "title": "SettingsPresetIn",
+        "type": "object"
+      },
+      "SkippedSetting": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it was not applied (read-only now, or not on this body).",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "reason"
+        ],
+        "title": "SkippedSetting",
         "type": "object"
       },
       "SmbTest": {

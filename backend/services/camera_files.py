@@ -24,7 +24,14 @@ from typing import TYPE_CHECKING, Any
 from backend.api.schemas.common import EventType
 from backend.camera.backend import CameraFileInfo, CameraFilePath, FileKind
 from backend.core.camera_service import CameraService, Priority
-from backend.core.errors import AppError, CameraNotConnected, NoTargetError, PathNotAllowed
+from backend.core.errors import (
+    AppError,
+    CameraNotConnected,
+    CameraOperationFailed,
+    FileNotFoundError_,
+    NoTargetError,
+    PathNotAllowed,
+)
 from backend.core.events import EventBus, Subscription
 from backend.core.jobs import Job, JobContext, JobManager
 from backend.core.storage_root import StorageRoot, as_root
@@ -37,6 +44,7 @@ log = logging.getLogger(__name__)
 
 _MAX_DEPTH = 8
 _LIST_TIMEOUT_S = 30.0
+_INFO_BATCH = 50  # file infos fetched per camera call (about 1.5 s on a D500)
 _READ_TIMEOUT_S = 600.0
 _TMP_MAX_AGE_S = 3600.0  # single-file download temp dirs older than this are removed
 _NAME_CAP = 50  # max file names echoed in a job result
@@ -51,6 +59,16 @@ _INVALIDATING = frozenset(
 )
 _RAW = frozenset({".nef", ".nrw", ".dng", ".cr2", ".cr3", ".arw", ".raf"})
 _VIDEO = frozenset({".mov", ".mp4", ".avi", ".mkv"})
+
+
+def _infos(b: Any, folder: str, names: list[str]) -> list[CameraFileInfo]:
+    out: list[CameraFileInfo] = []
+    for n in names:
+        try:
+            out.append(b.file_info(folder, n))
+        except FileNotFoundError_:
+            continue  # deleted (e.g. on the body) between the name listing and now
+    return out
 
 
 def validate_camera_folder(folder: str) -> str:
@@ -250,14 +268,32 @@ class CameraFilesService:
         return names
 
     async def _folder_files(self, folder: str) -> list[CameraFileInfo]:
+        """Files of one folder: one cheap call for the names, then the per-file info in small
+        batches (one camera call each), so a card with thousands of files never holds the
+        camera for the whole listing and keepalive/live view/captures interleave."""
         self._ensure_listener()
         c = self._cache
         if folder in c.files:
             return c.files[folder]
         gen = c.gen
-        infos = await self._camera.call(
-            lambda b: b.list_files(folder), priority=Priority.KEEPALIVE, timeout=_LIST_TIMEOUT_S
-        )
+        try:
+            names = await self._camera.call(
+                lambda b: b.list_file_names(folder),
+                priority=Priority.KEEPALIVE,
+                timeout=_LIST_TIMEOUT_S,
+            )
+        except CameraOperationFailed:
+            if folder == "/":  # the root only holds the storage folders; some bodies refuse it
+                return []
+            raise
+        infos: list[CameraFileInfo] = []
+        for i in range(0, len(names), _INFO_BATCH):
+            chunk = names[i : i + _INFO_BATCH]
+            infos += await self._camera.call(
+                lambda b, chunk=chunk: _infos(b, folder, chunk),  # type: ignore[misc]
+                priority=Priority.KEEPALIVE,
+                timeout=_LIST_TIMEOUT_S,
+            )
         if gen == c.gen:
             c.files[folder] = infos
         return infos

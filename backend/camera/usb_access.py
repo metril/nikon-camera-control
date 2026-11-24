@@ -62,3 +62,50 @@ def find_unopenable_nikon(
         if not os.access(node, os.R_OK | os.W_OK):
             return UsbAccessProblem(bus, dev, str(node), _read(entry / "product"))
     return None
+
+
+USBDEVFS_RESET = 0x5514  # _IO('U', 20)
+
+
+def parse_usb_port(path: str) -> tuple[int, int] | None:
+    """(bus, device) of a gphoto2 port path like ``usb:001,007``; None otherwise."""
+    head, _, tail = path.partition(":")
+    bus, _, dev = tail.partition(",")
+    if head != "usb" or not bus.isdigit() or not dev.isdigit():
+        return None
+    return int(bus), int(dev)
+
+
+def reset_nikon_usb(
+    sysfs_root: Path = DEFAULT_SYSFS_ROOT,
+    dev_root: Path = DEFAULT_DEV_ROOT,
+    only: tuple[int, int] | None = None,
+) -> bool:
+    """Best-effort libusb-style port reset (USBDEVFS_RESET) of every Nikon device node we can
+    open (only ``only`` = (bus, device) when given). Returns True if a reset was issued.
+    Never raises."""
+    import fcntl
+
+    done = False
+    try:
+        entries = sorted(Path(sysfs_root).iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if _read(entry / "idVendor").lower() != NIKON_VENDOR_ID:
+            continue
+        try:
+            bus, dev = int(_read(entry / "busnum")), int(_read(entry / "devnum"))
+            if only is not None and (bus, dev) != only:
+                continue
+            fd = os.open(Path(dev_root) / f"{bus:03d}" / f"{dev:03d}", os.O_WRONLY)
+        except (ValueError, OSError):
+            continue
+        try:
+            fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+            done = True
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
+    return done
