@@ -8,7 +8,8 @@ until curl -fsS -o /dev/null "$APP/api/v1/health"; do
 done
 
 export LIBSEAT_BACKEND=seatd
-seatd -g seat &
+# No VT in a container: run the seat without VT binding, or cage times out waiting for an active session.
+SEATD_VTBOUND=0 seatd -g seat &
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S /run/seatd.sock ] && break; sleep 0.5; done
 
 mkdir -p /tmp/xdg /tmp/chromium && chown kiosk:seat /tmp/xdg /tmp/chromium && chmod 700 /tmp/xdg
