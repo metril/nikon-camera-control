@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { buildSections, buildPatch, dirtyPaths, fieldErrors, describeField } from './schemaForm'
+import {
+  buildSections,
+  buildPatch,
+  dirtyPaths,
+  fieldErrors,
+  describeField,
+  pathTitles,
+  titleForPath,
+} from './schemaForm'
 
 const schema = {
   $defs: {
@@ -58,5 +66,12 @@ describe('schemaForm', () => {
       }),
     ).toEqual({ 'video.crf': 'too big' })
     expect(fieldErrors(null)).toEqual({})
+  })
+
+  it('maps paths to field titles, never raw paths', () => {
+    const titles = pathTitles(sections)
+    expect(titles['video.crf']).toBe('Video › Crf')
+    expect(titles.new_flag).toBe('New flag')
+    expect(titleForPath(titles, 'liveview.target_fps')).toBe('Liveview › Target fps')
   })
 })

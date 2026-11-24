@@ -1,9 +1,9 @@
 import { computed, ref, watchEffect } from 'vue'
 
-const KEY = 'nikon-layout'
+const KEY = 'layout'
 const PREFS = ['auto', 'desktop', 'touch']
 
-function readPref() {
+function read() {
   try {
     const v = localStorage.getItem(KEY)
     return PREFS.includes(v) ? v : 'auto'
@@ -21,7 +21,7 @@ function readForced() {
 }
 
 // One shared state: every caller sees (and changes) the same layout.
-const preference = ref(readPref())
+const pref = ref(read())
 const coarse = ref(false)
 const forced = ref(readForced())
 let installed = false
@@ -29,53 +29,51 @@ let installed = false
 /** 'touch' or 'desktop': a ?layout= URL parameter wins, then the saved choice, then the pointer. */
 const layout = computed(() => {
   if (forced.value) return forced.value
-  if (preference.value !== 'auto') return preference.value
+  if (pref.value !== 'auto') return pref.value
   return coarse.value ? 'touch' : 'desktop'
 })
 
 function install() {
   if (installed) return
   installed = true
-  const mq = window.matchMedia?.('(pointer: coarse)')
-  if (mq) {
-    coarse.value = mq.matches
-    mq.addEventListener?.('change', (e) => (coarse.value = e.matches))
+  try {
+    const mq = window.matchMedia?.('(pointer: coarse)')
+    if (mq) {
+      coarse.value = mq.matches
+      mq.addEventListener?.('change', (e) => (coarse.value = e.matches))
+    }
+  } catch {
+    /* no media queries: stay on desktop */
   }
   watchEffect(() => {
     document.documentElement.dataset.layout = layout.value
   })
 }
 
-function setPreference(value) {
-  if (!PREFS.includes(value)) return
-  preference.value = value
+function setPref(v) {
+  if (!PREFS.includes(v)) return
+  pref.value = v
   try {
-    localStorage.setItem(KEY, value)
+    localStorage.setItem(KEY, v)
   } catch {
-    /* storage unavailable */
+    /* storage unavailable: the preference lasts for this session */
   }
 }
 
 /** Test hook: forget shared state so each test starts clean. */
 export function resetLayoutMode() {
   installed = false
-  preference.value = readPref()
+  pref.value = read()
   forced.value = readForced()
   coarse.value = false
 }
 
 /**
- * Layout mode shared by the whole app. Sets <html data-layout>.
- * `preference`: auto | desktop | touch (saved per browser). `forced`: the ?layout= value or null,
- * in which case the choice cannot be changed. `layout` / `isTouch`: the layout in effect.
+ * Layout mode shared by the whole app, mirrored on <html data-layout>.
+ * `pref`: auto | desktop | touch, saved per browser. `forced`: the ?layout= URL value or null
+ * (then the choice has no effect). `layout` / `isTouch`: the layout in effect.
  */
 export function useLayoutMode() {
   install()
-  return {
-    preference,
-    layout,
-    forced,
-    isTouch: computed(() => layout.value === 'touch'),
-    setPreference,
-  }
+  return { pref, layout, forced, isTouch: computed(() => layout.value === 'touch'), setPref }
 }

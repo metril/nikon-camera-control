@@ -6,6 +6,7 @@ import StorageChip from '@/components/shell/StorageChip.vue'
 import CaptureControls from '@/components/shoot/CaptureControls.vue'
 import LocalFiles from '@/components/gallery/LocalFiles.vue'
 import { useStorageStore } from '@/stores/storage'
+import { useSessionsStore } from '@/stores/sessions'
 import { useToastsStore } from '@/stores/toasts'
 import { useCameraStore } from '@/stores/camera'
 import { useFilesStore } from '@/stores/files'
@@ -137,6 +138,35 @@ describe('StorageSection', () => {
       scope: { kind: 'all' },
       keep_source: true,
     })
+    w.unmount()
+  })
+})
+
+describe('offload session picker', () => {
+  it('lists sessions by name instead of asking for an id', async () => {
+    const { pinia, s } = setup(
+      [loc({ mounted: true }), loc({ id: 'usb-b', name: 'B', mounted: true })],
+      'usb-a',
+    )
+    s.offload = vi.fn(async () => ({}))
+    const sessions = useSessionsStore()
+    sessions.fetch = vi.fn(async () => {
+      sessions.items = [{ id: 's1', name: 'Moon', created: '2026-01-02T00:00:00Z' }]
+    })
+    const w = mount(StorageSection, { global: { plugins: [pinia] }, attachTo: document.body })
+    await w.find('[data-test="offload-open"]').trigger('click')
+    await flushPromises()
+    const scopes = [...document.querySelectorAll('[data-test="offload-dialog"] button')]
+    scopes.find((b) => b.textContent.trim() === 'One session').click()
+    await flushPromises()
+    const picker = document.querySelector('[data-test="session-picker"] select')
+    expect(picker.textContent).toContain('Moon')
+    expect(document.body.textContent).not.toContain('Session id')
+    document.querySelector('[data-test="offload-go"]').click()
+    await flushPromises()
+    expect(s.offload).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { kind: 'session', session_id: 's1' } }),
+    )
     w.unmount()
   })
 })

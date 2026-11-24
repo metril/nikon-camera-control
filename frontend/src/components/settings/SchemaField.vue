@@ -4,6 +4,8 @@ import UiToggle from '@/components/ui/UiToggle.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiNumber from '@/components/ui/UiNumber.vue'
 import UiText from '@/components/ui/UiText.vue'
+import { configEnum } from '@/labels'
+import SettingRow from './SettingRow.vue'
 import TagInput from './TagInput.vue'
 
 const props = defineProps({
@@ -16,28 +18,37 @@ const emit = defineEmits(['update:modelValue'])
 
 const text = computed(() => (props.modelValue == null ? '' : String(props.modelValue)))
 const onText = (v) => emit('update:modelValue', v === '' && props.field.nullable ? null : v)
-const label = computed(() => props.field.title + (props.dirty ? ' *' : ''))
+const options = computed(() =>
+  (props.field.options || []).map((v) => ({ value: v, label: configEnum(props.field.name, v) })),
+)
 </script>
 
 <template>
-  <div class="flex flex-col gap-1" :data-field="field.name" :data-dirty="dirty || undefined">
+  <SettingRow
+    :title="field.title"
+    :description="field.description"
+    :dirty="dirty"
+    :error="error"
+    :natural="field.kind === 'boolean'"
+    :data-field="field.name"
+  >
     <UiToggle
       v-if="field.kind === 'boolean'"
       :model-value="!!modelValue"
-      :label="label"
+      :aria-label="field.title"
       @update:model-value="emit('update:modelValue', $event)"
     />
     <UiSelect
       v-else-if="field.kind === 'enum'"
       :model-value="modelValue"
-      :options="field.options"
-      :label="label"
+      :options="options"
+      :label="field.title"
       @update:model-value="emit('update:modelValue', $event)"
     />
     <UiNumber
       v-else-if="field.kind === 'number' || field.kind === 'integer'"
       :model-value="modelValue"
-      :label="label"
+      :label="field.title"
       :min="field.min"
       :max="field.max"
       :step="field.step"
@@ -47,13 +58,9 @@ const label = computed(() => props.field.title + (props.dirty ? ' *' : ''))
     <TagInput
       v-else-if="field.kind === 'strings'"
       :model-value="modelValue || []"
-      :label="label"
+      :label="field.title"
       @update:model-value="emit('update:modelValue', $event)"
     />
-    <UiText v-else :model-value="text" :label="label" @update:model-value="onText" />
-    <p v-if="field.description" class="text-xs text-camera-muted">{{ field.description }}</p>
-    <p v-if="error" class="text-xs text-red-400" role="alert" data-test="field-error">
-      {{ error }}
-    </p>
-  </div>
+    <UiText v-else :model-value="text" :label="field.title" @update:model-value="onText" />
+  </SettingRow>
 </template>
