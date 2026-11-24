@@ -5,6 +5,7 @@ import { useBulbStore } from '@/stores/bulb'
 import { useCaptureStore } from '@/stores/capture'
 import { useShootStore } from '@/stores/shoot'
 import { useStorageStore } from '@/stores/storage'
+import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
 import { mountCard, button } from './testing'
 
@@ -56,6 +57,30 @@ describe('CaptureSide', () => {
     expect(useToastsStore(pinia).items.at(-1).message).toBe('Camera refused')
   })
 
+  it('shows where photos go, and Single only triggers when downloads are off', async () => {
+    const { pinia } = setup()
+    useStorageStore().locations = [{ id: 'a', name: 'Studio SSD', mounted: true }]
+    useStorageStore().targetId = 'a'
+    useConfigStore().config = { camera: { download_photos: true } }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="download-chip"]').text()).toBe('Downloads to Studio SSD')
+    const capture = useCaptureStore()
+    capture.trigger = vi.fn().mockResolvedValue({ ok: true })
+    capture.capture = vi.fn()
+    useConfigStore().config = { camera: { download_photos: false } }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="download-chip"]').text()).toBe(
+      'Trigger only · stays on card',
+    )
+    await shutter().trigger('click')
+    await flushPromises()
+    expect(capture.trigger).toHaveBeenCalledTimes(1)
+    expect(capture.capture).not.toHaveBeenCalled()
+    expect(useToastsStore(pinia).items.at(-1).message).toBe(
+      'Shutter fired · Photo stays on the card',
+    )
+  })
+
   it('shows the settings of the selected mode under the shutter', async () => {
     setup()
     expect(wrapper.find('.msettings').exists()).toBe(false)
@@ -82,6 +107,19 @@ describe('CaptureSide', () => {
     await flushPromises()
     expect(shutter().attributes('aria-disabled')).toBe('true')
     expect(wrapper.find('[data-testid="shutter-reason"]').text()).toContain('No storage target')
+  })
+
+  it('trigger-only Single stays enabled without a storage target', async () => {
+    setup()
+    const storage = useStorageStore()
+    storage.loaded = true
+    storage.targetId = null
+    useConfigStore().config = { camera: { download_photos: false } }
+    await flushPromises()
+    expect(shutter().attributes('aria-disabled')).not.toBe('true')
+    useConfigStore().config = { camera: { download_photos: true } }
+    await flushPromises()
+    expect(shutter().attributes('aria-disabled')).toBe('true')
   })
 
   it('shows the Space hint, and hides it when keyboard hints are off', async () => {

@@ -7,7 +7,8 @@ import { useCameraStore } from '@/stores/camera'
 import { useCameraAdminStore } from '@/stores/cameraAdmin'
 import { useLayoutMode } from '@/composables/useLayoutMode'
 import { useKeyboardHints } from '@/composables/useKeyboardHints'
-import { captureTarget } from '@/labels'
+import { captureTarget, sampleName } from '@/labels'
+import UiText from '@/components/ui/UiText.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
@@ -52,7 +53,7 @@ const loadError = ref('')
 // Storage locations/target/backups are managed by StorageSection, not the generic form.
 const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
 // Shown in the Capture section instead of their own section.
-const CAPTURE_OWNED = ['camera.keep_card_copy']
+const CAPTURE_OWNED = ['camera.keep_card_copy', 'camera.download_photos', 'camera.filename_prefix']
 const sections = computed(() =>
   buildSections(config.schema).map((s) =>
     s.key === 'storage'
@@ -68,7 +69,24 @@ const shownSections = computed(() =>
 const keepCardField = computed(() =>
   sections.value.find((s) => s.key === 'camera')?.fields.find((f) => f.name === 'keep_card_copy'),
 )
-const titles = computed(() => pathTitles(sections.value))
+// Downloads off = trigger only: the camera must save to its card or the photos would be lost.
+const downloads = computed(() => getPath(draft.value, 'camera.download_photos') !== false)
+const prefix = computed(() => getPath(draft.value, 'camera.filename_prefix') || '')
+const example = computed(() => sampleName(prefix.value))
+const cardChoice = () => (admin.target?.choices || []).find((c) => !/ram|internal/i.test(c))
+const onCard = () => !/ram|internal/i.test(String(admin.target?.value || ''))
+async function setDownloads(on) {
+  if (!on && admin.target && !onCard()) {
+    if (targetReason.value || !cardChoice()) {
+      toasts.error('Switch the camera to the memory card first, then turn downloads off.')
+      return
+    }
+    await setCameraTarget(cardChoice())
+    if (!onCard()) return
+  }
+  setPath(draft.value, 'camera.download_photos', on)
+}
+const titles = computed(() => () => pathTitles(sections.value))
 const titled = (paths) => paths.map((p) => titleForPath(titles.value, p)).join(', ')
 
 const dirty = computed(() =>
@@ -263,13 +281,30 @@ async function setLocation(id) {
             :model-value="admin.target?.value"
             :options="targetOptions"
             label="Camera saves to"
-            :disabled="!!targetReason || savingTarget || !targetOptions.length"
+            :disabled="!downloads || !!targetReason || savingTarget || !targetOptions.length"
             data-test="camera-target"
             @update:model-value="setCameraTarget"
           />
           <template #note>
-            <span v-if="targetReason" data-test="target-reason">{{ targetReason }}</span>
+            <span v-if="!downloads" data-test="target-locked">
+              Locked to memory card while downloads are off, so photos aren't lost.
+            </span>
+            <span v-else-if="targetReason" data-test="target-reason">{{ targetReason }}</span>
           </template>
+        </SettingRow>
+        <SettingRow
+          title="Download photos"
+          description="Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner."
+          :dirty="isFieldDirty('camera.download_photos')"
+          natural
+          data-field="download_photos"
+        >
+          <UiToggle
+            :model-value="downloads"
+            aria-label="Download photos"
+            data-test="download-photos"
+            @update:model-value="setDownloads"
+          />
         </SettingRow>
         <SettingRow
           title="Copy each photo to"
@@ -279,7 +314,7 @@ async function setLocation(id) {
             :model-value="storage.targetId"
             :options="locationOptions"
             label="Copy each photo to"
-            :disabled="savingLocation || !locationOptions.length"
+            :disabled="!downloads || savingLocation || !locationOptions.length"
             data-test="photo-location"
             @update:model-value="setLocation"
           />
@@ -289,9 +324,40 @@ async function setLocation(id) {
             </span>
           </template>
         </SettingRow>
+        <SettingRow
+          title="File name prefix"
+          description="Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes."
+          :dirty="isFieldDirty('camera.filename_prefix')"
+          :error="errors['camera.filename_prefix'] || ''"
+          data-field="filename_prefix"
+        >
+          <UiText
+            :model-value="prefix"
+            label="File name prefix"
+            placeholder="e.g. wedding"
+            :maxlength="40"
+            :disabled="!downloads"
+            data-test="filename-prefix"
+            @update:model-value="setPath(draft, 'camera.filename_prefix', $event || null)"
+          />
+          <template #note>
+            <span v-if="!downloads" data-test="prefix-unused">
+              Not used while photos stay on the card.
+            </span>
+            <span v-else data-test="prefix-example">
+              Saved as
+              <span class="font-mono"
+                ><span class="text-camera-accent">{{ example[0] }}</span
+                >{{ example[1] }}</span
+              >
+            </span>
+          </template>
+        </SettingRow>
         <SchemaField
           v-if="keepCardField"
           :field="keepCardField"
+          :class="{ 'pointer-events-none opacity-[.45]': !downloads }"
+          :aria-disabled="!downloads || undefined"
           :model-value="getPath(draft, 'camera.keep_card_copy')"
           :dirty="isFieldDirty('camera.keep_card_copy')"
           :error="errors['camera.keep_card_copy'] || ''"

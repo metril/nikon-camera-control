@@ -321,7 +321,7 @@ class VideoService:
         opts = resolve_options(
             req, cfg_codec=v.codec, cfg_crf=v.crf, cfg_preset=v.preset, cfg_fps=v.fps
         )
-        name = output_filename(req.output_name, f"timelapse_{manifest.id}", opts.codec)
+        name = output_filename(req.output_name, f"timelapse-{manifest.id}", opts.codec)
 
         async def factory(ctx: JobContext) -> dict[str, Any]:
             return await self._render(ctx, ffmpeg, session_id, frames, opts, name)

@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -213,3 +214,23 @@ async def test_delete_refused_while_held_by_a_render(store: SessionStore) -> Non
         with pytest.raises(InvalidState):
             await store.delete(m.id)
     await store.delete(m.id)  # all holds released
+
+
+async def test_new_and_legacy_session_dirs_listed_with_created(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, fsync=False)
+    m = await store.create("n", {}, 1)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{6}-[0-9a-f]{4}", m.id)
+    (store.root / "2020-01-02-030405-abcd").mkdir()
+    (store.root / "20200102-030405-abce").mkdir()
+    by = {s.id: s for s in await SessionStore(tmp_path, fsync=False).list()}
+    for sid in ("2020-01-02-030405-abcd", "20200102-030405-abce"):
+        assert by[sid].created == datetime(2020, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+async def test_list_sorts_by_created_across_legacy_and_dashed_ids(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, fsync=False)
+    ids = ["20200102-030405-aaaa", "2020-01-03-000000-bbbb", "2019-12-31-235959-cccc"]
+    for i in ids:
+        (store.root / i).mkdir(parents=True)
+    got = [s.id for s in await SessionStore(tmp_path, fsync=False).list()]
+    assert got == ["2020-01-03-000000-bbbb", "20200102-030405-aaaa", "2019-12-31-235959-cccc"]

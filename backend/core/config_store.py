@@ -87,6 +87,19 @@ class CameraConfig(_Section):
         description="Turn off to delete the card copy once the download is verified. "
         "Only applies when the camera saves to the memory card.",
     )
+    download_photos: bool = Field(
+        default=True,
+        title="Download photos",
+        description="Turn off to only fire the shutter. Photos stay on the camera's card and "
+        "Shoot is ready for the next shot sooner.",
+    )
+    filename_prefix: str | None = Field(
+        default=None,
+        max_length=40,
+        title="File name prefix",
+        description="Added to the start of every downloaded photo's name. Up to 40 characters; "
+        "spaces and symbols become dashes.",
+    )
 
 
 class LiveViewConfig(_Section):

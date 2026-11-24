@@ -10,6 +10,8 @@ from starlette.datastructures import State
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.focus import (
+    AfPointRequest,
+    AfPointResult,
     AutofocusResult,
     FocusRange,
     FocusResetResult,
@@ -53,6 +55,13 @@ async def get_focus_status(svc: FocusDep) -> FocusStatus:
 @router.post("/af", operation_id="autofocus", response_model=AutofocusResult)
 async def autofocus(svc: FocusDep) -> AutofocusResult:
     return AutofocusResult(focused=await svc.autofocus())
+
+
+@router.post("/point", operation_id="set_af_point", response_model=AfPointResult)
+async def set_af_point(body: AfPointRequest, svc: FocusDep) -> AfPointResult:
+    """Move the camera's AF point (``changeafarea``) to a normalized live view position."""
+    x, y = await svc.set_af_point(body.x, body.y)
+    return AfPointResult(x=x, y=y)
 
 
 @router.post("/mf", operation_id="manual_focus", response_model=MfResult)

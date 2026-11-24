@@ -86,8 +86,8 @@ class BracketCaptureService:
         self, ctx: JobContext, req: BracketRequest, steps: list[BracketStep], held: HeldContext
     ) -> dict[str, Any]:
         out_root = self._capture.output_dir
-        dest = out_root / "brackets" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        prefix = sanitize_prefix(req.filename_prefix)
+        dest = out_root / "brackets" / datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")
+        prefix = sanitize_prefix(req.filename_prefix or self._config.config.camera.filename_prefix)
         shots: list[BracketShot] = []
         try:
             snapshot = await self._settings.snapshot(touched_settings(steps))
@@ -106,7 +106,7 @@ class BracketCaptureService:
                     )
                     if req.download:
                         local = await self._capture.capture_to(
-                            dest, owner=OWNER, name_prefix=f"{prefix}{i + 1:02d}_"
+                            dest, owner=OWNER, name_prefix=f"{prefix}{i + 1:02d}-"
                         )
                         shot.files = [_rel(p, out_root) for p in local]
                     else:

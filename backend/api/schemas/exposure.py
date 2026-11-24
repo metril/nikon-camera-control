@@ -12,7 +12,9 @@ MAX_BULB_S = 3600.0
 class BulbRequest(BaseModel):
     seconds: float = Field(ge=1, le=MAX_BULB_S, description="Exposure time in seconds.")
     download: bool = Field(default=True, description="Download the frame(s) to the output dir.")
-    filename_prefix: str | None = Field(default=None, max_length=80)
+    filename_prefix: str | None = Field(
+        default=None, max_length=80, description="Prefix for file names; unsafe characters become -"
+    )
 
 
 class BulbStatus(BaseModel):
@@ -29,7 +31,9 @@ class BracketRequest(BaseModel):
         description="Same union as the time-lapse; must resolve to at least 2 steps.",
     )
     download: bool = Field(default=True, description="Download the frames to the output dir.")
-    filename_prefix: str | None = Field(default=None, max_length=80)
+    filename_prefix: str | None = Field(
+        default=None, max_length=80, description="Prefix for file names; unsafe characters become -"
+    )
 
 
 class BracketShot(BaseModel):

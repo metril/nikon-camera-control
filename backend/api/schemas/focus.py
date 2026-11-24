@@ -63,3 +63,14 @@ class StackRequest(BaseModel):
     settle_ms: int = Field(default=500, ge=0, le=60_000, description="Wait after each move")
     return_to_start: bool = True
     name: str | None = Field(default=None, max_length=40, description="Folder name suffix")
+
+
+class AfPointRequest(BaseModel):
+    x: float = Field(ge=0, le=1, description="Horizontal position in the frame (0 = left)")
+    y: float = Field(ge=0, le=1, description="Vertical position in the frame (0 = top)")
+
+
+class AfPointResult(BaseModel):
+    ok: Literal[True] = True
+    x: int = Field(description="Camera live view pixel X that was sent")
+    y: int = Field(description="Camera live view pixel Y that was sent")

@@ -70,13 +70,13 @@ def safe_join(root: Path, relative: str) -> Path:
 
 def unique_path(dest_dir: Path, name: str) -> Path:
     """Create (O_EXCL) and return a fresh empty file ``dest_dir/name``; on collision
-    append ``_1``, ``_2``... before the extension. Race-safe across threads/processes."""
+    append ``-1``, ``-2``... before the extension. Race-safe across threads/processes."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     name = sanitize_name(name)
     stem, ext = os.path.splitext(name)
     n = 0
     while True:
-        candidate = dest_dir / (name if n == 0 else f"{stem}_{n}{ext}")
+        candidate = dest_dir / (name if n == 0 else f"{stem}-{n}{ext}")
         try:
             os.close(os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
         except FileExistsError:

@@ -5,6 +5,46 @@ export type ClientOptions = {
 };
 
 /**
+ * AfPointRequest
+ */
+export type AfPointRequest = {
+    /**
+     * X
+     *
+     * Horizontal position in the frame (0 = left)
+     */
+    x: number;
+    /**
+     * Y
+     *
+     * Vertical position in the frame (0 = top)
+     */
+    y: number;
+};
+
+/**
+ * AfPointResult
+ */
+export type AfPointResult = {
+    /**
+     * Ok
+     */
+    ok?: true;
+    /**
+     * X
+     *
+     * Camera live view pixel X that was sent
+     */
+    x: number;
+    /**
+     * Y
+     *
+     * Camera live view pixel Y that was sent
+     */
+    y: number;
+};
+
+/**
  * ApiKeyDeletedOut
  */
 export type ApiKeyDeletedOut = {
@@ -362,6 +402,8 @@ export type BracketRequest = {
     download?: boolean;
     /**
      * Filename Prefix
+     *
+     * Prefix for file names; unsafe characters become -
      */
     filename_prefix?: string | null;
 };
@@ -402,6 +444,8 @@ export type BulbRequest = {
     download?: boolean;
     /**
      * Filename Prefix
+     *
+     * Prefix for file names; unsafe characters become -
      */
     filename_prefix?: string | null;
     /**
@@ -463,11 +507,23 @@ export type CameraConfig = {
      */
     connect_timeout_s?: number;
     /**
+     * Download photos
+     *
+     * Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner.
+     */
+    download_photos?: boolean;
+    /**
      * Event quiet period
      *
      * After a capture, stop listening for camera events once none arrive for this long.
      */
     event_quiet_window_s?: number;
+    /**
+     * File name prefix
+     *
+     * Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.
+     */
+    filename_prefix?: string | null;
     /**
      * Keep a copy on the camera card
      *
@@ -517,11 +573,23 @@ export type CameraConfigPatch = {
      */
     connect_timeout_s?: number | null;
     /**
+     * Download Photos
+     *
+     * Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner.
+     */
+    download_photos?: boolean | null;
+    /**
      * Event Quiet Window S
      *
      * After a capture, stop listening for camera events once none arrive for this long.
      */
     event_quiet_window_s?: number | null;
+    /**
+     * Filename Prefix
+     *
+     * Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.
+     */
+    filename_prefix?: string | null;
     /**
      * Keep Card Copy
      *
@@ -881,7 +949,7 @@ export type CaptureRequest = {
     /**
      * Filename Prefix
      *
-     * Prefix for file names; unsafe characters become _
+     * Prefix for file names; unsafe characters become -
      */
     filename_prefix?: string | null;
 };
@@ -5745,6 +5813,51 @@ export type ManualFocusResponses = {
 };
 
 export type ManualFocusResponse = ManualFocusResponses[keyof ManualFocusResponses];
+
+export type SetAfPointData = {
+    body: AfPointRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/focus/point';
+};
+
+export type SetAfPointErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SetAfPointError = SetAfPointErrors[keyof SetAfPointErrors];
+
+export type SetAfPointResponses = {
+    /**
+     * Successful Response
+     */
+    200: AfPointResult;
+};
+
+export type SetAfPointResponse = SetAfPointResponses[keyof SetAfPointResponses];
 
 export type ResetFocusPositionData = {
     body?: never;

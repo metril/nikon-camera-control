@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sortValues, toggleValue, parseNumeric, quickShots, formatBytes } from './bracketUtils'
+import { sortValues, toggleValue, parseNumeric, quickShots, formatBytes, formatDuration } from './bracketUtils'
 
 describe('bracketUtils', () => {
   it('orders shutter speeds by real duration, Bulb last', () => {
@@ -31,5 +31,13 @@ describe('bracketUtils', () => {
   it('formats bytes safely', () => {
     expect(formatBytes(NaN)).toBe('0 B')
     expect(formatBytes(1536)).toBe('1.5 KB')
+  })
+
+  it('shows sub-10 s durations with one decimal', () => {
+    expect(formatDuration(8 / 24)).toBe('0.3 s')
+    expect(formatDuration(2.5)).toBe('2.5 s')
+    expect(formatDuration(0)).toBe('0 s')
+    expect(formatDuration(45)).toBe('45 s')
+    expect(formatDuration(90)).toBe('1 min 30 s')
   })
 })

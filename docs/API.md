@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.4.0
+# Nikon Camera Control API 0.4.1
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -122,6 +122,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | GET | `/api/v1/focus` | `get_focus` | Get Focus Status |
 | POST | `/api/v1/focus/af` | `autofocus` | Autofocus |
+| POST | `/api/v1/focus/point` | `set_af_point` | Set Af Point |
 | POST | `/api/v1/focus/mf` | `manual_focus` | Manual Focus |
 | POST | `/api/v1/focus/reset` | `reset_focus_position` | Reset Focus Position |
 | POST | `/api/v1/focus/stack` | `start_focus_stack` | Start Focus Stack |
@@ -552,7 +553,7 @@ operation_id: `capture_photo`
 |---|---|---|---|---|---|
 | `download` | boolean | no | `true` |  | Download the captured files to the server |
 | `delete_from_camera` | boolean | no | `false` |  | Delete from the card after download (ignored if download=false) |
-| `filename_prefix` | string \| null | no |  | `maxLength=40` | Prefix for file names; unsafe characters become _ |
+| `filename_prefix` | string \| null | no |  | `maxLength=40` | Prefix for file names; unsafe characters become - |
 
 **Responses**
 
@@ -611,7 +612,7 @@ it closes the shutter at once and still keeps the frame.
 |---|---|---|---|---|---|
 | `seconds` | number | yes |  | `>=1.0`, `<=3600.0` | Exposure time in seconds. |
 | `download` | boolean | no | `true` |  | Download the frame(s) to the output dir. |
-| `filename_prefix` | string \| null | no |  | `maxLength=80` |  |
+| `filename_prefix` | string \| null | no |  | `maxLength=80` | Prefix for file names; unsafe characters become - |
 
 **Responses**
 
@@ -637,7 +638,7 @@ Capture one bracket set (every step applied and shot), then restore the settings
 |---|---|---|---|---|---|
 | `bracketing` | NoBracketing \| StepsBracketing \| QuickBracketing \| PresetBracketing | no |  |  | Same union as the time-lapse; must resolve to at least 2 steps. |
 | `download` | boolean | no | `true` |  | Download the frames to the output dir. |
-| `filename_prefix` | string \| null | no |  | `maxLength=80` |  |
+| `filename_prefix` | string \| null | no |  | `maxLength=80` | Prefix for file names; unsafe characters become - |
 
 **Responses**
 
@@ -913,6 +914,31 @@ operation_id: `autofocus`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `AutofocusResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/focus/point`
+
+operation_id: `set_af_point`
+
+Move the camera's AF point (``changeafarea``) to a normalized live view position.
+
+**Request body** (`application/json`): `AfPointRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `x` | number | yes |  | `>=0.0`, `<=1.0` | Horizontal position in the frame (0 = left) |
+| `y` | number | yes |  | `>=0.0`, `<=1.0` | Vertical position in the frame (0 = top) |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AfPointResult` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -2342,6 +2368,8 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | camera | `capture_timeout_s` | number | `30.0` | `>=1.0`, `<=300.0` | How long to wait for a photo to arrive before reporting a failure. |
 | camera | `event_quiet_window_s` | number | `1.0` | `>=0.0`, `<=10.0` | After a capture, stop listening for camera events once none arrive for this long. |
 | camera | `keep_card_copy` | boolean | `true` |  | Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card. |
+| camera | `download_photos` | boolean | `true` |  | Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner. |
+| camera | `filename_prefix` | string \| null | `null` | `maxLength=40` | Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes. |
 | liveview | `target_fps` | integer | `8` | `>=1`, `<=30` | Higher is smoother but uses more USB bandwidth. 5-15 fps is typical. |
 | liveview | `quality` | enum("small", "medium", "large") | `"medium"` |  | Size of the frames the camera sends. |
 | liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Quality used when re-encoding streamed frames. |

@@ -13,7 +13,7 @@ class CaptureRequest(BaseModel):
         default=False, description="Delete from the card after download (ignored if download=false)"
     )
     filename_prefix: str | None = Field(
-        default=None, max_length=40, description="Prefix for file names; unsafe characters become _"
+        default=None, max_length=40, description="Prefix for file names; unsafe characters become -"
     )
 
 

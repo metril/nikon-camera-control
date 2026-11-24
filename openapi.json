@@ -1,6 +1,56 @@
 {
   "components": {
     "schemas": {
+      "AfPointRequest": {
+        "properties": {
+          "x": {
+            "description": "Horizontal position in the frame (0 = left)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "description": "Vertical position in the frame (0 = top)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "AfPointRequest",
+        "type": "object"
+      },
+      "AfPointResult": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "x": {
+            "description": "Camera live view pixel X that was sent",
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "description": "Camera live view pixel Y that was sent",
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "AfPointResult",
+        "type": "object"
+      },
       "ApiKeyDeletedOut": {
         "properties": {
           "config": {
@@ -606,6 +656,7 @@
                 "type": "null"
               }
             ],
+            "description": "Prefix for file names; unsafe characters become -",
             "title": "Filename Prefix"
           }
         },
@@ -675,6 +726,7 @@
                 "type": "null"
               }
             ],
+            "description": "Prefix for file names; unsafe characters become -",
             "title": "Filename Prefix"
           },
           "seconds": {
@@ -766,6 +818,12 @@
             "title": "Connect timeout",
             "type": "number"
           },
+          "download_photos": {
+            "default": true,
+            "description": "Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner.",
+            "title": "Download photos",
+            "type": "boolean"
+          },
           "event_quiet_window_s": {
             "default": 1.0,
             "description": "After a capture, stop listening for camera events once none arrive for this long.",
@@ -773,6 +831,19 @@
             "minimum": 0.0,
             "title": "Event quiet period",
             "type": "number"
+          },
+          "filename_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.",
+            "title": "File name prefix"
           },
           "keep_card_copy": {
             "default": true,
@@ -845,6 +916,18 @@
             "description": "How long to wait for the camera before giving up.",
             "title": "Connect Timeout S"
           },
+          "download_photos": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner.",
+            "title": "Download Photos"
+          },
           "event_quiet_window_s": {
             "anyOf": [
               {
@@ -856,6 +939,18 @@
             ],
             "description": "After a capture, stop listening for camera events once none arrive for this long.",
             "title": "Event Quiet Window S"
+          },
+          "filename_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.",
+            "title": "Filename Prefix"
           },
           "keep_card_copy": {
             "anyOf": [
@@ -1432,7 +1527,7 @@
                 "type": "null"
               }
             ],
-            "description": "Prefix for file names; unsafe characters become _",
+            "description": "Prefix for file names; unsafe characters become -",
             "title": "Filename Prefix"
           }
         },
@@ -6825,7 +6920,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.4.0"
+    "version": "0.4.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10222,6 +10317,103 @@
           }
         ],
         "summary": "Manual Focus",
+        "tags": [
+          "focus"
+        ]
+      }
+    },
+    "/api/v1/focus/point": {
+      "post": {
+        "description": "Move the camera's AF point (``changeafarea``) to a normalized live view position.",
+        "operationId": "set_af_point",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AfPointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AfPointResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Set Af Point",
         "tags": [
           "focus"
         ]

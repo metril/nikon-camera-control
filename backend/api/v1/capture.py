@@ -32,6 +32,8 @@ def build_capture_service(s: State) -> CaptureService:
         s.storage,
         files.index,
         keep_card_copy=lambda: cfg.config.camera.keep_card_copy,
+        downloads_enabled=lambda: cfg.config.camera.download_photos,
+        default_prefix=lambda: cfg.config.camera.filename_prefix,
     )
 
 

@@ -97,7 +97,7 @@ async def test_bulb_happy_path(
     assert j["result"]["seconds"] == 5
     (name,) = j["result"]["files"]
     assert (app.state.storage.root() / name).is_file()
-    assert "star_" in name
+    assert "star-" in name
     assert fake_camera._values["shutterspeed"] == "1/60"  # real prior value restored
     assert fake_camera._values["bulb"] is False
     assert len(card_files(fake_camera)) == 1

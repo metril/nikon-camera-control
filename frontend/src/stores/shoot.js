@@ -5,6 +5,7 @@ import { leaseOwner } from '@/labels'
 import { useBulbStore } from './bulb'
 import { useCameraStore } from './camera'
 import { useCaptureStore } from './capture'
+import { useConfigStore } from './config'
 import { useFocusStore } from './focus'
 import { useJobsStore } from './jobs'
 import { useStorageStore } from './storage'
@@ -36,6 +37,9 @@ export const useShootStore = defineStore('shoot', () => {
   const focus = useFocusStore()
   const storage = useStorageStore()
   const toasts = useToastsStore()
+  const config = useConfigStore()
+  /** False = trigger only: the shutter fires and photos stay on the camera card. */
+  const downloads = computed(() => config.config?.camera?.download_photos !== false)
 
   const mode = ref('single')
   const bracket = reactive({ frames: 3, step: 1 })
@@ -97,7 +101,7 @@ export const useShootStore = defineStore('shoot', () => {
     if (anyRunning.value && !stoppable.value) return 'Another capture is running.'
     if (!stoppable.value && !['idle', 'liveview'].includes(camera.state)) return 'Camera busy.'
     if (capture.inFlight) return 'Capturing…'
-    if (noTarget.value) return NO_TARGET_REASON
+    if (noTarget.value && (downloads.value || mode.value !== 'single')) return NO_TARGET_REASON
     if (mode.value === 'bulb' && !bulbOk.value) return 'Exposure time must be 1 to 3600 s.'
     if (mode.value === 'stack' && stackProblem.value) return `${stackProblem.value}.`
     return ''
@@ -129,6 +133,11 @@ export const useShootStore = defineStore('shoot', () => {
 
   async function captureSingle() {
     try {
+      if (!downloads.value) {
+        await capture.trigger()
+        toasts.success('Shutter fired · Photo stays on the card')
+        return
+      }
       await capture.capture({ download: true, delete_from_camera: false, filename_prefix: null })
     } catch (e) {
       fail(e)
@@ -213,6 +222,7 @@ export const useShootStore = defineStore('shoot', () => {
   })
 
   return {
+    downloads,
     mode,
     bracket,
     bulbForm,

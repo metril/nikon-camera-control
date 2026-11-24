@@ -1,6 +1,8 @@
 <script setup>
 /** Side column: capture mode, shutter, that mode's settings, and the last capture. */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useConfigStore } from '@/stores/config'
+import { useStorageStore } from '@/stores/storage'
 import { useCaptureStore } from '@/stores/capture'
 import { CAPTURE_MODES, useShootStore } from '@/stores/shoot'
 import { useKeyboardHints } from '@/composables/useKeyboardHints'
@@ -19,6 +21,13 @@ import StackSettings from './StackSettings.vue'
 const emit = defineEmits(['navigate', 'open-settings'])
 const capture = useCaptureStore()
 const shoot = useShootStore()
+const config = useConfigStore()
+const storage = useStorageStore()
+onMounted(() => {
+  if (!config.config) config.fetch().catch(() => {})
+})
+const triggerOnly = computed(() => !shoot.downloads && shoot.mode === 'single')
+const whereName = computed(() => storage.target?.name || storage.target?.label || 'your storage')
 const { hints } = useKeyboardHints()
 
 const modes = CAPTURE_MODES.map(({ value, label }) => ({ value, label }))
@@ -64,6 +73,10 @@ const recordingOpen = ref(false)
           @click="shoot.press()"
         />
         <span class="slabel tabular-nums" data-testid="shutter-label">{{ shoot.label }}</span>
+        <span class="chip" data-testid="download-chip">
+          <template v-if="triggerOnly"><i class="dot" />Trigger only · stays on card</template>
+          <template v-else>Downloads to {{ whereName }}</template>
+        </span>
         <span id="shutter-reason" class="reason" aria-live="polite" data-testid="shutter-reason">
           <NoTargetNotice
             v-if="shoot.noTargetBlocks"
@@ -149,6 +162,26 @@ const recordingOpen = ref(false)
 }
 .slabel {
   font-weight: 600;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: theme('colors.camera.muted');
+  border: 1px solid theme('colors.camera.subtle');
+  border-radius: 999px;
+  padding: 2px 10px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: theme('colors.camera.warn');
 }
 .modes-note {
   margin: -8px 0 0;

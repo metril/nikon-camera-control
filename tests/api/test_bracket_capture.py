@@ -114,7 +114,7 @@ async def test_bracket_each_mode_restores_exactly(
     assert all((out / f).is_file() for s in shots for f in s["files"])
     assert j["result"]["directory"].startswith("brackets/")
     assert all(f.startswith(j["result"]["directory"]) for s in shots for f in s["files"])
-    assert all("/hdr_" in s["files"][0] for s in shots)
+    assert all("/hdr-" in s["files"][0] for s in shots)
     assert values(fake_camera) == before
     cam = app.state.camera_service
     assert cam.state == CameraState.IDLE

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
   settingValueLabel,
@@ -53,11 +54,30 @@ describe('label maps', () => {
   it('builds select options', () => {
     expect(options(VIDEO_CODECS)[0]).toEqual({ value: 'h264', label: 'H.264' })
   })
+  it('lists each API codec once, matching the generated enum', () => {
+    const src = readFileSync('src/api/generated/types.gen.ts', 'utf8')
+    const m = src.match(/codec\?: ((?:'\w+' \| )*'\w+')/)
+    const enumVals = [...m[1].matchAll(/'(\w+)'/g)].map((x) => x[1])
+    expect(options(VIDEO_CODECS).map((o) => o.value).sort()).toEqual(enumVals.sort())
+  })
   it('labels time-lapse warnings, states and ffprobe encoder names', () => {
     expect(timelapseWarning('interval_too_short')).toBe(
       'The interval is shorter than one frame takes',
     )
     expect(timelapseState('interrupted')).toBe('Interrupted')
     expect(videoCodec('libx264')).toBe('H.264')
+  })
+})
+
+describe('sampleName', () => {
+  it('cleans the prefix like the backend and uses dashed dates', async () => {
+    const { sampleName, cleanPrefix } = await import('./labels')
+    expect(cleanPrefix('  my wedding!! ')).toBe('my-wedding-')
+    expect(cleanPrefix('___')).toBe('')
+    expect(cleanPrefix('x'.repeat(50))).toBe('x'.repeat(40) + '-')
+    expect(sampleName('a b', new Date(2026, 10, 24, 9, 46, 59))).toEqual([
+      'a-b-',
+      '2026-11-24-094659-DSC_2161.JPG',
+    ])
   })
 })

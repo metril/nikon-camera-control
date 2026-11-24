@@ -396,7 +396,12 @@ watch([lastShotPath, () => tools.value.onion], ([path, on], [, wasOn]) => {
 
 // ---- Focus: tapping sets the focus point and runs autofocus; the pill drives manual steps.
 const frameFocused = () => camera.connected && !!hasFrame.value
-async function runAutofocus() {
+let pointUnsupported = false // the body can't move its AF point: skip setPoint this connection
+watch(
+  () => [camera.model, camera.connectedAt],
+  () => (pointUnsupported = false),
+)
+async function runAutofocus(move = false) {
   if (!camera.connected) return
   clearTimeout(lockTimer)
   const { w, h } = frameSize.value
@@ -404,6 +409,14 @@ async function runAutofocus() {
   focusState.value = 'moving'
   afBusy.value = true
   try {
+    if (move && !pointUnsupported) {
+      try {
+        await focus.setPoint(focusPt.value.x / (w || 1), focusPt.value.y / (h || 1))
+      } catch (e) {
+        if (e?.status === 501 || e?.code === 'FEATURE_UNSUPPORTED') pointUnsupported = true
+        toasts.warn('Could not move the focus point. Focusing at the camera’s current point.')
+      }
+    }
     const r = await focus.autofocus()
     if (r?.focused === false) {
       focusState.value = 'idle'
@@ -459,7 +472,7 @@ function onPointerUp(e) {
   down = null
   if (tap && frameFocused()) {
     focusPt.value = framePoint(e)
-    runAutofocus()
+    runAutofocus(true)
   }
 }
 function onPointerCancel() {
@@ -658,7 +671,7 @@ onUnmounted(() => {
           :disabled="!camera.connected"
           :busy="afBusy"
           @step="focusStep"
-          @autofocus="runAutofocus"
+          @autofocus="runAutofocus()"
         />
       </div>
       <div v-if="!showPlaceholder && tools.hist" class="lv-histwrap">
