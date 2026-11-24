@@ -224,7 +224,7 @@ async def test_new_and_legacy_session_dirs_listed_with_created(tmp_path: Path) -
     (store.root / "20200102-030405-abce").mkdir()
     by = {s.id: s for s in await SessionStore(tmp_path, fsync=False).list()}
     for sid in ("2020-01-02-030405-abcd", "20200102-030405-abce"):
-        assert by[sid].created == datetime(2020, 1, 2, 3, 4, 5, tzinfo=UTC)
+        assert by[sid].created == datetime(2020, 1, 2, 3, 4, 5).astimezone()  # server local zone
 
 
 async def test_list_sorts_by_created_across_legacy_and_dashed_ids(tmp_path: Path) -> None:
@@ -234,3 +234,17 @@ async def test_list_sorts_by_created_across_legacy_and_dashed_ids(tmp_path: Path
         (store.root / i).mkdir(parents=True)
     got = [s.id for s in await SessionStore(tmp_path, fsync=False).list()]
     assert got == ["2020-01-03-000000-bbbb", "20200102-030405-aaaa", "2019-12-31-235959-cccc"]
+
+
+async def test_list_orders_by_real_time_after_zone_change(tmp_path: Path) -> None:
+    from backend.core import clock
+
+    times = iter([datetime(2026, 1, 1, 12, 0, tzinfo=UTC), datetime(2026, 1, 1, 13, 0, tzinfo=UTC)])
+    store = SessionStore(tmp_path, fsync=False, clock=lambda: next(times))
+    clock.set_zone("Pacific/Kiritimati")  # UTC+14: id stamp 02:00 next day
+    older = await store.create("a", {}, 1)
+    clock.set_zone(None)
+    newer = await store.create("b", {}, 1)  # id stamped in server-local zone
+    clock.set_zone("Pacific/Pago_Pago")  # UTC-11: would mis-order if ids were reparsed
+    fresh = SessionStore(tmp_path, fsync=False)
+    assert [s.id for s in await fresh.list()] == [newer.id, older.id]

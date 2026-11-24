@@ -228,6 +228,7 @@ def create_app(
         try:
             yield
         finally:
+            set_zone(None)
             unsubscribe()
             for task in list(bg):
                 task.cancel()

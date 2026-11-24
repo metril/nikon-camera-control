@@ -16,6 +16,7 @@ from starlette.testclient import TestClient
 
 from backend.app import create_app
 from backend.camera.fake import FakeCamera
+from backend.core.clock import set_zone
 from backend.core.config_store import AppConfig, ConfigStore
 
 
@@ -136,6 +137,13 @@ def ws_client(app: FastAPI) -> Iterator[TestClient]:
     ``with ws_client.websocket_connect(url) as ws``. Sync tests only."""
     with TestClient(app) as tc:
         yield tc
+
+
+@pytest.fixture(autouse=True)
+def _reset_zone() -> Iterator[None]:
+    """The app zone is process-wide state: never leak it between tests."""
+    yield
+    set_zone(None)
 
 
 @pytest.fixture(autouse=True)
