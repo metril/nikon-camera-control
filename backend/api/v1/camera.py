@@ -41,6 +41,7 @@ async def _status(svc: CameraService) -> CameraStatusOut:
             datetime.fromtimestamp(st.connected_at, UTC) if st.connected_at is not None else None
         ),
         last_activity=st.last_activity,
+        property_events=st.property_events,
     )
 
 

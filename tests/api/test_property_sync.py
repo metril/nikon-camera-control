@@ -92,3 +92,27 @@ async def test_burst_is_debounced_to_one_refresh(
 
     seen = await _changes(app, "iso", burst, wait_s=0.6)
     assert seen == ["1600"]
+
+
+async def test_unknown_names_are_never_refreshed_and_no_full_tree_read(
+    app: FastAPI, connected_client, fake_camera: FakeCamera
+) -> None:
+    svc = app.state.camera_service
+    svc._invalidate_cache()  # empty settings cache: nothing is known to exist
+    svc._name_cache = {}
+    gets = fake_camera.calls.get("get_config", 0)
+    lists = fake_camera.calls.get("list_config", 0)
+    svc._prop_sync.on_codes([0x500E, 0x500B])
+    await asyncio.sleep(0.4)
+    assert fake_camera.calls.get("get_config", 0) == gets
+    assert fake_camera.calls.get("list_config", 0) == lists
+
+
+async def test_status_reports_property_events_once_seen(
+    app: FastAPI, connected_client, fake_camera: FakeCamera
+) -> None:
+    assert (await connected_client.get("/api/v1/camera")).json()["property_events"] is False
+    svc = app.state.camera_service
+    await connected_client.get("/api/v1/settings")
+    svc._on_property_code(0x500F)
+    assert (await connected_client.get("/api/v1/camera")).json()["property_events"] is True

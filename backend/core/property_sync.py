@@ -59,10 +59,12 @@ class PropertySync:
         """Loop thread. Queue the widgets behind these property codes."""
         now = time.monotonic()
         for code in codes:
-            for name in PROP_WIDGETS.get(code, ()):
-                known = self._camera.cached_setting_names()
-                if known and name not in known:
-                    continue
+            candidates = PROP_WIDGETS.get(code)
+            if not candidates:
+                continue
+            # Only a name already known to exist: an unknown one would cost a full config read.
+            name = self._camera.known_setting_name(candidates)
+            if name is not None:
                 if now - self._written.get(name, -ECHO_S) < ECHO_S:
                     continue
                 self._pending.add(name)

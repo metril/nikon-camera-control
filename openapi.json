@@ -1419,6 +1419,12 @@
             ],
             "title": "Model"
           },
+          "property_events": {
+            "default": false,
+            "description": "The body announces its own setting changes, so polling is unnecessary",
+            "title": "Property Events",
+            "type": "boolean"
+          },
           "serial": {
             "anyOf": [
               {

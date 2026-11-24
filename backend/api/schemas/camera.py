@@ -20,6 +20,10 @@ class CameraStatusOut(BaseModel):
     last_activity: datetime | None = Field(
         default=None, description="Last backend call (None if never connected)"
     )
+    property_events: bool = Field(
+        default=False,
+        description="The body announces its own setting changes, so polling is unnecessary",
+    )
 
 
 class BatteryOut(BaseModel):

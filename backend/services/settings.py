@@ -343,8 +343,8 @@ class SettingsService:
         actual = await self._actual(name)
         if fresh:
             before = self._cam.cached_setting(actual)
-            w = await self._cam.refresh_setting(actual)
-            if before is None or before.value != w.value:
+            w, performed = await self._cam.refresh_setting_shared(actual)
+            if performed and (before is None or before.value != w.value):
                 self._cam.bus.publish(EventType.SETTING_CHANGED, {"name": w.name, "value": w.value})
         else:
             w = await self._cam.get_setting(actual)

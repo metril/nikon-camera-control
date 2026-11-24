@@ -882,6 +882,12 @@ export type CameraStatusOut = {
      */
     model?: string | null;
     /**
+     * Property Events
+     *
+     * The body announces its own setting changes, so polling is unnecessary
+     */
+    property_events?: boolean;
+    /**
      * Serial
      */
     serial?: string | null;

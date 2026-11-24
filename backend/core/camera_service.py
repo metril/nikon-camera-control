@@ -118,6 +118,7 @@ _LIVE_STATES = frozenset({_S.IDLE, _S.LIVEVIEW, _S.CAPTURING, _S.RECORDING, _S.B
 _KEEPALIVE_STATES = frozenset({_S.IDLE, _S.BUSY})
 _PREVIEW_STATES = frozenset({_S.LIVEVIEW, _S.RECORDING})
 _KEEPALIVE_FAILURES = 3
+_FRESH_TTL_S = 1.0  # a polled fresh read is shared for this long
 _EVENT_POLL_S = 0.5  # idle camera event poll (body property changes, body-shutter files)
 _PREVIEW_EVENT_S = 1.0  # live view: drain camera events at most this often
 _KEEPALIVE_TIMEOUT_S = 10.0
@@ -145,6 +146,7 @@ class CameraStatus:
     connected_at: float | None  # unix seconds
     serial: str | None = None
     last_activity: datetime | None = None
+    property_events: bool = False  # the body announces its own setting changes
 
 
 class Lease:
@@ -283,7 +285,8 @@ class _Worker:
                     result = item.fn(self)
                 except Exception as e:
                     exc = e
-                if self._svc._worker is self:  # late results from old generations are ignored
+                # late results from old generations are ignored; background polls do not count
+                if self._svc._worker is self and item.priority != Priority.KEEPALIVE:
                     self._svc._last_activity = time.monotonic()
                 with item.lock:
                     abandoned = item.abandoned
@@ -506,6 +509,8 @@ class CameraService:
         self._event_task: asyncio.Task[None] | None = None
         self._prop_sync = PropertySync(self)
         self._last_preview_drain = 0.0
+        self._fresh_reads: dict[str, tuple[asyncio.Future[ConfigWidget], float, int]] = {}
+        self._property_events = False  # a PTP property-change event was seen on this connection
         self._reconnect_task: asyncio.Task[None] | None = None
         self._battery: Any = None
         self._settings_tree: list[ConfigWidget] | None = None
@@ -647,6 +652,7 @@ class CameraService:
             connected_at=self._connected_at,
             serial=self._serial if self._state in _LIVE_STATES else None,
             last_activity=self._last_activity_dt(),
+            property_events=self._property_events and self._state in _LIVE_STATES,
         )
 
     def _last_activity_dt(self) -> datetime | None:
@@ -756,6 +762,7 @@ class CameraService:
 
     def _on_property_code(self, code: int) -> None:
         """Worker thread: a PTP property-change event was read; sync on the loop."""
+        self._property_events = True
         loop = self._loop
         if loop is not None:
             with contextlib.suppress(RuntimeError):
@@ -766,6 +773,12 @@ class CameraService:
 
     def cached_setting_names(self) -> frozenset[str]:
         return frozenset(self._settings_map)
+
+    def known_setting_name(self, candidates: tuple[str, ...]) -> str | None:
+        """First of ``candidates`` known to exist on this body (settings cache or resolved
+        names); None if unknown. Never talks to the camera."""
+        known = self._settings_map.keys() | set(self._name_cache.values())
+        return next((c for c in candidates if c in known), None)
 
     def _on_strays(self, files: list[CameraFilePath]) -> None:
         for f in files:
@@ -809,6 +822,8 @@ class CameraService:
 
     async def _do_connect(self) -> None:
         self._loop = asyncio.get_running_loop()
+        await self._cancel_task("_keepalive_task")  # a connect from ERROR may find old ones
+        await self._cancel_task("_event_task")
         await self._clear_zombies()
         worker = self._ensure_worker()
         self._set_state(_S.CONNECTING)
@@ -831,6 +846,7 @@ class CameraService:
         self._last_activity = time.monotonic()
         self._last_error = None
         self._battery = None
+        self._property_events = False
         self._name_cache = {}
         self._invalidate_cache()
         self.stray_files.clear()  # RAM names (capt0000...) restart on a new connection
@@ -1205,6 +1221,29 @@ class CameraService:
         self._store_widget(widget)
         return widget
 
+    async def refresh_setting_shared(self, name: str) -> tuple[ConfigWidget, bool]:
+        """``refresh_setting`` for polling clients: concurrent callers share one in-flight
+        read and a result under ``_FRESH_TTL_S`` old is reused unless a write/read changed the
+        cache since. Returns (widget, performed): ``performed`` is False for a shared result."""
+        entry = self._fresh_reads.get(name)
+        if entry is not None:
+            task, done_at, epoch = entry
+            if not task.done() or (
+                epoch == self._cache_epoch and time.monotonic() - done_at < _FRESH_TTL_S
+            ):
+                return await asyncio.shield(task), False
+        task = asyncio.ensure_future(self.refresh_setting(name))
+        self._fresh_reads[name] = (task, float("inf"), -1)
+
+        def _done(t: asyncio.Future[ConfigWidget]) -> None:
+            if t.cancelled() or t.exception() is not None:
+                self._fresh_reads.pop(name, None)
+            else:
+                self._fresh_reads[name] = (t, time.monotonic(), self._cache_epoch)
+
+        task.add_done_callback(_done)
+        return await asyncio.shield(task), True
+
     def on_setting_write(self, fn: Callable[[str], None]) -> Callable[[], None]:
         """Call ``fn(name)`` after every ``set_setting`` (a user write, even of the same value);
         not for the app's own ``note_setting``. Returns the unsubscribe function."""
@@ -1424,7 +1463,12 @@ class CameraService:
         b = w.require()
         frame = b.capture_preview()
         now = time.monotonic()
-        if now - self._last_preview_drain >= _PREVIEW_EVENT_S:
+        # Never drain while recording or leased: the clip's FILE_ADDED belongs to its watcher.
+        if (
+            self._state != _S.RECORDING
+            and self._lease_owner is None
+            and now - self._last_preview_drain >= _PREVIEW_EVENT_S
+        ):
             self._last_preview_drain = now
             late: list[CameraFilePath] = []
             with contextlib.suppress(Exception):
@@ -1464,9 +1508,10 @@ class CameraService:
     async def _event_poll_loop(self) -> None:
         """While idle, read camera events so body property changes (and body-shutter files)
         are noticed. Never queues behind another call."""
+        failures = 0
         while True:
             await asyncio.sleep(_EVENT_POLL_S)
-            if self._state != _S.IDLE:
+            if self._state != _S.IDLE or self._lease_owner is not None:
                 continue
             w = self._worker
             if w is None or w.inflight is not None or not w.queue.empty():
@@ -1481,8 +1526,13 @@ class CameraService:
                 found = await self._run(_poll, Priority.KEEPALIVE, _KEEPALIVE_TIMEOUT_S, False)
             except (CameraIOError, CameraNotConnected):
                 return  # _finish already moved to DISCONNECTED
-            except Exception:  # noqa: BLE001, S112 - best effort; keepalive handles a dead link
+            except Exception:  # noqa: BLE001 - repeated failures mean a dead link
+                failures += 1
+                if failures >= _KEEPALIVE_FAILURES:
+                    self._lost("event poll failed")
+                    return
                 continue
+            failures = 0
             if found:
                 self._on_strays(found)
 
@@ -1504,14 +1554,16 @@ class CameraService:
                 await asyncio.sleep(min(wait, 1.0))
                 continue
             try:
-                level = await self._run(
-                    lambda b: b.get_config("batterylevel").value,
-                    Priority.KEEPALIVE,
-                    _KEEPALIVE_TIMEOUT_S,
-                )
+                try:
+                    level = await self._run(
+                        lambda b: b.get_config("batterylevel").value,
+                        Priority.KEEPALIVE,
+                        _KEEPALIVE_TIMEOUT_S,
+                    )
+                finally:
+                    self._last_activity = time.monotonic()  # keepalive times itself
             except SettingNotFound:
                 failures = 0
-                self._last_activity = time.monotonic()
                 continue
             except (CameraIOError, CameraNotConnected):
                 return  # _finish already moved to DISCONNECTED

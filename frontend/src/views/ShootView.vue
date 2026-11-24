@@ -41,19 +41,23 @@ function onKeydown(e) {
   }
 }
 
-// Fallback for bodies that do not announce changes made on the camera: re-read the exposure
-// strip when this view shows and every 5 s while it is visible and the camera is idle.
+// Re-read the exposure strip when this view shows. Fallback for bodies that do not announce
+// changes made on the camera: also every 5 s while visible and idle, until the backend has
+// seen a property-change event from this body (then events keep the strip in sync).
 const SYNC_MS = 5000
 let syncTimer = null
 function syncExposure() {
-  if (document.hidden || !camera.connected || camera.state !== 'idle') return
+  if (document.hidden || !camera.connected || camera.state !== 'idle' || camera.leasedBy) return
   settings.refreshExposure().catch(() => {})
+}
+function pollExposure() {
+  if (!camera.propertyEvents) syncExposure()
 }
 const listen = () => {
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('visibilitychange', syncExposure)
   syncExposure()
-  if (!syncTimer) syncTimer = setInterval(syncExposure, SYNC_MS)
+  if (!syncTimer) syncTimer = setInterval(pollExposure, SYNC_MS)
 }
 const unlisten = () => {
   document.removeEventListener('keydown', onKeydown)

@@ -23,6 +23,7 @@ export const useCameraStore = defineStore('camera', () => {
   const leasedBy = ref(null)
   const connectedAt = ref(null)
   const lastActivity = ref(null)
+  const propertyEvents = ref(false)
   const statusError = ref(null) // camera-reported last_error
   const battery = ref(null) // {level, percent}
   const storage = ref(null) // {cards: []}
@@ -36,6 +37,7 @@ export const useCameraStore = defineStore('camera', () => {
     connected.value = false
     model.value = serial.value = leasedBy.value = connectedAt.value = null
     lastActivity.value = statusError.value = null
+    propertyEvents.value = false
     battery.value = storage.value = null
   }
 
@@ -48,6 +50,7 @@ export const useCameraStore = defineStore('camera', () => {
     leasedBy.value = s.leased_by ?? null
     connectedAt.value = s.connected_at ?? null
     lastActivity.value = s.last_activity ?? null
+    propertyEvents.value = !!s.property_events
     statusError.value = s.last_error ?? null
   }
 
@@ -103,6 +106,7 @@ export const useCameraStore = defineStore('camera', () => {
     leasedBy,
     connectedAt,
     lastActivity,
+    propertyEvents,
     statusError,
     battery,
     storage,
