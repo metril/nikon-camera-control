@@ -1,7 +1,8 @@
 /** Pure helpers that turn the backend's JSON schema into a generic form model. */
 
 export const SPECIAL_ROOT = ['demo_camera'] // rendered by their own section
-const unitOf = (name) => (name.endsWith('_ms') ? 'ms' : name.endsWith('_s') ? 's' : '')
+const unitOf = (name) =>
+  name.endsWith('_ms') ? 'ms' : name.endsWith('_s') ? 's' : name.endsWith('_min') ? 'min' : ''
 
 const humanize = (s) => s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
@@ -126,4 +127,18 @@ export function fieldErrors(details) {
     if (loc.length) out[loc.join('.')] = e.msg || e.message || 'Invalid value'
   }
   return out
+}
+
+/** Config path -> display title: "Live view › Target frame rate" (top-level fields: their own title). */
+export function pathTitles(sections) {
+  const out = {}
+  for (const s of sections)
+    for (const f of s.fields)
+      out[s.path(f)] = s.key === '_general' ? f.title : `${s.title} › ${f.title}`
+  return out
+}
+export function titleForPath(titles, path) {
+  if (titles[path]) return titles[path]
+  const parts = path.split('.').map(humanize)
+  return parts.join(' › ')
 }
