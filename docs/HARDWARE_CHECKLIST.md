@@ -183,3 +183,18 @@ Camera state restored: P, ISO 2500, auto ISO On, metering Multi Spot, WB Automat
 
 
 Record firmware, lens, card, host OS, Docker version, and any item that failed with the printed output. Failed items should become issues that name the code assumption in the last column.
+
+
+## Deployed-app check (v0.4.0, karpo, D500, 2026-11-24)
+
+| Item | Result | Evidence |
+|---|---|---|
+| Storage | ✅ | SSD "Data" (exFAT, 6976-527C) was already mounted and the photo target; `POST /locations/usb-6976-527C/mount` and `PUT /storage/target` are idempotent, 200. Single, 3-shot bracket (`exposure_3`, 6 files) and an 8-frame 1 s time-lapse (8/8, 0 failures) all landed on it. |
+| 4.4 two live view clients | ✅ | `/api/v1/ws/liveview` x2: 2 subscribers, 37 frames each; close one: other kept receiving (37 -> 61); close both: `running:false, phase:stopped` within 2.5 s, stays stopped (non-sticky). |
+| `exposurecompensation2` | ✅ | PUT 0.333 then 0: round-trips, restored to 0. Reported path is `/exposurecompensation` (not `/main/capturesettings/exposurecompensation`). |
+| `event_quiet_window_s` live change | ⚠ not observable | PATCH `/config` is applied (value read per capture) and capture works at 0.2, 1.0 and 3.0, but timing is the same (~1.0-1.1 s RAM, 1.0-2.1 s card) because the D500 sends CAPTURE_COMPLETE, which ends the drain before the window matters. |
+| Browser 1440x900 and touch 1280x800 | ✅ with bugs | Lightbox (full-bleed 1440x900, next/prev, Esc close), select mode, render dialog, render 8/8 frames "Video rendered." No console errors or failed requests. |
+
+Bugs found: (1) Render dialog Codec select lists duplicates (H.264, H.265, VP9, VP9, H.264, H.265, ProRes, VP9): `frontend/src/labels.js:129-138` `VIDEO_CODECS` mixes API enum and legacy ffmpeg names; the dialog should list h264, h265, prores, vp9 only. (2) "8 frames make about 0 s of video" (RenderDialog.vue:167) rounds sub-second lengths to 0 s. (3) Gallery file names are truncated to `20261124_150...` in tiles. (4) The deployed build still names files `YYYYMMDD_HHMMSS_captNNNN` (the dashed names are not in v0.4.0).
+
+State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, quiet window 1.0. SSD left mounted and selected.
