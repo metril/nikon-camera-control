@@ -27,6 +27,24 @@ async def test_connect_failure_envelope(app: FastAPI, client: httpx.AsyncClient)
     r = await client.post(f"{C}/connect")
     assert r.status_code == 404 and r.json()["error"]["code"] == "CAMERA_NOT_FOUND"
     assert (await client.get(C)).json()["state"] == "disconnected"
+    assert "switched on" in r.json()["error"]["message"]
+
+
+async def test_connect_while_off_connects_once_camera_appears(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    import asyncio
+
+    fake = app.state.camera_service._factory()
+    fake.unplug()
+    assert (await client.post(f"{C}/connect")).status_code == 404
+    await asyncio.sleep(1.5)
+    fake.replug()
+    for _ in range(80):
+        if (await client.get(C)).json()["connected"]:
+            break
+        await asyncio.sleep(0.1)
+    assert (await client.get(C)).json()["connected"] is True
 
 
 async def test_not_connected_errors(client: httpx.AsyncClient) -> None:

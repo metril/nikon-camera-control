@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.4.3
+# Nikon Camera Control API 0.4.4
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -22,13 +22,15 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | `INTERNAL_ERROR` | 500 | `AppError` | Internal error |
 | `CAMERA_NOT_CONNECTED` | 503 | `CameraNotConnected` | Camera is not connected |
-| `CAMERA_NOT_FOUND` | 404 | `CameraNotFound` | No camera detected. Check the USB connection. |
+| `CAMERA_NOT_FOUND` | 404 | `CameraNotFound` | No camera detected. Check that it is switched on and the USB cable is connected. |
 | `CAMERA_PERMISSION_DENIED` | 503 | `CameraPermissionDenied` | Camera found, but the app can't open it. |
 | `CAMERA_BUSY` | 409 | `CameraBusy` | Camera is busy with another operation |
 | `CAMERA_TIMEOUT` | 504 | `CameraTimeout` | Camera operation timed out |
 | `CAMERA_IO_ERROR` | 502 | `CameraIOError` | Camera I/O error |
 | `CAMERA_OPERATION_FAILED` | 502 | `CameraOperationFailed` | Camera operation failed |
 | `STORAGE_FULL` | 507 | `StorageFull` | Camera storage is full |
+| `NO_CARD` | 409 | `NoCard` | No memory card in the camera. Insert a card or save to camera memory. |
+| `CARD_LOCKED` | 409 | `CardLocked` | The memory card is locked (write-protected). Unlock it or save to camera memory. |
 | `INVALID_STATE` | 409 | `InvalidState` | Operation not allowed in the current state |
 | `SETTING_NOT_FOUND` | 404 | `SettingNotFound` | Setting not found |
 | `SETTING_NOT_ALLOWED` | 403 | `SettingNotAllowed` | Setting cannot be changed |

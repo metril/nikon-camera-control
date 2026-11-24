@@ -78,10 +78,14 @@ from backend.core.errors import (
     CameraBusy,
     CameraIOError,
     CameraNotConnected,
+    CameraNotFound,
     CameraOperationFailed,
     CameraTimeout,
+    CardLocked,
     InvalidState,
+    NoCard,
     SettingNotFound,
+    StorageFull,
 )
 from backend.core.events import EventBus
 from backend.core.state import CameraState, can_transition
@@ -116,6 +120,7 @@ _KEEPALIVE_FAILURES = 3
 _KEEPALIVE_TIMEOUT_S = 10.0
 _PREVIEW_TIMEOUT_S = 10.0
 _MAX_BACKOFF_S = 30.0
+_RETRY_WAIT_S = 12.0  # how long a failed command waits for the reconnect before giving up
 
 
 class Priority(enum.IntEnum):
@@ -499,6 +504,7 @@ class CameraService:
         self._battery: Any = None
         self._settings_tree: list[ConfigWidget] | None = None
         self._settings_map: dict[str, ConfigWidget] = {}
+        self._storage_cache: tuple[float, list[Any]] | None = None
         self._cache_epoch = 0
         self._read_exposure_timeout_s = 5.0
         self._refuse_bulb_timeout_s = 10.0
@@ -509,6 +515,7 @@ class CameraService:
         self._zombies: list[_Worker] = []
         # Files announced outside any capture (body shutter, late second file); newest last.
         self.stray_files: collections.deque[CameraFilePath] = collections.deque(maxlen=100)
+        self.connect_hooks: list[Callable[[], None]] = []  # run on every (re)connect
         # Called on the loop with files found outside a capture (CaptureService fetches them).
         self.stray_handler: Callable[[list[CameraFilePath]], None] | None = None
         self._recover_task: asyncio.Task[None] | None = None
@@ -576,7 +583,12 @@ class CameraService:
             if w is not None and (w.inflight is not None or w.recovering):
                 self._abandon_stuck(w)
             self._release_lease()
-        await self._do_connect()
+        try:
+            await self._do_connect()
+        except CameraNotFound:
+            # Camera off or unplugged: keep looking until it shows up or the user disconnects.
+            self._start_reconnect(persistent=True)
+            raise
         return self.status()
 
     async def disconnect(self) -> CameraStatus:
@@ -660,6 +672,9 @@ class CameraService:
             )
         self._state = to
         self._bus.publish(EventType.CAMERA_STATE, {"state": to.value, "previous": prev.value})
+        if to == _S.ERROR and self._lease_owner is None:  # a lease holder is still cleaning up
+            with contextlib.suppress(RuntimeError):  # no running loop (sync callers)
+                self._ensure_recovery()  # any path into ERROR must resolve without user action
         return prev
 
     def _try_state(self, to: CameraState) -> bool:
@@ -795,6 +810,9 @@ class CameraService:
         self._battery = None
         self._name_cache = {}
         self._invalidate_cache()
+        self.stray_files.clear()  # RAM names (capt0000...) restart on a new connection
+        for hook in list(self.connect_hooks):
+            hook()
         try:
             exposure = await self._read_exposure(worker)  # before IDLE: nothing races the settle
             self._set_state(_S.IDLE)
@@ -858,17 +876,20 @@ class CameraService:
             worker.fail_queued(CameraNotConnected)
             worker.fail_inflight(CameraNotConnected)
             worker.submit(self._close_job, Priority.CONTROL, escalate=False)
+        self._start_reconnect()
+
+    def _start_reconnect(self, *, persistent: bool = False) -> None:
         if self._reconnect_task is None or self._reconnect_task.done():
             self._reconnect_task = asyncio.create_task(
-                self._reconnect_loop(), name="camera-reconnect"
+                self._reconnect_loop(persistent), name="camera-reconnect"
             )
 
-    async def _reconnect_loop(self) -> None:
+    async def _reconnect_loop(self, persistent: bool = False) -> None:
         attempt = 0
-        while attempt < self._config.config.camera.connect_retries:
+        while persistent or attempt < self._config.config.camera.connect_retries:
             cfg = self._config.config.camera
             await asyncio.sleep(min(cfg.reconnect_interval_s * (2**attempt), _MAX_BACKOFF_S))
-            attempt += 1
+            attempt = min(attempt + 1, 16)
             if self._state != _S.DISCONNECTED:
                 return
             try:
@@ -955,6 +976,29 @@ class CameraService:
         fn: Callable[[CameraBackend], T],
         priority: int,
         timeout: float | None,  # noqa: ASYNC109
+        retry: Callable[[], bool] | bool = True,
+    ) -> T:
+        """Run ``fn`` on the worker. A user-facing call (CONTROL/CAPTURE) that dies with a
+        device-gone error (the camera was power-cycled unnoticed) is retried once after the
+        reconnect, when ``retry`` allows it (a callable is asked after the failure)."""
+        if priority in (Priority.CONTROL, Priority.CAPTURE) and self._reconnecting():
+            await self._await_reconnect()  # automatic reconnect in progress: wait, else fail below
+        try:
+            return await self._run_once(fn, priority, timeout)
+        except (CameraIOError, CameraNotFound) as e:
+            allowed = retry() if callable(retry) else retry
+            if priority not in (Priority.CONTROL, Priority.CAPTURE) or not allowed:
+                raise
+            if not await self._await_reconnect():
+                raise
+            log.info("retrying after reconnect: %s", e.message)
+            return await self._run_once(fn, priority, timeout)
+
+    async def _run_once(
+        self,
+        fn: Callable[[CameraBackend], T],
+        priority: int,
+        timeout: float | None,  # noqa: ASYNC109
     ) -> T:
         worker = self._worker
         if worker is None or self._state in (_S.DISCONNECTED, _S.CONNECTING):
@@ -962,10 +1006,28 @@ class CameraService:
         item = worker.submit(lambda w: fn(w.require()), priority)
         return await self._finish(worker, item, timeout)
 
+    def _reconnecting(self) -> bool:
+        """Disconnected with the automatic reconnect loop running (not a user Disconnect)."""
+        task = self._reconnect_task
+        return self._state == _S.DISCONNECTED and task is not None and not task.done()
+
+    async def _await_reconnect(self) -> bool:
+        """After a device-gone error: wait for the reconnect loop (bounded) and report
+        whether the camera is back."""
+        deadline = time.monotonic() + _RETRY_WAIT_S
+        while time.monotonic() < deadline:
+            if self._state in _LIVE_STATES:
+                return True
+            task = self._reconnect_task
+            if self._state == _S.DISCONNECTED and (task is None or task.done()):
+                return False
+            await asyncio.sleep(0.05)
+        return self._state in _LIVE_STATES
+
     async def _finish(self, worker: _Worker, item: _Item, timeout: float | None) -> Any:  # noqa: ASYNC109
         try:
             return await self._await_item(worker, item, timeout)
-        except (CameraIOError, CameraNotConnected) as e:
+        except (CameraIOError, CameraNotConnected, CameraNotFound) as e:
             if worker is self._worker:
                 self._lost(e.message)
             raise
@@ -977,6 +1039,7 @@ class CameraService:
         priority: Priority = Priority.CONTROL,
         timeout: float = 30.0,  # noqa: ASYNC109
         owner: str | None = None,
+        retry: Callable[[], bool] | bool = True,
     ) -> T:
         """Run ``fn(backend)`` on the worker thread and return its result.
 
@@ -986,7 +1049,7 @@ class CameraService:
         CameraIOError/CameraNotConnected from the backend moves the service to DISCONNECTED.
         """
         self._check_lease(priority, owner)
-        return await self._run(fn, priority, timeout)
+        return await self._run(fn, priority, timeout, retry)
 
     # settings -------------------------------------------------------------------
     def _invalidate_cache(self) -> None:
@@ -1176,13 +1239,17 @@ class CameraService:
         self._check_lease(Priority.CAPTURE, owner)
         t = timeout if timeout is not None else self._config.config.camera.capture_timeout_s
         await self._refuse_bulb_shutter()
+        await self.require_card_ready()
         prior = await self.transition(_S.CAPTURING)
         self._bus.publish(EventType.CAPTURE_STARTED, {})
+
+        fired = [False]
 
         def _do(b: CameraBackend) -> list[CameraFilePath]:
             # Events left by trigger-only shots or the body's own shutter are not ours.
             late: list[CameraFilePath] = []
             drain_pending_events(b, keep=late)  # unattributed files are recorded, not lost
+            fired[0] = True  # from here on a link loss must not repeat the shot
             files = [b.capture()]
             if late and self._loop is not None:
                 with contextlib.suppress(RuntimeError):
@@ -1211,9 +1278,12 @@ class CameraService:
             return dedupe_slot_copies(b, files)
 
         try:
-            files = await self._run(_do, Priority.CAPTURE, 2 * t + 1.0)
+            files = await self._run(_do, Priority.CAPTURE, 2 * t + 1.0, lambda: not fired[0])
         except CameraTimeout:
             self._ensure_recovery()  # ERROR must resolve to IDLE without user action
+            raise
+        except CameraOperationFailed as e:
+            await self.explain_failure(e)
             raise
         finally:
             if self._state == _S.CAPTURING:
@@ -1223,6 +1293,48 @@ class CameraService:
             {"files": [{"folder": f.folder, "name": f.name} for f in files]},
         )
         return files
+
+    async def card_problem(self, *, fresh: bool = False) -> AppError | None:
+        """With the card as capture target: why a shot would fail (no card, locked, full), or
+        None. Storage is cached for a few seconds unless ``fresh``. Best effort: an unreadable
+        target or storage never blocks a shot."""
+        if self._state not in _LIVE_STATES:
+            return None
+        try:
+            target = await self.get_setting("capturetarget")
+            if "ram" in str(target.value).lower():
+                return None
+            now = time.monotonic()
+            if not fresh and self._storage_cache is not None and now - self._storage_cache[0] < 3.0:
+                cards = self._storage_cache[1]
+            else:
+                cards = await self._run(lambda b: b.storage_info(), Priority.CONTROL, 10.0)
+                ok = any(c.access != "ro" and c.free_images > 0 for c in cards)
+                self._storage_cache = (time.monotonic(), cards) if ok else None  # only "card OK"
+        except AppError:
+            return None
+        if not cards:
+            return NoCard()
+        writable = [c for c in cards if c.access != "ro"]
+        if not writable:
+            return CardLocked()
+        if all(c.free_images <= 0 for c in writable):
+            return StorageFull("The memory card is full.")
+        return None
+
+    async def require_card_ready(self) -> None:
+        """Raise NoCard / CardLocked / StorageFull before firing with the card as target."""
+        if (problem := await self.card_problem()) is not None:
+            raise problem
+
+    async def explain_failure(self, exc: AppError) -> None:
+        """A bare camera failure with the card as target may be a missing, locked or full
+        card (the pre-check can be stale): re-read storage and raise that instead."""
+        if (
+            type(exc) is CameraOperationFailed
+            and (problem := await self.card_problem(fresh=True)) is not None
+        ):
+            raise problem from exc
 
     async def refuse_bulb_shutter(self) -> None:
         """Public guard for callers that fire the shutter outside capture() (trigger)."""
@@ -1303,6 +1415,8 @@ class CameraService:
             if self._lease_token is token:
                 self._lease_owner = None
                 self._lease_token = None
+                with contextlib.suppress(RuntimeError):
+                    self._ensure_recovery()  # ERROR set under the lease was postponed to here
 
     # keepalive ---------------------------------------------------------------------
     async def _keepalive_loop(self) -> None:

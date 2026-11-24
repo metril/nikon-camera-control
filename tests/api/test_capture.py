@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi import FastAPI
 
 from backend.camera.fake import FakeCamera
@@ -343,3 +344,31 @@ async def test_trigger_without_file_times_out_and_restores_state(
     assert r.status_code == 504 and "didn't take a photo" in r.json()["error"]["message"]
     assert "capturing" in states
     assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"
+
+
+@pytest.mark.parametrize(
+    ("state", "code", "status"),
+    [("none", "NO_CARD", 409), ("ro", "CARD_LOCKED", 409)],
+)
+async def test_capture_card_unusable_is_typed(
+    app: FastAPI,
+    connected_client: httpx.AsyncClient,
+    fake_camera: FakeCamera,
+    state: str,
+    code: str,
+    status: int,
+) -> None:
+    fake_camera.card_state(state)
+    for path in (C, f"{C}/trigger"):
+        r = await connected_client.post(path, json={})
+        assert r.status_code == status and r.json()["error"]["code"] == code, path
+    assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"
+
+
+async def test_capture_stale_precheck_maps_failure(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    assert (await connected_client.post(C, json={})).status_code == 200  # primes the cache
+    fake_camera.card_state("ro")
+    r = await connected_client.post(C, json={})
+    assert r.json()["error"]["code"] == "CARD_LOCKED"

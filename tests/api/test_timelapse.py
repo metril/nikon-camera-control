@@ -243,7 +243,7 @@ async def test_card_full_ends_run_immediately(
     await c.post(f"{T}/start")
     st = await wait_for(c, DONE)
     assert st["state"] == "failed" and "Storage full" in st["error"]
-    assert fake_camera.calls["capture"] == 1
+    assert fake_camera.calls.get("capture", 0) == 0  # refused before firing
 
 
 async def test_unplug_replug_pauses_then_resumes(

@@ -19,6 +19,7 @@ from backend.camera.backend import (
     CameraFilePath,
     ConfigType,
     ConfigWidget,
+    StorageInfo,
 )
 from backend.camera.backend import EventType as CamEvent
 from backend.core.camera_service import CameraService, Priority
@@ -67,6 +68,7 @@ class StubBackend:
     def __init__(self) -> None:
         self.opens = 0
         self.closes = 0
+        self.storage = [StorageInfo("SD", "/store", 100, 50, 10, "rw")]
         self._open = False
         self.fail_open: Exception | None = None
         self.fail_battery: Exception | None = None
@@ -110,6 +112,9 @@ class StubBackend:
         leaves = tuple(self._leaf(k, v) for k, v in self.values.items())
         sec = ConfigWidget("main", "Main", "/main", ConfigType.SECTION, children=leaves)
         return [sec]
+
+    def storage_info(self) -> list[StorageInfo]:
+        return self.storage
 
     def get_config(self, name: str) -> ConfigWidget:
         if name == "hang":
@@ -550,7 +555,7 @@ async def test_io_error_disconnects_and_reconnects(env: Env) -> None:
         raise CameraIOError()
 
     with pytest.raises(CameraIOError):
-        await svc.call(io)
+        await svc.call(io, retry=False)
     assert env.bus.of(EventType.CAMERA_DISCONNECTED)
     await wait_until(lambda: svc.state == S.IDLE)
     assert len(env.bus.of(EventType.CAMERA_CONNECTED)) == 2
@@ -570,6 +575,28 @@ async def test_explicit_disconnect_stops_reconnect(env: Env) -> None:
     calls = env.factory_calls
     await asyncio.sleep(0.1)
     assert env.factory_calls == calls and svc.state == S.DISCONNECTED
+
+
+async def test_call_during_auto_reconnect_waits_then_runs(env: Env) -> None:
+    svc = await env.make(connect_retries=50, reconnect_interval_s=0.05)
+
+    def io(_b: CameraBackend) -> None:
+        raise CameraIOError()
+
+    env.backend.fail_open = CameraNotFound()
+    with pytest.raises(CameraIOError):
+        await svc.call(io, retry=False)
+    await wait_until(lambda: svc.state == S.DISCONNECTED and env.factory_calls >= 2)
+    env.backend.fail_open = None
+    assert await svc.call(lambda _b: 7) == 7
+    assert svc.state in (S.IDLE, S.BUSY)
+
+
+async def test_call_after_user_disconnect_fails_immediately(env: Env) -> None:
+    svc = await env.make()
+    await svc.disconnect()
+    with pytest.raises(CameraNotConnected):
+        await asyncio.wait_for(svc.call(lambda _b: 7), 1)
 
 
 # 7. lease ------------------------------------------------------------------------------
@@ -761,12 +788,13 @@ async def test_bulb_precheck_uses_fresh_cache_and_reads_when_stale(env: Env) -> 
     svc = await env.make()
     env.backend.values["shutterspeed"] = "1/250"
     await svc.get_setting("shutterspeed")
+    await svc.get_setting("capturetarget")
     before = env.backend.get_calls
     await svc.capture()
     assert env.backend.get_calls == before  # cached non-bulb: no extra read
     svc.invalidate_settings()
     await svc.capture()
-    assert env.backend.get_calls == before + 1
+    assert env.backend.get_calls == before + 2  # shutterspeed + capturetarget
     env.backend.values["shutterspeed"] = "Bulb"
     svc.invalidate_settings()
     with pytest.raises(InvalidState):
@@ -805,3 +833,43 @@ def test_dedupe_reads_sizes_only_for_cross_root_pairs() -> None:
     kept = dedupe_slot_copies(cast(CameraBackend, B()), files)
     assert kept == [files[0], files[2]]
     assert sorted(sized) == sorted(f"{f.folder}/{f.name}" for f in files[:2])
+
+
+async def test_capture_io_error_after_shutter_is_not_retried(env: Env) -> None:
+    svc = await env.make(connect_retries=5, reconnect_interval_s=0.01)
+    shots = 0
+
+    def boom() -> CameraFilePath:
+        nonlocal shots
+        shots += 1
+        raise CameraIOError()
+
+    env.backend.capture = boom  # type: ignore[method-assign]
+    with pytest.raises(CameraIOError):
+        await svc.capture(timeout=1)
+    await asyncio.sleep(0.2)
+    assert shots == 1
+
+
+async def test_error_under_lease_postpones_recovery_until_release(env: Env) -> None:
+    svc = await env.make(connect_retries=5, reconnect_interval_s=0.01)
+    svc._stuck_grace_s = 0.05  # noqa: SLF001
+    async with svc.lease("bulb"):
+        await svc.transition(S.ERROR)
+        await asyncio.sleep(0.3)  # several grace periods: no watchdog may fire
+        assert svc.state == S.ERROR
+        assert svc.status().leased_by == "bulb"
+        assert env.bus.of(EventType.CAMERA_DISCONNECTED) == []
+    await wait_until(lambda: svc.state == S.IDLE)
+    assert env.bus.of(EventType.CAMERA_DISCONNECTED)  # recovery reconnected after release
+
+
+async def test_card_check_caches_only_ok_storage(env: Env) -> None:
+    svc = await env.make()
+    await svc.set_setting("capturetarget", "Memory card")
+    env.backend.storage = []
+    assert type(await svc.card_problem()).__name__ == "NoCard"
+    env.backend.storage = [StorageInfo("SD", "/store", 100, 50, 10, "rw")]
+    assert await svc.card_problem() is None  # just-inserted card works at once
+    env.backend.storage = []
+    assert await svc.card_problem() is None  # OK result stays cached

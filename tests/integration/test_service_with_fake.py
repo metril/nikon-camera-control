@@ -12,7 +12,7 @@ from backend.api.schemas.common import Event
 from backend.camera.fake import FakeCamera
 from backend.core.camera_service import CameraService
 from backend.core.config_store import ConfigStore
-from backend.core.errors import CameraBusy, CameraTimeout
+from backend.core.errors import CameraBusy, CameraIOError, CameraNotFound, CameraTimeout
 from backend.core.events import EventBus, Subscription
 from backend.core.state import CameraState
 
@@ -212,3 +212,35 @@ async def test_liveview_exit_turns_viewfinder_off_and_reconnect_resets_flag_regr
     assert svc.state == CameraState.LIVEVIEW and not fake_camera.viewfinder_on
     await svc.preview_frame()  # service reset the flag, so the backend re-enabled it
     assert fake_camera.viewfinder_on
+
+
+async def test_command_retried_once_after_device_gone(
+    svc: CameraService, fake_camera: FakeCamera
+) -> None:
+    await svc.connect()
+    fake_camera.fail_next("get_config", exc=CameraIOError("Could not find the requested device"))
+    w = await svc.refresh_setting("iso")
+    assert w.name == "iso" and svc.state == CameraState.IDLE
+
+
+async def test_capture_retried_when_failure_precedes_the_shutter(
+    svc: CameraService, fake_camera: FakeCamera
+) -> None:
+    await svc.connect()
+    fake_camera.fail_next("wait_for_event", exc=CameraIOError("gone"))
+    files = await svc.capture()
+    assert files and svc.state == CameraState.IDLE
+
+
+async def test_connect_while_camera_off_keeps_looking(
+    svc: CameraService, fake_camera: FakeCamera
+) -> None:
+    fake_camera.unplug()
+    with pytest.raises(CameraNotFound):
+        await svc.connect()
+    assert svc.state == CameraState.DISCONNECTED
+    await asyncio.sleep(1.5)  # more attempts than connect_retries allows
+    fake_camera.replug()
+    await until(lambda: svc.state == CameraState.IDLE, timeout=8.0)
+    await svc.disconnect()
+    assert svc._reconnect_task is None or svc._reconnect_task.done()

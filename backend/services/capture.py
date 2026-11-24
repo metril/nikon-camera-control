@@ -25,6 +25,7 @@ from backend.core.clock import local_now
 from backend.core.errors import (
     AppError,
     CameraNotConnected,
+    CameraOperationFailed,
     CameraTimeout,
     DownloadFailed,
     InvalidState,
@@ -78,6 +79,7 @@ class CaptureService:
         self._index = index
         self._bg: set[asyncio.Task[None]] = set()
         camera.stray_handler = self._on_strays
+        camera.connect_hooks.append(self._triggered.clear)
 
     @property
     def output_dir(self) -> Path:
@@ -182,7 +184,8 @@ class CaptureService:
         task.add_done_callback(self._bg.discard)
 
     async def _download_strays(self, files: list[CameraFilePath]) -> None:
-        files = [f for f in files if f not in self._triggered]
+        # Camera RAM names (folder "/") are reused, so they are never duplicates by name.
+        files = [f for f in files if f.folder.strip("/") == "" or f not in self._triggered]
         if not files or not self._downloads_enabled():
             return  # trigger-only shots and downloads-off: files stay on the card
         try:
@@ -225,11 +228,14 @@ class CaptureService:
                 "Set the camera to save to the memory card first."
             )
         await self._camera.refuse_bulb_shutter()
+        await self._camera.require_card_ready()
 
         wait_s = self._camera.capture_timeout_s
         quiet = self._camera.quiet_window_s
         first_s = min(wait_s, _FIRST_FILE_S + self._camera.exposure_hint_s())
         loop = asyncio.get_running_loop()
+
+        fired = [False]
 
         def _fire(b: CameraBackend) -> list[CameraFilePath]:
             # Events already pending (a late NEF, a body-shutter shot) are not this shot's.
@@ -238,6 +244,7 @@ class CaptureService:
             if late:
                 with contextlib.suppress(RuntimeError):
                     loop.call_soon_threadsafe(self._on_strays, late)
+            fired[0] = True  # from here on a link loss must not repeat the shot
             b.trigger()
             seen: list[CameraFilePath] = []
             # The shot's own file events are never ours: wait for the first (exposure + write),
@@ -264,15 +271,21 @@ class CaptureService:
         prior = await self._camera.transition(CameraState.CAPTURING)
         try:
             files = await self._camera.call(
-                _fire, priority=Priority.CAPTURE, timeout=wait_s + first_s + quiet + 5.0
+                _fire,
+                priority=Priority.CAPTURE,
+                timeout=wait_s + first_s + quiet + 5.0,
+                retry=lambda: not fired[0],
             )
+        except CameraOperationFailed as e:
+            await self._camera.explain_failure(e)
+            raise
         finally:
             if self._camera.state == CameraState.CAPTURING:
                 with contextlib.suppress(AppError):
                     await self._camera.transition(prior)
         if not files:
             raise CameraTimeout("The camera didn't take a photo. Check focus and the card.")
-        self._triggered.extend(f for f in files if f not in self._triggered)
+        self._triggered.extend(f for f in files if f not in self._triggered and f.folder != "/")
 
     async def _download(
         self,

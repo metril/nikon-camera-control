@@ -277,6 +277,7 @@ def _specs() -> list[_Spec]:
             choices=("Small", "Medium", "Large"),
         ),  # fmt: skip
         _Spec("capturesettings", "bulb", "Bulb Capture", T, False),
+        _Spec("capturesettings", "longexpnr", "Long Exp. NR", R, "Off", choices=("Off", "On")),
     ]
 
 
@@ -306,6 +307,7 @@ class _Faults:
     latency: dict[str, float] = field(default_factory=dict)
     unplugged: bool = False
     card_full: bool = False
+    card: str = "rw"  # "rw" | "ro" | "none"
     calls: dict[str, int] = field(default_factory=dict)
 
 
@@ -352,6 +354,7 @@ class FakeCamera:
         slot2_mirror: bool = False,
         ram_info_fails: bool = False,
         bulb_capture_hangs: bool = False,
+        nr_busy_s: float = 0.0,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
         Default False mirrors real PTP bodies, where capture() usually consumes it.
@@ -387,6 +390,12 @@ class FakeCamera:
         self._mirror = slot2_mirror
         self._ram_info_fails = ram_info_fails
         self._bulb_hangs = bulb_capture_hangs
+        # With longexpnr On, a bulb close shuts the shutter, then every set_config raises busy
+        # and the frame is announced (FILE_ADDED) only after this many seconds (dark frame).
+        self._nr_busy_s = nr_busy_s
+        self._nr_until = 0.0
+        self._movie_stop_until = 0.0
+        self._nr_held: list[CameraEvent] = []
         self._folders = {k: list(v) for k, v in _FOLDERS.items()}
         if slot2_mirror:
             self._folders["/"].append("store_00020001")
@@ -416,6 +425,8 @@ class FakeCamera:
         }
         self._open = False
         self._counter = start_counter
+        self.ram_numbering_resets = False  # set True: reopen restarts capt0000 numbering
+        self._opened_before = False
         self._capacity_kb = capacity_kb
         self._clock = 0
         self._preview_n = 0
@@ -478,10 +489,21 @@ class FakeCamera:
         with self._flock:
             self._faults.latency[op] = seconds
 
+    def movie_stop_fails_for(self, seconds: float) -> None:
+        """Movie stop (movie=0) raises "Unspecified error" for ``seconds``, then succeeds."""
+        with self._flock:
+            self._movie_stop_until = time.monotonic() + seconds
+
     def card_full(self, full: bool = True) -> None:
         """While set, capture/trigger/movie raise CameraIOError and free space reads 0."""
         with self._flock:
             self._faults.card_full = full
+
+    def card_state(self, state: str) -> None:
+        """ "rw" (default), "ro" (write-protected) or "none" (no card). With the card as capture
+        target, shots then fail with a bare "Unspecified error" like a real D500."""
+        with self._flock:
+            self._faults.card = state
 
     def _enter(self, op: str) -> None:
         with self._flock:
@@ -523,6 +545,9 @@ class FakeCamera:
         self._enter("open")
         self._open = True
         self._pv_flag = False
+        if self.ram_numbering_resets and self._opened_before:
+            self._counter = 1  # a real body restarts its RAM file numbering after a reconnect
+        self._opened_before = True
 
     def close(self) -> None:
         self._open = False
@@ -591,6 +616,8 @@ class FakeCamera:
         s = self._spec(name)
         if s.readonly:
             raise SettingNotAllowed(f"Setting {name!r} is read-only")
+        if time.monotonic() < self._nr_until:
+            raise CameraBusy(f"set_config({name}): noise reduction in progress")
         if name == "viewfinder" and self._vf_busy > 0:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
@@ -611,10 +638,21 @@ class FakeCamera:
             i = s.choices.index(str(new))
             new = s.choices[min(i + 1, len(s.choices) - 1)]
         old = self._values[name]
+        if name == "movie" and old and not new and time.monotonic() < self._movie_stop_until:
+            raise CameraOperationFailed("set_config(movie): Unspecified error")
         if name in ("movie", "bulb") and old and not new:
             self._check_space()
             if name == "bulb":
+                n_before = len(self._events)
                 self._do_capture()
+                if self._nr_busy_s > 0 and self._values["longexpnr"] == "On":
+                    with self._cond:
+                        while len(self._events) > n_before:
+                            self._nr_held.append(self._events.pop())
+                    self._nr_held.reverse()
+                    self._nr_until = time.monotonic() + self._nr_busy_s
+                    self._values[name] = new
+                    raise CameraOperationFailed("Unspecified error")
             else:
                 n = self._next_name()
                 mov = b"\x00\x00\x00\x14ftypqt  fake movie"
@@ -713,6 +751,9 @@ class FakeCamera:
     def _check_space(self) -> None:
         with self._flock:
             full = self._faults.card_full
+            card = self._faults.card
+        if card != "rw" and str(self._values["capturetarget"]) != "Internal RAM":
+            raise CameraOperationFailed("capture: Unspecified error")
         if full or self._free_kb() <= 0:
             raise StorageFull("Card full")
 
@@ -818,6 +859,10 @@ class FakeCamera:
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
         self._enter("wait_for_event")
+        if self._nr_held and time.monotonic() >= self._nr_until:
+            with self._cond:
+                self._events.extend(self._nr_held)
+            self._nr_held = []
         late, self._late = self._late, []
         for folder, nm, f in late:
             self._add_file(nm, f, folder)
@@ -900,6 +945,10 @@ class FakeCamera:
         files = [f for fs in self._files.values() for f in fs.values()]
         avg_kb = max(1, (sum(len(f.data) for f in files) // max(1, len(files))) // 1024)
         free = self._free_kb()
+        with self._flock:
+            card = self._faults.card
+        if card == "none":
+            return []
         return [
             StorageInfo(
                 label="Memory card",
@@ -907,6 +956,6 @@ class FakeCamera:
                 capacity_kb=self._capacity_kb,
                 free_kb=free,
                 free_images=free // avg_kb,
-                access="rw",
+                access=card,
             )  # fmt: skip
         ]

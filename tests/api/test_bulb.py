@@ -374,7 +374,7 @@ async def test_routes_do_not_clash_with_capture(app: FastAPI) -> None:
     assert paths["/api/v1/capture/bracket"]["post"]["operationId"] == "start_bracket_capture"
 
 
-async def test_bulb_warning_uses_the_settable_exposure_program(
+async def test_bulb_settable_mode_leaves_no_stale_warning(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     import dataclasses
@@ -389,5 +389,70 @@ async def test_bulb_warning_uses_the_settable_exposure_program(
     fake_camera._values["expprogram"] = "A"
     r = await connected_client.post(B, json={"seconds": 2})
     j = await wait_job(connected_client, r.json()["id"])
-    (w,) = j["result"]["warnings"]
-    assert "not M" in w and "expprogram" in w and "cannot be set" not in w
+    assert j["status"] == "completed", j
+    assert j["result"]["warnings"] == []  # settable mode: the job handles it, no stale warning
+
+
+async def _nr_run(
+    app: FastAPI, c: httpx.AsyncClient, cam: FakeCamera, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    monkeypatch.setattr(bulb_mod, "NR_POLL_S", 0.05)
+    install(app)
+    cam._values["longexpnr"] = "On"
+    job = (await c.post(B, json={"seconds": 2})).json()
+    return await wait_job(c, job["id"])
+
+
+async def test_noise_reduction_close_waits_for_dark_frame(
+    app: FastAPI,
+    connected_client: httpx.AsyncClient,
+    fake_camera: FakeCamera,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_camera._nr_busy_s = 0.3
+    j = await _nr_run(app, connected_client, fake_camera, monkeypatch)
+    assert j["status"] == "completed", j
+    assert len(card_files(fake_camera)) == 1
+    assert len(list(app.state.storage.root().glob("*.JPG"))) == 1
+    assert app.state.camera_service.state == CameraState.IDLE
+    assert fake_camera._values["shutterspeed"] == "1/250"
+
+
+async def test_noise_reduction_short_busy_window(
+    app: FastAPI,
+    connected_client: httpx.AsyncClient,
+    fake_camera: FakeCamera,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_camera._nr_busy_s = 0.01
+    install(app)
+    fake_camera._values["longexpnr"] = "On"
+    job = (await connected_client.post(B, json={"seconds": 2})).json()
+    j = await wait_job(connected_client, job["id"])
+    assert j["status"] == "completed", j
+
+
+async def test_noise_reduction_that_never_ends_reports_shutter_open(
+    app: FastAPI,
+    connected_client: httpx.AsyncClient,
+    fake_camera: FakeCamera,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bulb_mod, "NR_MARGIN_S", -1.5)
+    fake_camera._nr_busy_s = 3600.0
+    j = await _nr_run(app, connected_client, fake_camera, monkeypatch)
+    assert j["status"] == "failed" and j["error_code"] == "BULB_SHUTTER_OPEN", j
+
+
+async def test_error_state_always_starts_recovery(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    cam = app.state.camera_service
+    cam._stuck_grace_s = 0.05  # noqa: SLF001
+    await cam.transition(CameraState.BULB)
+    await cam.transition(CameraState.ERROR)
+    for _ in range(200):
+        if cam.state == CameraState.IDLE:
+            break
+        await asyncio.sleep(0.05)
+    assert cam.state == CameraState.IDLE
