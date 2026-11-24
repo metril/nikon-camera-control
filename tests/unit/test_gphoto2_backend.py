@@ -558,3 +558,13 @@ def test_failed_preview_clears_flag_so_next_frame_re_enables() -> None:
     with pytest.raises(CameraBusy):
         b.capture_preview()
     assert not b._viewfinder_on
+
+
+def test_port_of_uses_get_path() -> None:
+    from backend.camera.gphoto2_backend import _port_of
+
+    class Info:
+        def get_path(self) -> str:
+            return "usb:001,007"
+
+    assert _port_of(Info()) == (1, 7)

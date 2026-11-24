@@ -717,3 +717,91 @@ async def test_capture_invalidates_preview_state_regression(env: Env) -> None:
     await svc.transition(S.LIVEVIEW)
     await svc.capture(timeout=0.02)
     assert env.backend.invalidations == 1 and svc.state == S.LIVEVIEW
+
+
+async def test_connect_fails_and_abandons_worker_when_exposure_read_hangs(env: Env) -> None:
+    svc = await env.make(connect=False)
+    real = env.backend.get_config
+
+    def get_config(name: str) -> ConfigWidget:
+        if name in ("expprogram", "autoexposuremode"):
+            return real("hang")
+        return real(name)
+
+    env.backend.get_config = get_config  # type: ignore[method-assign]
+    svc._read_exposure_timeout_s = 0.05  # noqa: SLF001
+    with pytest.raises(CameraTimeout):
+        await svc.connect()
+    assert svc.state == S.DISCONNECTED
+    env.backend.release.set()
+    env.backend.get_config = real  # type: ignore[method-assign]
+    assert (await svc.connect()).state == S.IDLE
+
+
+async def test_cancelled_connect_during_exposure_read_returns_to_disconnected(env: Env) -> None:
+    svc = await env.make(connect=False)
+    real = env.backend.get_config
+
+    def get_config(name: str) -> ConfigWidget:
+        if name in ("expprogram", "autoexposuremode"):
+            return real("hang")
+        return real(name)
+
+    env.backend.get_config = get_config  # type: ignore[method-assign]
+    task = asyncio.create_task(svc.connect())
+    await wait_until(env.backend.entered.is_set)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert svc.state == S.DISCONNECTED
+    env.backend.release.set()
+
+
+async def test_bulb_precheck_uses_fresh_cache_and_reads_when_stale(env: Env) -> None:
+    svc = await env.make()
+    env.backend.values["shutterspeed"] = "1/250"
+    await svc.get_setting("shutterspeed")
+    before = env.backend.get_calls
+    await svc.capture()
+    assert env.backend.get_calls == before  # cached non-bulb: no extra read
+    svc.invalidate_settings()
+    await svc.capture()
+    assert env.backend.get_calls == before + 1
+    env.backend.values["shutterspeed"] = "Bulb"
+    svc.invalidate_settings()
+    with pytest.raises(InvalidState):
+        await svc.capture()
+
+
+async def test_bulb_precheck_timeout_propagates(env: Env) -> None:
+    svc = await env.make()
+    real = env.backend.get_config
+
+    def get_config(name: str) -> ConfigWidget:
+        return real("hang") if name == "shutterspeed" else real(name)
+
+    env.backend.get_config = get_config  # type: ignore[method-assign]
+    svc._refuse_bulb_timeout_s = 0.05  # noqa: SLF001
+    with pytest.raises(CameraTimeout):
+        await svc.capture()
+    env.backend.release.set()
+
+
+def test_dedupe_reads_sizes_only_for_cross_root_pairs() -> None:
+    from backend.core.camera_service import dedupe_slot_copies
+
+    sized: list[str] = []
+
+    class B:
+        def file_info(self, folder: str, name: str) -> Any:
+            sized.append(f"{folder}/{name}")
+            return type("I", (), {"size": 10})()
+
+    files = [
+        CameraFilePath("/store_00010001/DCIM/100", "A.NEF"),
+        CameraFilePath("/store_00020001/DCIM/100", "A.NEF"),
+        CameraFilePath("/store_00010001/DCIM/100", "B.NEF"),
+    ]
+    kept = dedupe_slot_copies(cast(CameraBackend, B()), files)
+    assert kept == [files[0], files[2]]
+    assert sorted(sized) == sorted(f"{f.folder}/{f.name}" for f in files[:2])

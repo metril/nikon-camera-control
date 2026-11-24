@@ -230,6 +230,14 @@ def coerce_config_value(w: ConfigWidget, value: object) -> str | int | float:
 # ------------------------------------------------------------------------- backend
 
 
+def _port_of(info: Any) -> tuple[int, int] | None:
+    """(bus, device) from a GPPortInfo: python-gphoto2 exposes ``get_path()``; older shims a
+    ``path`` attribute."""
+    getter = getattr(info, "get_path", None)
+    path = getter() if callable(getter) else info.path
+    return parse_usb_port(str(path))
+
+
 class Gphoto2Backend:
     """CameraBackend over python-gphoto2."""
 
@@ -274,7 +282,7 @@ class Gphoto2Backend:
             raise err from e
         self._camera, self._ctx, self._model = camera, ctx, str(model)
         try:
-            Gphoto2Backend._last_port = parse_usb_port(str(camera.get_port_info().path))
+            Gphoto2Backend._last_port = _port_of(camera.get_port_info())
         except Exception as e:  # noqa: BLE001 - only used to narrow a best-effort reset
             log.debug("port_info_unavailable", error=str(e))
         self._viewfinder_on = False

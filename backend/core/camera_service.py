@@ -418,6 +418,12 @@ def dedupe_slot_copies(b: CameraBackend, files: list[CameraFilePath]) -> list[Ca
         return f"{m.group(1)}{m.group(3) or ''}" if m else name
 
     sizes: dict[CameraFilePath, int | None] = {}
+    by_pair: dict[tuple[str, str], set[str]] = {}
+    for f in files:
+        slot = _slot_key(f)
+        if slot is not None:
+            by_pair.setdefault((slot[1], slot[2]), set()).add(slot[0])
+    multi = {k for k, roots in by_pair.items() if len(roots) > 1}
 
     def size(f: CameraFilePath) -> int | None:
         if f not in sizes:
@@ -438,7 +444,7 @@ def dedupe_slot_copies(b: CameraBackend, files: list[CameraFilePath]) -> list[Ca
         if sz is not None and (key_name.lower(), sz) in seen:
             continue
         slot = _slot_key(f)
-        if slot is not None:
+        if slot is not None and (slot[1], slot[2]) in multi:
             root, rel, lname = slot
             fsz = size(f)
             if fsz is not None:
@@ -493,6 +499,8 @@ class CameraService:
         self._settings_tree: list[ConfigWidget] | None = None
         self._settings_map: dict[str, ConfigWidget] = {}
         self._cache_epoch = 0
+        self._read_exposure_timeout_s = 5.0
+        self._refuse_bulb_timeout_s = 10.0
         self._close_wait_s = 2.0
         self._quiet_override = event_quiet_window_s
         self._stuck_grace_s = stuck_grace_s
@@ -768,8 +776,15 @@ class CameraService:
         self._battery = None
         self._name_cache = {}
         self._invalidate_cache()
-        exposure = await self._read_exposure(worker)  # before IDLE: nothing races the settle
-        self._set_state(_S.IDLE)
+        try:
+            exposure = await self._read_exposure(worker)  # before IDLE: nothing races the settle
+            self._set_state(_S.IDLE)
+        except BaseException as e:
+            self._last_error = str(e) or type(e).__name__
+            self._try_state(_S.DISCONNECTED)
+            if not isinstance(e, CameraTimeout):  # a hung read already abandoned the worker
+                worker.submit(self._close_job, Priority.CONTROL, escalate=False)
+            raise
         self._bus.publish(EventType.CAMERA_CONNECTED, {"model": model, "serial": serial})
         if exposure:
             log.info("camera connected with exposure settings %s", exposure)
@@ -793,10 +808,13 @@ class CameraService:
                         continue
             return out
 
+        item = worker.submit(_read, Priority.CONTROL, escalate=False)
         try:
-            item = worker.submit(_read, Priority.CONTROL, escalate=False)
-            values = await self._await_item(worker, item, 5.0)
+            values = await self._await_item(worker, item, self._read_exposure_timeout_s)
         except Exception as e:  # noqa: BLE001 - informational only, never fails a connect
+            if item.started and not item.finished:
+                self._abandon_stuck(worker)  # get_config is hung: never queue behind it again
+                raise CameraTimeout() from e
             log.debug("could not read exposure settings after connect: %s", e)
             return {}
         return values
@@ -1180,12 +1198,22 @@ class CameraService:
         shutter speed does not block the shot."""
         if self._state not in _LIVE_STATES:
             return  # the transition below reports the invalid state
-        try:
-            value = await self._run(
-                lambda b: b.get_config("shutterspeed").value, Priority.CAPTURE, 10.0
-            )
-        except AppError:
-            return
+        cached = self._settings_map.get("shutterspeed")  # invalidated on every change
+        if cached is not None:
+            value = cached.value
+            if str(value).strip().lower() not in ("bulb", "time"):
+                return
+        else:
+            try:
+                value = await self._run(
+                    lambda b: b.get_config("shutterspeed").value,
+                    Priority.CAPTURE,
+                    self._refuse_bulb_timeout_s,
+                )
+            except CameraTimeout:
+                raise
+            except AppError:
+                return
         if str(value).strip().lower() in ("bulb", "time"):
             raise InvalidState(
                 f"The shutter speed is set to {value}. Choose a shutter speed, "
