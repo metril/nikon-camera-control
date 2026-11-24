@@ -121,11 +121,7 @@ def create_app(
             factory,
             store,
             bus,
-            event_quiet_window_s=(
-                event_quiet_window_s
-                if event_quiet_window_s is not None
-                else store.config.camera.event_quiet_window_s
-            ),
+            event_quiet_window_s=event_quiet_window_s,  # None: read live from the config
             **({"disconnect_wait_s": disconnect_wait_s} if disconnect_wait_s is not None else {}),
         )
         app.state.event_bus = bus

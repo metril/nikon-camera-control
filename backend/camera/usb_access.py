@@ -62,3 +62,40 @@ def find_unopenable_nikon(
         if not os.access(node, os.R_OK | os.W_OK):
             return UsbAccessProblem(bus, dev, str(node), _read(entry / "product"))
     return None
+
+
+USBDEVFS_RESET = 0x5514  # _IO('U', 20)
+
+
+def reset_nikon_usb(
+    sysfs_root: Path = DEFAULT_SYSFS_ROOT, dev_root: Path = DEFAULT_DEV_ROOT
+) -> bool:
+    """Best-effort libusb-style port reset (USBDEVFS_RESET) of every Nikon device node we can
+    open. Returns True if at least one reset was issued. Never raises."""
+    import fcntl
+
+    done = False
+    try:
+        entries = sorted(Path(sysfs_root).iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if _read(entry / "idVendor").lower() != NIKON_VENDOR_ID:
+            continue
+        try:
+            node = (
+                Path(dev_root)
+                / f"{int(_read(entry / 'busnum')):03d}"
+                / (f"{int(_read(entry / 'devnum')):03d}")
+            )
+            fd = os.open(node, os.O_WRONLY)
+        except (ValueError, OSError):
+            continue
+        try:
+            fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+            done = True
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
+    return done

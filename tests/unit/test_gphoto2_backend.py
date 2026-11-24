@@ -506,3 +506,55 @@ def test_fallback_failure_reports_both_causes(tmp_path: Path) -> None:
     with pytest.raises(CameraOperationFailed) as ei:
         _backend(Cam()).read_file("/", "a.jpg", FileKind.NORMAL, tmp_path / "x")
     assert {"partial_read_cause", "whole_file_cause"} <= set(ei.value.details)
+
+
+def _vf_cam(busy_times: int, preview_ok: bool = True) -> Any:
+    vf = StubWidget("viewfinder", gp.GP_WIDGET_TOGGLE, 0)
+    root = StubWidget(
+        "main",
+        gp.GP_WIDGET_WINDOW,
+        children=(StubWidget("actions", gp.GP_WIDGET_SECTION, children=(vf,)),),
+    )
+
+    class Cam(FakeCamera):
+        busy = busy_times
+
+        def set_single_config(self, name: str, w: StubWidget, ctx: Any) -> None:
+            if self.busy > 0:
+                self.busy -= 1
+                raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_BUSY)
+            super().set_single_config(name, w, ctx)
+
+        def capture_preview(self) -> Any:
+            if not preview_ok:
+                raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_BUSY)
+
+            class F:
+                def get_data_and_size(self) -> bytes:
+                    return b"j"
+
+            return F()
+
+    return Cam(root)
+
+
+def test_viewfinder_busy_is_retried_with_backoff() -> None:
+    cam = _vf_cam(busy_times=2)
+    b = _backend(cam)
+    sleeps: list[float] = []
+    b._sleep = sleeps.append  # type: ignore[method-assign]
+    assert b.capture_preview() == b"j"
+    assert cam.set_calls == [("viewfinder", 1)] and len(sleeps) == 2
+
+
+def test_viewfinder_stays_busy_assumes_live_view_is_on() -> None:
+    b = _backend(_vf_cam(busy_times=99))
+    b._sleep = lambda s: None  # type: ignore[method-assign]
+    assert b.capture_preview() == b"j"  # already in live view: the preview call itself works
+
+
+def test_failed_preview_clears_flag_so_next_frame_re_enables() -> None:
+    b = _backend(_vf_cam(busy_times=0, preview_ok=False))
+    with pytest.raises(CameraBusy):
+        b.capture_preview()
+    assert not b._viewfinder_on

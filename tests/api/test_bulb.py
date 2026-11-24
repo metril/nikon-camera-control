@@ -372,3 +372,22 @@ async def test_routes_do_not_clash_with_capture(app: FastAPI) -> None:
     assert paths["/api/v1/capture/bulb"]["post"]["operationId"] == "start_bulb_capture"
     assert paths["/api/v1/capture/bulb"]["get"]["operationId"] == "get_bulb_status"
     assert paths["/api/v1/capture/bracket"]["post"]["operationId"] == "start_bracket_capture"
+
+
+async def test_bulb_warning_uses_the_settable_exposure_program(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    import dataclasses
+
+    from backend.camera.backend import ConfigType
+
+    install(app)
+    spec = fake_camera._specs["expprogram"]
+    fake_camera._specs["expprogram"] = dataclasses.replace(
+        spec, type=ConfigType.RADIO, readonly=False, choices=("M", "A", "S", "P")
+    )
+    fake_camera._values["expprogram"] = "A"
+    r = await connected_client.post(B, json={"seconds": 2})
+    j = await wait_job(connected_client, r.json()["id"])
+    (w,) = j["result"]["warnings"]
+    assert "not M" in w and "expprogram" in w and "cannot be set" not in w

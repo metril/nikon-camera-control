@@ -179,6 +179,19 @@ class CameraBackend(Protocol):
         """Files directly in ``folder`` with info (size, mtime, mime)."""
         ...
 
+    def list_file_names(self, folder: str) -> list[str]:
+        """Names of the files directly in ``folder`` (cheap: no per-file info)."""
+        ...
+
+    def file_info(self, folder: str, name: str) -> CameraFileInfo:
+        """Info for one file. Raises FileNotFoundError_."""
+        ...
+
+    def reset_device(self) -> None:
+        """Best-effort USB-level reset of the camera device (may be called while closed).
+        Never raises; used to un-wedge a body after a hung or failed call."""
+        ...
+
     def read_file(self, folder: str, name: str, kind: FileKind, dest: Path) -> None:
         """Stream a camera file to ``dest`` (written to disk, never fully in memory).
 
