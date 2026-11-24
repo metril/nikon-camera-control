@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
 .grab {
   display: none;
 }
-:global(html[data-layout='touch']) .picker.sheet {
+html[data-layout='touch'] .picker.sheet {
   left: 0 !important;
   right: 0;
   bottom: 0;
@@ -239,7 +239,7 @@ onBeforeUnmount(() => {
   border-radius: 16px 16px 0 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-:global(html[data-layout='touch']) .picker.sheet .grab {
+html[data-layout='touch'] .picker.sheet .grab {
   display: block;
   width: 40px;
   height: 4px;
@@ -247,19 +247,19 @@ onBeforeUnmount(() => {
   background: theme('colors.camera.border');
   margin: 8px auto 0;
 }
-:global(html[data-layout='touch']) .picker.sheet header {
+html[data-layout='touch'] .picker.sheet header {
   padding: 16px 20px;
   font-size: 16px;
 }
-:global(html[data-layout='touch']) .picker.sheet .opts {
+html[data-layout='touch'] .picker.sheet .opts {
   padding: 6px 12px 12px;
 }
-:global(html[data-layout='touch']) .picker.sheet .opt {
+html[data-layout='touch'] .picker.sheet .opt {
   height: 56px;
   font-size: 18px;
   padding: 0 14px;
 }
-:global(html[data-layout='touch']) .picker.sheet .opt.two {
+html[data-layout='touch'] .picker.sheet .opt.two {
   min-height: 64px;
   height: auto;
 }

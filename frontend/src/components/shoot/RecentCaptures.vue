@@ -110,12 +110,12 @@ const newest = (i) =>
   outline: 2px solid theme('colors.camera.accent');
   outline-offset: -2px;
 }
-:global(html[data-layout='touch']) .thumb {
+html[data-layout='touch'] .thumb {
   width: 150px;
 }
 /* Desktop, 1200px and wider: a 2-column grid that fills the side column under the shutter. */
 @media (min-width: 1200px) {
-  :global(html[data-layout='desktop']) .filmrow {
+  html[data-layout='desktop'] .filmrow {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     overflow-x: hidden;
@@ -123,7 +123,7 @@ const newest = (i) =>
     max-height: 100%;
     align-content: start;
   }
-  :global(html[data-layout='desktop']) .thumb {
+  html[data-layout='desktop'] .thumb {
     width: auto;
   }
 }

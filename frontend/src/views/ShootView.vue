@@ -96,14 +96,14 @@ onBeforeUnmount(unlisten)
 
 /* Desktop, 1200px and wider: recent captures fill the side column under the shutter */
 @media (min-width: 1200px) {
-  :global(html[data-layout='desktop']) .shoot {
+  html[data-layout='desktop'] .shoot {
     grid-template-areas:
       'strip strip'
       'lv side'
       'lv film';
     grid-template-rows: auto auto minmax(0, 1fr);
   }
-  :global(html[data-layout='desktop']) .film-area {
+  html[data-layout='desktop'] .film-area {
     align-self: stretch;
     align-content: start;
     min-height: 0;
@@ -111,7 +111,7 @@ onBeforeUnmount(unlisten)
 }
 /* Desktop, narrow: one column, the strip wraps to two rows */
 @media (max-width: 860px) {
-  :global(html[data-layout='desktop']) .shoot {
+  html[data-layout='desktop'] .shoot {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'strip'
@@ -119,17 +119,17 @@ onBeforeUnmount(unlisten)
       'side'
       'film';
   }
-  :global(html[data-layout='desktop']) .strip-area {
+  html[data-layout='desktop'] .strip-area {
     flex-wrap: wrap;
   }
-  :global(html[data-layout='desktop']) .strip-area :deep(.cell) {
+  html[data-layout='desktop'] .strip-area :deep(.cell) {
     flex: 1 1 25%;
     border-bottom: 1px solid theme('colors.camera.subtle');
   }
 }
 
 /* Touch, portrait: stacked, exposure values as tiles */
-:global(html[data-layout='touch']) .shoot {
+html[data-layout='touch'] .shoot {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'lv'
@@ -138,7 +138,7 @@ onBeforeUnmount(unlisten)
     'film';
   gap: 12px;
 }
-:global(html[data-layout='touch']) .strip-area {
+html[data-layout='touch'] .strip-area {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
@@ -146,24 +146,24 @@ onBeforeUnmount(unlisten)
   border: 0;
   overflow: visible;
 }
-:global(html[data-layout='touch']) .strip-area :deep(.cell) {
+html[data-layout='touch'] .strip-area :deep(.cell) {
   border: 1px solid theme('colors.camera.subtle');
   border-radius: theme('borderRadius.card');
   background: theme('colors.camera.surface');
   min-height: 76px;
 }
-:global(html[data-layout='touch']) .strip-area :deep(.cell .v) {
+html[data-layout='touch'] .strip-area :deep(.cell .v) {
   font-size: 22px;
 }
 @media (max-width: 560px) {
-  :global(html[data-layout='touch']) .strip-area {
+  html[data-layout='touch'] .strip-area {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 /* Touch, landscape (kiosk screens): live view and controls side by side with no scrolling */
 @media (min-width: 900px) and (orientation: landscape) {
-  :global(html[data-layout='touch']) .shoot {
+  html[data-layout='touch'] .shoot {
     --lvw: min(100%, calc((100dvh - 60px - var(--nav) - 64px - 64px) * 1.5));
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas:
@@ -172,7 +172,7 @@ onBeforeUnmount(unlisten)
       'film film';
     align-items: start;
   }
-  :global(html[data-layout='touch']) .strip-area {
+  html[data-layout='touch'] .strip-area {
     display: flex;
     gap: 0;
     width: var(--lvw);
@@ -181,25 +181,25 @@ onBeforeUnmount(unlisten)
     border-radius: theme('borderRadius.card');
     overflow: hidden;
   }
-  :global(html[data-layout='touch']) .strip-area :deep(.cell) {
+  html[data-layout='touch'] .strip-area :deep(.cell) {
     border: 0;
     border-radius: 0;
     background: none;
     min-height: 64px;
   }
-  :global(html[data-layout='touch']) .strip-area :deep(.cell + .cell) {
+  html[data-layout='touch'] .strip-area :deep(.cell + .cell) {
     border-left: 1px solid theme('colors.camera.subtle');
   }
-  :global(html[data-layout='touch']) .strip-area :deep(.cell .v) {
+  html[data-layout='touch'] .strip-area :deep(.cell .v) {
     font-size: 19px;
   }
-  :global(html[data-layout='touch']) .strip-area :deep(.cell .auto) {
+  html[data-layout='touch'] .strip-area :deep(.cell .auto) {
     display: none;
   }
-  :global(html[data-layout='touch']) .lvwrap {
+  html[data-layout='touch'] .lvwrap {
     width: var(--lvw);
   }
-  :global(html[data-layout='touch']) .side-area {
+  html[data-layout='touch'] .side-area {
     position: sticky;
     top: 76px;
     max-height: calc(100dvh - 60px - var(--nav) - 32px);

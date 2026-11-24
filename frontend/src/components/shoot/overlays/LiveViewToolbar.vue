@@ -87,7 +87,7 @@ button[aria-pressed='true'] {
   background: theme('colors.camera.text');
   color: theme('colors.camera.bg');
 }
-:global(html[data-layout='touch']) button {
+html[data-layout='touch'] button {
   height: 44px;
   padding: 0 14px;
 }

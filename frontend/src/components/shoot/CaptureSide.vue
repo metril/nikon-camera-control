@@ -199,39 +199,39 @@ kbd {
   align-items: center;
   line-height: 1;
 }
-:global(html[data-layout='touch']) .sidecard {
+html[data-layout='touch'] .sidecard {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   column-gap: 24px;
 }
-:global(html[data-layout='touch']) .sidecard .modes {
+html[data-layout='touch'] .sidecard .modes {
   grid-column: 1 / -1;
 }
-:global(html[data-layout='touch']) .sidecard:not(.has) .shutterwrap {
+html[data-layout='touch'] .sidecard:not(.has) .shutterwrap {
   grid-column: 1 / -1;
 }
-:global(html[data-layout='touch']) .msettings {
+html[data-layout='touch'] .msettings {
   border-top: 0;
   padding-top: 0;
 }
 @media (max-width: 560px) {
-  :global(html[data-layout='touch']) .sidecard {
+  html[data-layout='touch'] .sidecard {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (min-width: 900px) and (orientation: landscape) {
-  :global(html[data-layout='touch']) .sidecard {
+  html[data-layout='touch'] .sidecard {
     grid-template-columns: minmax(0, 1fr);
   }
-  :global(html[data-layout='touch']) .msettings {
+  html[data-layout='touch'] .msettings {
     border-top: 1px solid theme('colors.camera.subtle');
     padding-top: 16px;
   }
 }
-:global(html[data-layout='touch']) .kbdonly {
+html[data-layout='touch'] .kbdonly {
   display: none;
 }
-:global(html[data-layout='touch']) .lastinfo {
+html[data-layout='touch'] .lastinfo {
   display: none;
 }
 </style>

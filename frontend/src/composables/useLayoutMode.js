@@ -1,4 +1,4 @@
-import { computed, ref, watchEffect } from 'vue'
+import { computed, effectScope, ref, watchEffect } from 'vue'
 
 const KEY = 'layout'
 const PREFS = ['auto', 'desktop', 'touch']
@@ -45,9 +45,12 @@ function install() {
   } catch {
     /* no media queries: stay on desktop */
   }
-  watchEffect(() => {
-    document.documentElement.dataset.layout = layout.value
-  })
+  // a detached scope: the attribute stays in sync even if the first caller unmounts
+  effectScope(true).run(() =>
+    watchEffect(() => {
+      document.documentElement.dataset.layout = layout.value
+    }),
+  )
 }
 
 function setPref(v) {

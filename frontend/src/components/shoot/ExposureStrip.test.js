@@ -41,7 +41,13 @@ function setup({ mode = 'A', ...opts } = {}) {
       st.set = vi.fn().mockResolvedValue({})
       const p = usePresetsStore()
       p.items = [
-        { id: 'studio', kind: 'settings', name: 'Studio', description: 'M · 1/125', values: { iso: 100 } },
+        {
+          id: 'studio',
+          kind: 'settings',
+          name: 'Studio',
+          description: 'M · 1/125',
+          values: { iso: 100 },
+        },
         { id: 'br', kind: 'bracket', name: '3 shots' },
       ]
       p.fetch = vi.fn().mockResolvedValue()
@@ -63,7 +69,16 @@ describe('ExposureStrip', () => {
   it('shows mode, shutter, aperture, ISO, EV, WB, shots left and preset with short labels', () => {
     setup()
     const labels = wrapper.findAll('.cell .k').map((n) => n.text())
-    expect(labels).toEqual(['Mode', 'Shutter', 'Aperture', 'ISO', 'EV', 'WB', 'Shots left', 'Preset'])
+    expect(labels).toEqual([
+      'Mode',
+      'Shutter',
+      'Aperture',
+      'ISO',
+      'EV',
+      'WB',
+      'Shots left',
+      'Preset',
+    ])
     expect(cell('aperture').text()).toContain('f/5.6')
     expect(cell('iso').text()).toContain('400')
     expect(cell('comp').text()).toContain('+0.3')
@@ -135,9 +150,10 @@ describe('ExposureStrip', () => {
     presets.apply = vi.fn().mockResolvedValue({ applied: [] })
     await cell('preset').trigger('click')
     expect(picker().classList.contains('wide')).toBe(true)
-    expect(options().map((o) => o.textContent.replace(/\s+/g, ' ').trim())).toEqual([
-      'None Keep the current settings',
-      'Studio M · 1/125',
+    expect(options().map((o) => o.querySelector('.lbl').textContent)).toEqual(['None', 'Studio'])
+    expect(options().map((o) => o.querySelector('.sub').textContent)).toEqual([
+      'Keep the current settings',
+      'M · 1/125',
     ])
     expect(picker().textContent).toContain('Save current settings as preset')
     expect(picker().textContent).toContain('Manage presets')

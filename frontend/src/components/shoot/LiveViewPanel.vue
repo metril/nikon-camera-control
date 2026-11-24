@@ -738,7 +738,7 @@ onUnmounted(() => {
 .lv-pill .stop {
   color: theme('colors.camera.danger');
 }
-:global(html[data-layout='touch']) .lv-pill button {
+html[data-layout='touch'] .lv-pill button {
   width: 44px;
   height: 44px;
 }

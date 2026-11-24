@@ -218,7 +218,7 @@ watch(
   text-align: right;
   min-width: 0;
 }
-:global(html[data-layout='touch']) .shortcuts {
+html[data-layout='touch'] .shortcuts {
   display: none;
 }
 @media (max-width: 560px) {

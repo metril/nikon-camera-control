@@ -111,7 +111,7 @@ button:disabled {
   margin: 0 4px;
   padding: 0 12px;
 }
-:global(html[data-layout='touch']) button {
+html[data-layout='touch'] button {
   height: 44px;
   min-width: 44px;
 }

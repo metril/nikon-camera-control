@@ -98,7 +98,7 @@ const detail = (t) =>
     opacity: 0;
   }
 }
-:global(html[data-layout='touch']) .toasts {
+html[data-layout='touch'] .toasts {
   left: 50%;
   right: auto;
   transform: translateX(-50%);

@@ -285,19 +285,19 @@ const LAYOUTS = [
   }
 }
 /* Touch: the tabs move to the bottom bar */
-:global(html[data-layout='touch']) .top {
+html[data-layout='touch'] .top {
   height: 60px;
 }
-:global(html[data-layout='touch']) .tabs,
-:global(html[data-layout='touch']) .shots,
-:global(html[data-layout='touch']) .lbl {
+html[data-layout='touch'] .tabs,
+html[data-layout='touch'] .shots,
+html[data-layout='touch'] .lbl {
   display: none;
 }
-:global(html[data-layout='touch']) .name {
+html[data-layout='touch'] .name {
   display: inline;
 }
 @media (max-width: 560px) {
-  :global(html[data-layout='touch']) .name {
+  html[data-layout='touch'] .name {
     display: none;
   }
 }

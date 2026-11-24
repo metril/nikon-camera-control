@@ -67,7 +67,7 @@ const cls = computed(() => [
   padding: 5px;
   cursor: pointer;
 }
-:global(html[data-layout='touch']) .shutter {
+html[data-layout='touch'] .shutter {
   width: 72px;
   height: 72px;
 }

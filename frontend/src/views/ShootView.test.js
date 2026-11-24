@@ -9,7 +9,10 @@ import { mountCard } from '@/components/shoot/testing'
 
 vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {}, downloadBlob: vi.fn() }))
 vi.mock('@/components/shoot/LiveViewPanel.vue', () => ({
-  default: defineComponent({ name: 'LiveViewPanel', render: () => h('div', { 'data-test': 'lv' }) }),
+  default: defineComponent({
+    name: 'LiveViewPanel',
+    render: () => h('div', { 'data-test': 'lv' }),
+  }),
 }))
 import ShootView from './ShootView.vue'
 
@@ -21,7 +24,13 @@ function setup(opts = {}) {
     setup: () => {
       const st = useSettingsStore()
       st.common = [
-        { name: 'f-number', label: 'Aperture', value: '5.6', choices: ['4', '5.6'], writable: true },
+        {
+          name: 'f-number',
+          label: 'Aperture',
+          value: '5.6',
+          choices: ['4', '5.6'],
+          writable: true,
+        },
       ]
       st.fetchCommon = vi.fn().mockResolvedValue()
       useCaptureStore().loadRecent = vi.fn().mockResolvedValue([])
@@ -36,7 +45,9 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 const press = (key, target = document.body, init = {}) =>
-  target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }))
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }),
+  )
 
 describe('ShootView', () => {
   it('Space presses the shutter, but not from a focused button, input or open dialog', async () => {
