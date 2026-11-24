@@ -811,3 +811,43 @@ def test_dedupe_reads_sizes_only_for_cross_root_pairs() -> None:
     kept = dedupe_slot_copies(cast(CameraBackend, B()), files)
     assert kept == [files[0], files[2]]
     assert sorted(sized) == sorted(f"{f.folder}/{f.name}" for f in files[:2])
+
+
+async def test_capture_io_error_after_shutter_is_not_retried(env: Env) -> None:
+    svc = await env.make(connect_retries=5, reconnect_interval_s=0.01)
+    shots = 0
+
+    def boom() -> CameraFilePath:
+        nonlocal shots
+        shots += 1
+        raise CameraIOError()
+
+    env.backend.capture = boom  # type: ignore[method-assign]
+    with pytest.raises(CameraIOError):
+        await svc.capture(timeout=1)
+    await asyncio.sleep(0.2)
+    assert shots == 1
+
+
+async def test_error_under_lease_postpones_recovery_until_release(env: Env) -> None:
+    svc = await env.make(connect_retries=5, reconnect_interval_s=0.01)
+    svc._stuck_grace_s = 0.05  # noqa: SLF001
+    async with svc.lease("bulb"):
+        await svc.transition(S.ERROR)
+        await asyncio.sleep(0.3)  # several grace periods: no watchdog may fire
+        assert svc.state == S.ERROR
+        assert svc.status().leased_by == "bulb"
+        assert env.bus.of(EventType.CAMERA_DISCONNECTED) == []
+    await wait_until(lambda: svc.state == S.IDLE)
+    assert env.bus.of(EventType.CAMERA_DISCONNECTED)  # recovery reconnected after release
+
+
+async def test_card_check_caches_only_ok_storage(env: Env) -> None:
+    svc = await env.make()
+    await svc.set_setting("capturetarget", "Memory card")
+    env.backend.storage = []
+    assert type(await svc.card_problem()).__name__ == "NoCard"
+    env.backend.storage = [StorageInfo("SD", "/store", 100, 50, 10, "rw")]
+    assert await svc.card_problem() is None  # just-inserted card works at once
+    env.backend.storage = []
+    assert await svc.card_problem() is None  # OK result stays cached

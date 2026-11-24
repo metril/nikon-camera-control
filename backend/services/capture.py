@@ -238,15 +238,14 @@ class CaptureService:
         fired = [False]
 
         def _fire(b: CameraBackend) -> list[CameraFilePath]:
-            fired[0] = False
             # Events already pending (a late NEF, a body-shutter shot) are not this shot's.
             late: list[CameraFilePath] = []
             drain_pending_events(b, keep=late)
             if late:
                 with contextlib.suppress(RuntimeError):
                     loop.call_soon_threadsafe(self._on_strays, late)
+            fired[0] = True  # from here on a link loss must not repeat the shot
             b.trigger()
-            fired[0] = True  # a later link loss must not repeat the shot
             seen: list[CameraFilePath] = []
             # The shot's own file events are never ours: wait for the first (exposure + write),
             # then until a quiet window passes with no further file. Chatter neither ends nor

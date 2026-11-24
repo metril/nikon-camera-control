@@ -227,7 +227,7 @@ async def test_capture_retried_when_failure_precedes_the_shutter(
     svc: CameraService, fake_camera: FakeCamera
 ) -> None:
     await svc.connect()
-    fake_camera.fail_next("capture", exc=CameraIOError("gone"))
+    fake_camera.fail_next("wait_for_event", exc=CameraIOError("gone"))
     files = await svc.capture()
     assert files and svc.state == CameraState.IDLE
 

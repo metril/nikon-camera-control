@@ -672,7 +672,7 @@ class CameraService:
             )
         self._state = to
         self._bus.publish(EventType.CAMERA_STATE, {"state": to.value, "previous": prev.value})
-        if to == _S.ERROR:
+        if to == _S.ERROR and self._lease_owner is None:  # a lease holder is still cleaning up
             with contextlib.suppress(RuntimeError):  # no running loop (sync callers)
                 self._ensure_recovery()  # any path into ERROR must resolve without user action
         return prev
@@ -1242,9 +1242,8 @@ class CameraService:
             # Events left by trigger-only shots or the body's own shutter are not ours.
             late: list[CameraFilePath] = []
             drain_pending_events(b, keep=late)  # unattributed files are recorded, not lost
-            fired[0] = False
+            fired[0] = True  # from here on a link loss must not repeat the shot
             files = [b.capture()]
-            fired[0] = True  # the shutter fired: a later link loss must not repeat the shot
             if late and self._loop is not None:
                 with contextlib.suppress(RuntimeError):
                     self._loop.call_soon_threadsafe(self._on_strays, late)
@@ -1303,7 +1302,8 @@ class CameraService:
                 cards = self._storage_cache[1]
             else:
                 cards = await self._run(lambda b: b.storage_info(), Priority.CONTROL, 10.0)
-                self._storage_cache = (time.monotonic(), cards)
+                ok = any(c.access != "ro" and c.free_images > 0 for c in cards)
+                self._storage_cache = (time.monotonic(), cards) if ok else None  # only "card OK"
         except AppError:
             return None
         if not cards:
@@ -1408,6 +1408,8 @@ class CameraService:
             if self._lease_token is token:
                 self._lease_owner = None
                 self._lease_token = None
+                with contextlib.suppress(RuntimeError):
+                    self._ensure_recovery()  # ERROR set under the lease was postponed to here
 
     # keepalive ---------------------------------------------------------------------
     async def _keepalive_loop(self) -> None:
