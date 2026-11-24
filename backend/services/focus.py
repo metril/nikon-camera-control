@@ -86,6 +86,11 @@ class FocusService:
         self._lva_watch: asyncio.Task[None] | None = None
         self._lva_written: ConfigWidget | None = None  # set by the camera thread, flushed after
         self._lva_expect: Any = None  # value of our own last write (its SETTING_CHANGED)
+        self._unlisten = camera.on_setting_write(self._on_user_setting)
+
+    def _on_user_setting(self, name: str) -> None:
+        if name == _LVAF:
+            self._lva_orig = None  # an explicit user write (even of the same value) wins
 
     @property
     def relative_position(self) -> int:
@@ -238,6 +243,7 @@ class FocusService:
         self._lva_watch.add_done_callback(done)
 
     async def aclose(self) -> None:
+        self._unlisten()
         w, self._lva_watch = self._lva_watch, None
         self._lva_orig = None
         if w is not None and not w.done():

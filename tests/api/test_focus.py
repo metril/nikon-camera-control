@@ -505,6 +505,18 @@ async def test_user_change_of_mode_is_not_overwritten(
     assert fake_camera._values["liveviewaffocus"] == "Manual Focus (fixed)"
 
 
+async def test_user_write_of_same_value_forgets_original(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    svc = await _mf_in_user_liveview(app, connected_client, fake_camera)
+    r = await connected_client.put("/api/v1/settings/liveviewaffocus", json={"value": SINGLE})
+    assert r.status_code == 200
+    assert svc._lva_orig is None
+    await app.state.camera_service.transition(CameraState.IDLE)
+    await asyncio.sleep(0.2)
+    assert fake_camera._values["liveviewaffocus"] == SINGLE
+
+
 async def test_app_writes_publish_setting_changed(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
