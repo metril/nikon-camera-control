@@ -685,3 +685,20 @@ def test_movie_selector_reason_cites_manual() -> None:
         "The camera refused live view. Camera reports: Set live view selector is enabled"
     )
     assert "p.58" in ei.value.details["nikon_manual"]
+
+
+def test_context_text_bytes_decoded() -> None:
+    from backend.camera.camera_text import camera_details
+
+    b = Gphoto2Backend()
+    b._on_context_text(
+        None, b"Movie recording cannot start: Set liveview selector is enabled.\n", None
+    )
+    b._on_context_text(None, "b'Other thing.'", None)
+    raw = b._take_msgs()
+    assert raw == [
+        "Movie recording cannot start: Set liveview selector is enabled.",
+        "Other thing.",
+    ]
+    d = camera_details([b"Foo bar.", "b'Foo bar.'"])
+    assert d["camera_message_raw"] == "Foo bar.; Foo bar."

@@ -120,8 +120,21 @@ def manual_note(texts: list[str]) -> str | None:
     return None
 
 
+_BYTES_REPR = re.compile(r"""^[bB]'(.*)'$|^[bB]"(.*)"$""", re.S)
+
+
+def decode_text(value: object) -> str:
+    """Camera text as a clean str: decode bytes, unwrap a "b'...'" repr, strip whitespace."""
+    if isinstance(value, bytes | bytearray):
+        return bytes(value).decode("utf-8", errors="replace").strip()
+    t = str(value).strip()
+    m = _BYTES_REPR.match(t)
+    return (m.group(1) if m.group(1) is not None else m.group(2)).strip() if m else t
+
+
 def camera_details(raw_messages: list[str]) -> dict[str, Any]:
     """Error-details entries for messages libgphoto2 reported through the context."""
+    raw_messages = [t for m in raw_messages if (t := decode_text(m))]
     if not raw_messages:
         return {}
     d: dict[str, Any] = {

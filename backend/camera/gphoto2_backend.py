@@ -32,6 +32,7 @@ from backend.camera.backend import (
 from backend.camera.camera_text import (
     apply_prohibit,
     camera_details,
+    decode_text,
     prohibit_reasons,
 )
 from backend.camera.usb_access import (
@@ -290,7 +291,7 @@ class Gphoto2Backend:
 
     def _on_context_text(self, _ctx: Any, text: Any, _data: Any = None) -> None:
         """libgphoto2 context error/message callback: keep the camera-reported reason."""
-        t = str(text).strip()
+        t = decode_text(text)
         if t:
             with self._msg_lock:
                 self._msgs.append(t)
