@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from backend.api.schemas.common import EventType
 from backend.camera.backend import CameraFilePath
-from backend.core.camera_service import CameraService, Priority
+from backend.core.camera_service import CameraService, Priority, dedupe_slot_copies
 from backend.core.errors import AppError, CameraNotConnected, DownloadFailed, NoTargetError
 from backend.core.storage_root import StorageRoot, as_root
 from backend.services.files import FileIndex
 from backend.services.storage import download_files
+
+log = logging.getLogger(__name__)
 
 _PREFIX_BAD = re.compile(r"[^A-Za-z0-9_-]+")
 
@@ -46,6 +52,8 @@ class CaptureService:
         self._camera = camera
         self._store = as_root(store)
         self._index = index
+        self._bg: set[asyncio.Task[None]] = set()
+        camera.stray_handler = self._on_strays
 
     @property
     def output_dir(self) -> Path:
@@ -141,6 +149,42 @@ class CaptureService:
             delete_from_camera=card is True and (delete_from_camera or not self._keep_card_copy()),
         )
         return files, local
+
+    def _on_strays(self, files: list[CameraFilePath]) -> None:
+        """Files the camera announced outside a capture (a late NEF): fetch them in the
+        background. With no storage location they stay on the card (and in ``stray_files``)."""
+        task = asyncio.get_running_loop().create_task(self._download_strays(files))
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+
+    async def _download_strays(self, files: list[CameraFilePath]) -> None:
+        try:
+            root = self._store.root()
+        except NoTargetError:
+            log.warning("late camera files left on the card: no storage location")
+            return
+        try:
+            card = await self._target_is_card(None)
+            files = await self._camera.call(
+                lambda b: dedupe_slot_copies(b, files), priority=Priority.KEEPALIVE
+            )
+            await self._download(
+                files,
+                root,
+                owner=None,
+                name_prefix="",
+                delete_from_camera=card is True and not self._keep_card_copy(),
+            )
+        except AppError as e:
+            log.warning("late camera files not downloaded: %s", e.message)
+            return
+        for f in files:
+            with contextlib.suppress(ValueError):
+                self._camera.stray_files.remove(f)
+        self._camera.bus.publish(
+            EventType.CAPTURE_COMPLETE,
+            {"files": [{"folder": f.folder, "name": f.name} for f in files]},
+        )
 
     def _require_connected(self) -> None:
         if not self._camera.status().connected:

@@ -477,6 +477,8 @@ class CameraService:
         self._zombies: list[_Worker] = []
         # Files announced outside any capture (body shutter, late second file); newest last.
         self.stray_files: collections.deque[CameraFilePath] = collections.deque(maxlen=100)
+        # Called on the loop with files found outside a capture (CaptureService fetches them).
+        self.stray_handler: Callable[[list[CameraFilePath]], None] | None = None
         self._recover_task: asyncio.Task[None] | None = None
         self._name_cache: dict[str, str] = {}
         self._disconnect_wait_s = disconnect_wait_s
@@ -676,6 +678,17 @@ class CameraService:
             raise
         w.backend = backend
         return model, serial
+
+    def _on_strays(self, files: list[CameraFilePath]) -> None:
+        for f in files:
+            log.info("file %s/%s arrived outside a capture", f.folder, f.name)
+            self.stray_files.append(f)
+        if self.stray_handler is not None:
+            self.stray_handler(files)
+
+    @property
+    def bus(self) -> EventBus:
+        return self._bus
 
     def _release_lease(self) -> None:
         self._lease_owner = None
@@ -1055,9 +1068,9 @@ class CameraService:
             late: list[CameraFilePath] = []
             drain_pending_events(b, keep=late)  # unattributed files are recorded, not lost
             files = [b.capture()]
-            for f in late:
-                log.info("file %s/%s arrived outside a capture", f.folder, f.name)
-                self.stray_files.append(f)
+            if late and self._loop is not None:
+                with contextlib.suppress(RuntimeError):
+                    self._loop.call_soon_threadsafe(self._on_strays, late)
             b.invalidate_preview()  # a capture may drop the body out of live view
             quiet = self._quiet_window_s
             deadline = last = seen = time.monotonic()
