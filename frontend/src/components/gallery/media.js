@@ -2,7 +2,7 @@ import { api, fileUrl } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 export function formatSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return '--'
+  if (!Number.isFinite(bytes) || bytes < 0) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let v = bytes
   let i = 0
@@ -15,9 +15,9 @@ export function formatSize(bytes) {
 
 /** `ts` is epoch seconds (number) or an ISO string. */
 export function formatDate(ts) {
-  if (ts == null || ts === '') return '--'
+  if (ts == null || ts === '') return '-'
   const d = new Date(typeof ts === 'number' ? ts * 1000 : ts)
-  if (Number.isNaN(d.getTime())) return '--'
+  if (Number.isNaN(d.getTime())) return '-'
   return d.toLocaleString([], {
     month: 'short',
     day: 'numeric',
@@ -28,13 +28,12 @@ export function formatDate(ts) {
 }
 
 export function formatDuration(s) {
-  if (!Number.isFinite(s)) return '--'
+  if (!Number.isFinite(s)) return '-'
   const m = Math.floor(s / 60)
   return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`
 }
 
-export const kindTone = (kind) =>
-  ({ raw: 'warn', video: 'info', image: 'neutral' })[kind] || 'neutral'
+export const kindTone = (kind) => ({ raw: 'warn', video: 'accent' })[kind] || 'neutral'
 
 /**
  * Resolve a file URL usable by <img>/<video>. Without an API key it is the plain URL; with one

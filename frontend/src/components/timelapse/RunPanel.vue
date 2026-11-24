@@ -2,7 +2,10 @@
 import { ref, computed, watch } from 'vue'
 import UiCard from '@/components/ui/UiCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import StatGrid from './StatGrid.vue'
+import { timelapseState, timelapsePauseReason, timelapseWarning, leaseOwner } from '@/labels'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
 import { useTimelapseStore } from '@/stores/timelapse'
@@ -33,16 +36,36 @@ function pickCounters(p) {
     if (p[k] !== undefined) out[k] = p[k]
   return out
 }
-const planned = computed(() => status.value?.counters?.frames_planned ?? 0)
-const fraction = computed(() =>
-  planned.value > 0 ? Math.min(1, (counters.value.frames_done ?? 0) / planned.value) : null,
+// The server counts shots; the card speaks in frames (one frame = one bracket set of shots).
+const perFrame = computed(
+  () =>
+    resultNow.value?.estimate?.shots_per_set ||
+    status.value?.config?.bracketing?.steps?.length ||
+    1,
 )
-const tone = { running: 'ok', paused: 'warn', failed: 'error', stopping: 'warn', completed: 'info' }
+const plannedFrames = computed(() =>
+  Math.round((status.value?.counters?.frames_planned ?? 0) / perFrame.value),
+)
+const doneFrames = computed(() => counters.value.sets_done ?? 0)
+const fraction = computed(() =>
+  plannedFrames.value > 0 ? Math.min(1, doneFrames.value / plannedFrames.value) : null,
+)
+const tone = {
+  running: 'accent',
+  paused: 'warn',
+  failed: 'danger',
+  stopping: 'warn',
+  completed: 'ok',
+  interrupted: 'warn',
+}
+const confirmStop = ref(false)
+watch(state, () => (confirmStop.value = false))
 
 const isActive = computed(() => timelapse.isActive)
 const startBlock = computed(() => {
   if (!camera.connected) return 'Camera not connected'
-  if (camera.leasedBy && camera.leasedBy !== 'timelapse') return `Busy: ${camera.leasedBy}`
+  if (camera.leasedBy && camera.leasedBy !== 'timelapse')
+    return `Busy: ${leaseOwner(camera.leasedBy)}`
   if (!draftKey.value) return 'Fix the configuration first'
   return ''
 })
@@ -54,6 +77,7 @@ const nextIn = computed(() => {
 })
 const failureBudget = computed(() => status.value?.failure_budget ?? 5)
 const eta = computed(() => status.value?.timing?.eta_s)
+const dash = (v, f) => (v == null || !Number.isFinite(v) ? '—' : f(v))
 
 const warning = computed(() => timelapse.warning)
 const suggested = computed(() => {
@@ -111,122 +135,153 @@ watch(
   () => timelapse.lastFrame,
   () => timelapse.fetchStatus().catch(() => {}),
 )
+
+const stats = computed(() => {
+  const c = counters.value
+  const started = isActive.value || c.frames_done
+  return [
+    { key: 'shots', label: 'Shots', value: (c.frames_done ?? 0).toLocaleString() },
+    {
+      key: 'failures',
+      label: 'Failures',
+      value: String(c.failures ?? 0),
+      note: c.consecutive_failures
+        ? `(${c.consecutive_failures}/${failureBudget.value} in a row)`
+        : '',
+    },
+    { key: 'per', label: 'Per frame', value: String(perFrame.value) },
+    {
+      key: 'elapsed',
+      label: 'Elapsed',
+      value: started ? dash(status.value?.timing?.elapsed_s, formatDuration) : '—',
+    },
+    {
+      key: 'left',
+      label: 'Time left',
+      value: isActive.value ? dash(eta.value, formatDuration) : '—',
+    },
+    {
+      key: 'next',
+      label: 'Next shot',
+      value: nextIn.value == null ? '—' : `in ${nextIn.value} s`,
+      testid: 'next',
+    },
+  ]
+})
 </script>
 
 <template>
   <UiCard title="Run">
     <template #actions>
-      <UiBadge :tone="tone[state] || 'neutral'" data-test="state">{{ state }}</UiBadge>
+      <UiBadge :tone="tone[state] || 'neutral'" data-test="state">{{
+        timelapseState(state)
+      }}</UiBadge>
     </template>
-    <div class="flex flex-wrap gap-2">
-      <UiButton
-        v-if="!isActive"
-        variant="primary"
-        :loading="busy === 'start'"
-        :disabled="!!startBlock"
-        @click="start"
-      >
-        Start
-      </UiButton>
-      <UiButton
-        v-if="state === 'running'"
-        :loading="busy === 'pause'"
-        @click="run('pause', timelapse.pause)"
-      >
-        Pause
-      </UiButton>
-      <UiButton
-        v-if="state === 'paused'"
-        variant="primary"
-        :loading="busy === 'resume'"
-        @click="run('resume', timelapse.resume)"
-      >
-        Resume
-      </UiButton>
-      <UiConfirmButton
-        v-if="isActive"
-        variant="danger"
-        :loading="busy === 'stop' || state === 'stopping'"
-        @confirm="run('stop', timelapse.stop)"
-      >
-        Stop
-      </UiConfirmButton>
-    </div>
-    <p v-if="!isActive && startBlock" class="mt-2 text-xs text-amber-400" data-test="start-block">
-      {{ startBlock }}
-    </p>
-
-    <div v-if="isActive || counters.frames_done" class="mt-4 space-y-2">
-      <UiProgress :value="fraction" :label="`${counters.frames_done ?? 0} of ${planned} frames`" />
-      <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-        <div>
-          <dt class="text-xs text-slate-400">Sets</dt>
-          <dd>{{ counters.sets_done ?? 0 }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-slate-400">Failures</dt>
-          <dd>
-            {{ counters.failures ?? 0 }} ({{ counters.consecutive_failures ?? 0 }}/{{
-              failureBudget
-            }}
-            in a row)
-          </dd>
-        </div>
-        <div>
-          <dt class="text-xs text-slate-400">Elapsed</dt>
-          <dd>{{ formatDuration(status?.timing?.elapsed_s) }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-slate-400">ETA</dt>
-          <dd>{{ eta == null ? '-' : formatDuration(eta) }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-slate-400">Next shot</dt>
-          <dd data-test="next">{{ nextIn == null ? '-' : `${nextIn} s` }}</dd>
-        </div>
-      </dl>
-    </div>
-    <img v-if="thumb" :src="thumb" alt="Last captured frame" class="mt-3 max-h-40 rounded" />
-
-    <div class="mt-3 space-y-2" aria-live="polite">
-      <p
-        v-if="status?.paused_reason === 'camera_disconnected'"
-        class="text-sm text-amber-400"
-        data-test="disconnected"
-      >
-        Camera disconnected. The time-lapse will resume automatically.
-      </p>
-      <p v-else-if="state === 'paused'" class="text-sm text-slate-300">Paused by user.</p>
-      <div
-        v-if="warning"
-        class="rounded border border-amber-600 p-2 text-sm text-amber-300"
-        data-test="warning"
-      >
-        {{ warning.message || warning.code }}
-        <UiButton
-          v-if="warning.code === 'interval_too_short' && suggested"
-          size="sm"
-          class="ml-2"
-          @click="useSuggested"
+    <div class="grid gap-4">
+      <div class="aspect-[3/2] overflow-hidden rounded-inner border border-camera-subtle bg-black">
+        <img
+          v-if="thumb"
+          :src="thumb"
+          alt="Latest time-lapse frame"
+          class="block h-full w-full object-contain"
+        />
+        <div
+          v-else
+          class="flex h-full flex-col items-center justify-center gap-2 text-center text-[13px] text-camera-muted"
         >
-          Use {{ suggested }} s
-        </UiButton>
-        <UiButton
-          size="sm"
-          variant="ghost"
-          aria-label="Dismiss warning"
-          @click="timelapse.warning = null"
-          >×</UiButton
-        >
+          <UiIcon name="ImageOff" :size="24" class="text-camera-faint" />
+          The latest frame shows here.
+        </div>
       </div>
-      <p
+
+      <UiProgress :value="fraction" :label="`${doneFrames} of ${plannedFrames} frames`" />
+      <StatGrid :items="stats" :cols="3" />
+
+      <div v-if="status?.paused_reason === 'camera_disconnected'" data-test="disconnected">
+        <UiAlert tone="warn" :title="timelapsePauseReason(status.paused_reason)">
+          The time-lapse will resume automatically when the camera is back.
+        </UiAlert>
+      </div>
+      <UiAlert
+        v-else-if="state === 'paused' && !confirmStop"
+        tone="info"
+        :title="timelapsePauseReason(status?.paused_reason || 'user')"
+      >
+        Resume to continue from frame {{ doneFrames + 1 }}.
+      </UiAlert>
+      <UiAlert
+        v-if="warning"
+        tone="warn"
+        dismissible
+        :title="timelapseWarning(warning.code)"
+        data-test="warning"
+        @dismiss="timelapse.warning = null"
+      >
+        <template v-if="warning.message && warning.message !== timelapseWarning(warning.code)">
+          {{ warning.message }}
+        </template>
+        <template v-if="warning.code === 'interval_too_short' && suggested" #action>
+          <UiButton size="sm" @click="useSuggested">Use {{ suggested }} s</UiButton>
+        </template>
+      </UiAlert>
+      <UiAlert
         v-if="state === 'failed' || status?.error"
-        class="text-sm text-red-400"
-        role="alert"
+        tone="danger"
+        title="The time-lapse failed"
         data-test="error"
       >
         {{ status?.error || 'The time-lapse failed.' }}
-      </p>
+      </UiAlert>
+
+      <template v-if="confirmStop && isActive">
+        <UiAlert tone="warn" title="Stop the time-lapse?"> Frames taken so far are kept. </UiAlert>
+        <div class="flex flex-wrap gap-2">
+          <UiButton
+            variant="danger"
+            :loading="busy === 'stop' || state === 'stopping'"
+            @click="run('stop', timelapse.stop)"
+          >
+            Stop now
+          </UiButton>
+          <UiButton variant="ghost" @click="confirmStop = false">
+            {{ state === 'paused' ? 'Keep paused' : 'Keep running' }}
+          </UiButton>
+        </div>
+      </template>
+      <div v-else-if="isActive" class="flex flex-wrap gap-2">
+        <UiButton
+          v-if="state === 'running'"
+          :loading="busy === 'pause'"
+          @click="run('pause', timelapse.pause)"
+        >
+          <UiIcon name="Pause" :size="16" />Pause
+        </UiButton>
+        <UiButton
+          v-if="state === 'paused'"
+          variant="primary"
+          :loading="busy === 'resume'"
+          @click="run('resume', timelapse.resume)"
+        >
+          <UiIcon name="Play" :size="16" />Resume
+        </UiButton>
+        <UiButton :loading="state === 'stopping'" @click="confirmStop = true">
+          <UiIcon name="Square" :size="16" />Stop
+        </UiButton>
+      </div>
+      <div v-else class="grid gap-2">
+        <UiButton
+          variant="primary"
+          class="w-full"
+          :loading="busy === 'start'"
+          :disabled="!!startBlock"
+          @click="start"
+        >
+          <UiIcon name="Play" :size="16" />Start time-lapse
+        </UiButton>
+        <p v-if="startBlock" class="text-xs text-camera-warn" data-test="start-block">
+          {{ startBlock }}
+        </p>
+      </div>
     </div>
   </UiCard>
 </template>

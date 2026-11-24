@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import Videos from './Videos.vue'
 import { useVideosStore } from '@/stores/videos'
+import { useSessionsStore } from '@/stores/sessions'
 import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
 
@@ -28,6 +29,10 @@ function setup(items = [vid]) {
   vi.spyOn(v, 'fetch').mockImplementation(async () => {
     v.items = items
   })
+  const sessions = useSessionsStore(pinia)
+  vi.spyOn(sessions, 'fetch').mockImplementation(async () => {
+    sessions.items = [{ id: 's1', name: 'Harbour at dusk' }]
+  })
   const toasts = useToastsStore(pinia)
   vi.spyOn(toasts, 'error')
   wrapper = mount(Videos, { global: { plugins: [pinia] }, attachTo: document.body })
@@ -44,11 +49,12 @@ describe('Videos', () => {
     setup()
     await flushPromises()
     const t = wrapper.text()
-    expect(t).toContain('s1')
+    expect(t).toContain('Harbour at dusk')
+    expect(t).not.toContain('s1')
     expect(t).toContain('out.mp4')
     expect(t).toContain('1:05')
     expect(t).toContain('24 fps')
-    expect(t).toContain('libx264')
+    expect(t).toContain('H.264')
   })
 
   it('shows empty state', async () => {
@@ -60,7 +66,7 @@ describe('Videos', () => {
   it('plays inline in a modal using the plain URL without a key', async () => {
     setup()
     await flushPromises()
-    await wrapper.find('table button').trigger('click')
+    await wrapper.find('[role=listitem] button').trigger('click')
     await flushPromises()
     const video = document.body.querySelector('[data-testid=player]')
     expect(video.getAttribute('src')).toContain('/videos/')
@@ -72,7 +78,7 @@ describe('Videos', () => {
     URL.createObjectURL = vi.fn(() => 'blob:v')
     URL.revokeObjectURL = vi.fn()
     await flushPromises()
-    await wrapper.find('table button').trigger('click')
+    await wrapper.find('[role=listitem] button').trigger('click')
     await flushPromises()
     expect(document.body.querySelector('[data-testid=player]').getAttribute('src')).toBe('blob:v')
     wrapper.unmount()
@@ -84,7 +90,7 @@ describe('Videos', () => {
     const { v, toasts } = setup()
     vi.spyOn(v, 'remove').mockRejectedValueOnce(new Error('gone'))
     await flushPromises()
-    const del = wrapper.findAll('button').find((b) => b.text() === 'Delete')
+    const del = wrapper.findAll('button').find((b) => b.text().includes('Delete'))
     await del.trigger('click')
     await del.trigger('click')
     await flushPromises()

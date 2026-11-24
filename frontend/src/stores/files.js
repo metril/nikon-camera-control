@@ -11,6 +11,8 @@ export const useFilesStore = defineStore('files', () => {
   const total = ref(0)
   const query = ref({ folder: '', page: 1, limit: 50, kind: 'all', sort: 'newest' })
   const loading = ref(false)
+  /** Photo (JPEG + RAW) and video totals for the current folder; null until known. */
+  const counts = ref({ photos: null, videos: null })
   const lastError = ref(null)
   const cache = new BlobUrlLru(200)
   const inflight = new Map()
@@ -32,6 +34,19 @@ export const useFilesStore = defineStore('files', () => {
     }
   }
   const reload = () => load()
+
+  /** Cosmetic totals for the gallery filter; a failure just leaves the old numbers. */
+  async function loadCounts() {
+    const folder = query.value.folder
+    const total = async (kind) =>
+      (await api.listFiles({ query: { folder, page: 1, limit: 1, kind, sort: 'newest' } })).total
+    try {
+      const [image, raw, video] = await Promise.all([total('image'), total('raw'), total('video')])
+      counts.value = { photos: image + raw, videos: video }
+    } catch {
+      /* the filter works without counts */
+    }
+  }
 
   async function remove(path) {
     await guard(lastError, () => api.deleteFile({ path: { path } }))
@@ -86,8 +101,10 @@ export const useFilesStore = defineStore('files', () => {
     total,
     query,
     loading,
+    counts,
     lastError,
     load,
+    loadCounts,
     reload,
     remove,
     acquireThumbnail,

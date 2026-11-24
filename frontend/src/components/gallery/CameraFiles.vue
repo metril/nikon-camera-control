@@ -7,6 +7,9 @@ import UiToggle from '@/components/ui/UiToggle.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import { fileKind, leaseOwner } from '@/labels'
 import { useCameraStore } from '@/stores/camera'
 import { useCameraFilesStore } from '@/stores/cameraFiles'
 import { useJobsStore } from '@/stores/jobs'
@@ -30,7 +33,7 @@ const folder = computed(() => cf.query.folder)
 const pages = computed(() => Math.max(1, Math.ceil(cf.total / cf.query.limit)))
 const leased = computed(() => !!camera.leasedBy)
 const leaseReason = computed(() =>
-  leased.value ? `Busy: ${camera.leasedBy} is using the camera` : '',
+  leased.value ? `Busy: ${leaseOwner(camera.leasedBy)} is using the camera` : '',
 )
 const subfolders = ref([])
 const crumbs = computed(() => {
@@ -145,16 +148,16 @@ const gb = (kb) => formatSize(kb * 1024)
       <div
         v-for="c in cards"
         :key="c.label"
-        class="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-300"
+        class="rounded-inner border border-camera-border bg-camera-raised px-3 py-2 text-sm text-camera-muted"
       >
-        <span class="font-medium">{{ c.label }}</span>
-        · {{ gb(c.free_kb) }} free of {{ gb(c.capacity_kb) }}
+        <span class="font-medium text-camera-text">{{ c.label }}</span>
+        · <span class="tabular-nums">{{ gb(c.free_kb) }} free of {{ gb(c.capacity_kb) }}</span>
       </div>
     </div>
 
     <UiCard title="Download all to server">
       <div class="space-y-3">
-        <div class="flex flex-wrap gap-x-6 gap-y-2">
+        <div class="flex flex-wrap gap-x-6 gap-y-3">
           <UiToggle v-model="onlyNew" label="Only new files" :disabled="running" />
           <UiToggle
             v-model="deleteAfter"
@@ -162,17 +165,17 @@ const gb = (kb) => formatSize(kb * 1024)
             :disabled="running"
           />
         </div>
-        <p v-if="deleteAfter" class="text-sm text-amber-400" role="alert">
-          Warning: files are removed from the card once saved to the server.
-        </p>
+        <UiAlert v-if="deleteAfter" tone="warn">
+          Files are removed from the card once saved to the server.
+        </UiAlert>
         <div v-if="running" class="space-y-2" aria-live="polite" data-testid="job-progress">
           <UiProgress :value="job.progress ?? null" :label="job.message || 'Downloading'" />
-          <p class="text-sm text-slate-300">{{ job.message }}</p>
+          <p class="text-sm text-camera-muted">{{ job.message }}</p>
           <UiButton variant="danger" size="sm" :loading="cancelling" @click="cancel"
             >Cancel</UiButton
           >
         </div>
-        <div v-else class="flex items-center gap-3">
+        <div v-else class="flex flex-wrap items-center gap-3">
           <UiButton
             variant="primary"
             :loading="starting"
@@ -182,15 +185,20 @@ const gb = (kb) => formatSize(kb * 1024)
           >
             Download all
           </UiButton>
-          <span v-if="leased" class="text-sm text-amber-400">{{ leaseReason }}</span>
+          <span v-if="leased" class="text-sm text-camera-warn">{{ leaseReason }}</span>
         </div>
-        <p v-if="job?.status === 'failed'" class="text-sm text-red-400" role="alert">
+        <p v-if="job?.status === 'failed'" class="text-sm text-camera-danger" role="alert">
           Download failed: {{ job.error || 'unknown error' }}
         </p>
-        <p v-if="result" class="text-sm text-slate-300" data-testid="job-result" aria-live="polite">
+        <p
+          v-if="result"
+          class="tabular-nums text-sm text-camera-muted"
+          data-testid="job-result"
+          aria-live="polite"
+        >
           {{ result.cancelled ? 'Cancelled. ' : '' }}Downloaded {{ result.downloaded }} · skipped
           {{ result.skipped }} · failed {{ result.failed }}
-          <span v-if="result.failed_names?.length" class="text-red-400">
+          <span v-if="result.failed_names?.length" class="text-camera-danger">
             ({{ result.failed_names.join(', ') }})
           </span>
         </p>
@@ -200,16 +208,18 @@ const gb = (kb) => formatSize(kb * 1024)
     <nav aria-label="Card folder" class="flex flex-wrap items-center gap-1 text-sm">
       <button
         type="button"
-        class="rounded px-1 text-sky-400 hover:underline"
+        class="rounded-control px-1 hover:text-camera-text"
+        :class="crumbs.length ? 'text-camera-muted' : 'text-camera-text'"
         @click="goFolder('/')"
       >
         Card
       </button>
-      <template v-for="c in crumbs" :key="c.path">
-        <span class="text-slate-600" aria-hidden="true">/</span>
+      <template v-for="(c, i) in crumbs" :key="c.path">
+        <UiIcon name="ChevronRight" :size="14" class="text-camera-faint" />
         <button
           type="button"
-          class="rounded px-1 text-sky-400 hover:underline"
+          class="rounded-control px-1 hover:text-camera-text"
+          :class="i === crumbs.length - 1 ? 'text-camera-text' : 'text-camera-muted'"
           @click="goFolder(c.path)"
         >
           {{ c.name }}
@@ -221,70 +231,68 @@ const gb = (kb) => formatSize(kb * 1024)
         v-for="f in subfolders"
         :key="f.path"
         type="button"
-        class="rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+        class="inline-flex h-[var(--ctl-sm)] max-w-full items-center gap-2 rounded-control border border-camera-border bg-camera-raised px-3 text-[13px] hover:bg-camera-hover"
         @click="goFolder(f.path)"
       >
-        📁 {{ f.name }}
+        <UiIcon name="Folder" :size="16" class="text-camera-muted" />
+        <span class="truncate">{{ f.name }}</span>
       </button>
     </div>
 
     <div v-if="cf.loading && !cf.items.length" class="space-y-2" aria-busy="true">
-      <div v-for="n in 6" :key="n" class="h-10 animate-pulse rounded bg-slate-800" />
+      <div v-for="n in 6" :key="n" class="h-10 animate-pulse rounded-inner bg-camera-raised" />
     </div>
     <UiEmpty v-else-if="failedLoad && !cf.items.length" title="Could not list the card">
       <template #actions><UiButton @click="load()">Retry</UiButton></template>
     </UiEmpty>
     <UiEmpty v-else-if="!cf.items.length" title="No files in this folder" />
-    <div v-else class="overflow-x-auto">
-      <table class="w-full text-left text-sm text-slate-300">
-        <thead class="text-xs uppercase text-slate-500">
-          <tr>
-            <th class="p-2">Name</th>
-            <th class="p-2">Size</th>
-            <th class="p-2">Date</th>
-            <th class="p-2">Type</th>
-            <th class="p-2"><span class="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="f in cf.items"
-            :key="f.folder + '/' + f.name"
-            class="border-t border-slate-800"
+    <div v-else class="text-sm" role="list" data-testid="card-files">
+      <div class="file-row eyebrow max-[640px]:!hidden" aria-hidden="true">
+        <span>Name</span>
+        <span>Size</span>
+        <span>Date</span>
+        <span>Type</span>
+        <span />
+      </div>
+      <div
+        v-for="f in cf.items"
+        :key="f.folder + '/' + f.name"
+        role="listitem"
+        class="file-row border-t border-camera-subtle"
+        data-testid="card-file"
+      >
+        <span class="flex min-w-0 items-center gap-2">
+          <span class="truncate font-mono text-[13px]" :title="f.name">{{ f.name }}</span>
+          <UiBadge v-if="f.downloaded" tone="ok">Downloaded</UiBadge>
+        </span>
+        <span class="tabular-nums text-camera-muted">{{ formatSize(f.size) }}</span>
+        <span class="tabular-nums text-camera-muted">{{ formatDate(f.mtime) }}</span>
+        <span class="text-camera-muted">{{ fileKind(f.type) }}</span>
+        <span class="flex flex-wrap justify-end gap-2 max-[640px]:justify-start">
+          <UiButton size="sm" :loading="busyFile === f.name" @click="downloadOne(f)">
+            <UiIcon name="Download" :size="16" />Download
+          </UiButton>
+          <UiConfirmButton
+            size="sm"
+            variant="danger"
+            data-testid="delete-card-file"
+            :disabled="leased || busyFile === f.name"
+            :title="leaseReason"
+            @confirm="removeOne(f)"
           >
-            <td class="p-2">
-              {{ f.name }}
-              <UiBadge v-if="f.downloaded" tone="ok" class="ml-2">downloaded</UiBadge>
-            </td>
-            <td class="p-2">{{ formatSize(f.size) }}</td>
-            <td class="p-2">{{ formatDate(f.mtime) }}</td>
-            <td class="p-2">{{ f.type }}</td>
-            <td class="whitespace-nowrap p-2 text-right">
-              <UiButton size="sm" :loading="busyFile === f.name" @click="downloadOne(f)">
-                Download
-              </UiButton>
-              <UiConfirmButton
-                size="sm"
-                variant="danger"
-                class="ml-2"
-                data-testid="delete-card-file"
-                :disabled="leased || busyFile === f.name"
-                :title="leaseReason"
-                @confirm="removeOne(f)"
-              >
-                Delete
-              </UiConfirmButton>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            Delete
+          </UiConfirmButton>
+        </span>
+      </div>
     </div>
 
     <div v-if="cf.total > cf.query.limit" class="flex items-center justify-center gap-3">
       <UiButton size="sm" :disabled="cf.query.page <= 1" @click="load({ page: cf.query.page - 1 })">
         Previous
       </UiButton>
-      <span class="text-sm text-slate-400">Page {{ cf.query.page }} of {{ pages }}</span>
+      <span class="tabular-nums text-sm text-camera-muted"
+        >Page {{ cf.query.page }} of {{ pages }}</span
+      >
       <UiButton
         size="sm"
         :disabled="cf.query.page >= pages"
@@ -295,3 +303,38 @@ const gb = (kb) => formatSize(kb * 1024)
     </div>
   </div>
 </template>
+
+<style scoped>
+/* One row per file; on phones it becomes a card: name, meta line, then actions. */
+.file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 170px 64px auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px;
+}
+@media (max-width: 640px) {
+  .file-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 0;
+  }
+  .file-row > :nth-child(2),
+  .file-row > :nth-child(3) {
+    font-size: 12px;
+  }
+  .file-row > :nth-child(2) {
+    grid-column: 1;
+  }
+  .file-row > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .file-row > :nth-child(4) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .file-row > :nth-child(5) {
+    grid-column: 1 / -1;
+  }
+}
+</style>

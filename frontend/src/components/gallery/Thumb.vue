@@ -1,6 +1,7 @@
 <script setup>
 defineOptions({ name: 'GalleryThumb' })
 import { ref, watch, onMounted, onUnmounted } from 'vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import { useFilesStore } from '@/stores/files'
 
 const props = defineProps({
@@ -9,6 +10,8 @@ const props = defineProps({
   supported: { type: Boolean, default: true },
   alt: { type: String, default: '' },
   eager: { type: Boolean, default: false },
+  /** cover (grid tiles, filmstrip) or contain (previews) */
+  fit: { type: String, default: 'cover' },
 })
 const files = useFilesStore()
 const root = ref(null)
@@ -68,22 +71,29 @@ watch(() => [props.path, props.size], load)
 </script>
 
 <template>
-  <div ref="root" class="flex h-full w-full items-center justify-center bg-slate-900">
+  <div ref="root" class="flex h-full w-full items-center justify-center bg-black">
     <img
       v-if="src && !failed"
       :src="src"
       :alt="alt"
-      class="h-full w-full object-contain"
+      class="block h-full w-full"
+      :class="fit === 'contain' ? 'object-contain' : 'object-cover'"
+      draggable="false"
       @error="failed = true"
     />
     <span
       v-else-if="!supported || failed"
       data-testid="thumb-placeholder"
-      class="text-2xl text-slate-500"
+      class="inline-flex text-camera-faint"
       role="img"
       aria-label="No preview available"
-      >🖼</span
     >
-    <span v-else class="h-full w-full animate-pulse bg-slate-800" data-testid="thumb-skeleton" />
+      <UiIcon name="ImageOff" :size="24" />
+    </span>
+    <span
+      v-else
+      class="h-full w-full animate-pulse bg-camera-raised"
+      data-testid="thumb-skeleton"
+    />
   </div>
 </template>
