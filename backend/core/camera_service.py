@@ -523,6 +523,14 @@ class CameraService:
             return self._quiet_override
         return float(self._config.config.camera.event_quiet_window_s)
 
+    @property
+    def quiet_window_s(self) -> float:
+        return self._quiet_window_s
+
+    @property
+    def capture_timeout_s(self) -> float:
+        return float(self._config.config.camera.capture_timeout_s)
+
     # lifecycle ---------------------------------------------------------------
     async def start(self) -> None:
         """Bind the bus to the running loop and start the worker thread.

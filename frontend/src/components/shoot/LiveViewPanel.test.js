@@ -258,7 +258,7 @@ describe('LiveViewPanel', () => {
     w.unmount()
   })
 
-  it('tap moves the AF point, then autofocuses; a point error skips autofocus', async () => {
+  it('tap moves the AF point, then autofocuses; a point error still autofocuses', async () => {
     const { pinia } = setup()
     const focus = useFocusStore()
     vi.spyOn(focus, 'setPoint').mockResolvedValue()
@@ -282,7 +282,17 @@ describe('LiveViewPanel', () => {
     await ov.trigger('pointerdown', { clientX: 0, clientY: 0 })
     await ov.trigger('pointerup', { clientX: 0, clientY: 0 })
     await flushPromises()
-    expect(focus.autofocus).toHaveBeenCalledTimes(1)
+    expect(focus.autofocus).toHaveBeenCalledTimes(2)
+    expect(useToastsStore().items.some((t) => t.kind === 'warn')).toBe(true)
+    focus.setPoint.mockClear()
+    focus.setPoint.mockRejectedValue(Object.assign(new Error('x'), { status: 501 }))
+    for (let i = 0; i < 2; i++) {
+      await ov.trigger('pointerdown', { clientX: 0, clientY: 0 })
+      await ov.trigger('pointerup', { clientX: 0, clientY: 0 })
+      await flushPromises()
+    }
+    expect(focus.setPoint).toHaveBeenCalledTimes(1) // 501 remembered: not retried
+    expect(focus.autofocus).toHaveBeenCalledTimes(4)
     w.unmount()
   })
 

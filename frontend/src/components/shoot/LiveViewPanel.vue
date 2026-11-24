@@ -396,6 +396,7 @@ watch([lastShotPath, () => tools.value.onion], ([path, on], [, wasOn]) => {
 
 // ---- Focus: tapping sets the focus point and runs autofocus; the pill drives manual steps.
 const frameFocused = () => camera.connected && !!hasFrame.value
+let pointUnsupported = false // the body can't move its AF point: skip setPoint this session
 async function runAutofocus(move = false) {
   if (!camera.connected) return
   clearTimeout(lockTimer)
@@ -404,7 +405,14 @@ async function runAutofocus(move = false) {
   focusState.value = 'moving'
   afBusy.value = true
   try {
-    if (move) await focus.setPoint(focusPt.value.x / (w || 1), focusPt.value.y / (h || 1))
+    if (move && !pointUnsupported) {
+      try {
+        await focus.setPoint(focusPt.value.x / (w || 1), focusPt.value.y / (h || 1))
+      } catch (e) {
+        if (e?.status === 501 || e?.code === 'FEATURE_UNSUPPORTED') pointUnsupported = true
+        toasts.warn('Could not move the focus point. Focusing at the camera’s current point.')
+      }
+    }
     const r = await focus.autofocus()
     if (r?.focused === false) {
       focusState.value = 'idle'

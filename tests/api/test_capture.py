@@ -1,5 +1,6 @@
 import asyncio
 import re
+import threading
 from pathlib import Path
 
 import httpx
@@ -240,3 +241,69 @@ async def test_trigger_refused_with_bulb_shutter(
     r = await connected_client.post(f"{C}/trigger")
     assert r.status_code >= 400
     assert fake_camera.calls.get("trigger", 0) == 0
+
+
+def _delay_events(fake: FakeCamera, delays: list[float]) -> None:
+    """Hold back the shot's FILE_ADDED events after trigger(): event i arrives delays[i] s later."""
+    orig = fake.trigger
+
+    def trigger() -> None:
+        orig()
+        with fake._cond:
+            held = [fake._events.popleft() for _ in range(len(fake._events))]
+        for ev, d in zip(held, delays, strict=False):
+
+            def add(ev=ev) -> None:
+                with fake._cond:
+                    fake._events.append(ev)
+                    fake._cond.notify_all()
+
+            threading.Timer(d, add).start()
+
+    fake.trigger = trigger  # type: ignore[method-assign]
+
+
+async def _assert_claimed(app: FastAPI, client: httpx.AsyncClient, tmp_dirs, n_files: int) -> None:
+    cs = app.state.camera_service
+    assert len(app.state.services.get("capture", lambda: None)._triggered) == n_files
+    r = await client.post(C, json={})
+    assert len(r.json()["files"]) == 1
+    await asyncio.sleep(0.3)  # a wrongly attributed stray would be fetched in the background
+    assert len(list(tmp_dirs.output_dir.glob("**/*.JPG"))) == 1
+    assert not cs.stray_files
+
+
+async def test_trigger_claims_delayed_file(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera, tmp_dirs
+) -> None:
+    app.state.camera_service._quiet_override = 0.5
+    _delay_events(fake_camera, [0.5])
+    assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    await _assert_claimed(app, connected_client, tmp_dirs, 1)
+
+
+async def test_trigger_claims_split_raw_jpeg_pair(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera, tmp_dirs
+) -> None:
+    app.state.camera_service._quiet_override = 0.6
+    await app.state.camera_service.set_setting("imagequality", "NEF+JPEG Fine")
+    _delay_events(fake_camera, [0.0, 0.4])
+    assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    cs = app.state.services.get("capture", lambda: None)
+    assert {f.name.rsplit(".", 1)[1] for f in cs._triggered} == {"NEF", "JPG"}
+    await app.state.camera_service.set_setting("imagequality", "JPEG Fine")
+    r = await connected_client.post(C, json={})
+    assert len(r.json()["files"]) == 1
+    await asyncio.sleep(0.3)
+    assert len([p for p in tmp_dirs.output_dir.glob("**/*") if p.is_file()]) == 1
+
+
+async def test_trigger_chatter_does_not_end_collection(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera, tmp_dirs
+) -> None:
+    app.state.camera_service._quiet_override = 0.5
+    fake_camera._chatter = True
+    _delay_events(fake_camera, [0.6])
+    assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    fake_camera._chatter = False
+    await _assert_claimed(app, connected_client, tmp_dirs, 1)

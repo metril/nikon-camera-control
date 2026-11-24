@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -58,7 +60,7 @@ class CaptureService:
         downloads_enabled: Callable[[], bool] = lambda: True,
     ) -> None:
         self._downloads_enabled = downloads_enabled
-        self._triggered: set[CameraFilePath] = set()
+        self._triggered: collections.deque[CameraFilePath] = collections.deque(maxlen=200)
         self._default_prefix = default_prefix
         self._keep_card_copy = keep_card_copy
         self._camera = camera
@@ -214,18 +216,33 @@ class CaptureService:
             )
         await self._camera.refuse_bulb_shutter()
 
+        wait_s = self._camera.capture_timeout_s
+        quiet = self._camera.quiet_window_s
+
         def _fire(b: CameraBackend) -> list[CameraFilePath]:
             b.trigger()
             seen: list[CameraFilePath] = []
-            for _ in range(20):  # collect the shot's own file events; they are never ours
-                ev = b.wait_for_event(0.2)
-                if ev.type == CamEventType.TIMEOUT:
+            # The shot's own file events are never ours: wait for the first (exposure + write),
+            # then until a quiet window passes with no further file. Chatter neither ends nor
+            # counts.
+            deadline = time.monotonic() + wait_s
+            last: float | None = None
+            while True:
+                now = time.monotonic()
+                end = deadline if last is None else min(deadline, last + quiet)
+                if end - now <= 0:
                     break
+                ev = b.wait_for_event(min(end - now, 0.5))
                 if ev.type == CamEventType.FILE_ADDED and ev.file is not None:
-                    seen.append(ev.file)
+                    last = time.monotonic()
+                    if ev.file not in seen:
+                        seen.append(ev.file)
             return seen
 
-        self._triggered.update(await self._camera.call(_fire, priority=Priority.CAPTURE))
+        files = await self._camera.call(
+            _fire, priority=Priority.CAPTURE, timeout=wait_s + quiet + 5.0
+        )
+        self._triggered.extend(f for f in files if f not in self._triggered)
 
     async def _download(
         self,
