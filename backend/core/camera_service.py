@@ -760,13 +760,15 @@ class CameraService:
         w.backend = backend
         return model, serial
 
-    def _on_property_code(self, code: int) -> None:
+    def _on_property_code(
+        self, code: int, name: str | None = None, value: str | None = None
+    ) -> None:
         """Worker thread: a PTP property-change event was read; sync on the loop."""
         self._property_events = True
         loop = self._loop
         if loop is not None:
             with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(self._prop_sync.on_codes, [code])
+                loop.call_soon_threadsafe(self._prop_sync.on_event, code, name, value)
 
     def cached_setting(self, name: str) -> ConfigWidget | None:
         return self._settings_map.get(name)
@@ -1249,6 +1251,10 @@ class CameraService:
         not for the app's own ``note_setting``. Returns the unsubscribe function."""
         self._setting_listeners.append(fn)
         return lambda: self._setting_listeners.remove(fn) if fn in self._setting_listeners else None
+
+    def store_setting(self, widget: ConfigWidget) -> None:
+        """Cache a widget value reported by the body (no event; the caller publishes)."""
+        self._store_widget(widget)
 
     def note_setting(self, widget: ConfigWidget) -> None:
         """Record a widget written outside ``set_setting`` (cache + SETTING_CHANGED)."""

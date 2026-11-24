@@ -845,6 +845,22 @@
             "description": "Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.",
             "title": "File name prefix"
           },
+          "focus_step_large": {
+            "default": 1000,
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Large focus step",
+            "type": "integer"
+          },
+          "focus_step_small": {
+            "default": 150,
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Small focus step",
+            "type": "integer"
+          },
           "keep_card_copy": {
             "default": true,
             "description": "Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.",
@@ -951,6 +967,30 @@
             ],
             "description": "Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.",
             "title": "Filename Prefix"
+          },
+          "focus_step_large": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "title": "Focus Step Large"
+          },
+          "focus_step_small": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "title": "Focus Step Small"
           },
           "keep_card_copy": {
             "anyOf": [

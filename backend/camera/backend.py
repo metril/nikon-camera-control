@@ -93,16 +93,22 @@ class CameraFileInfo:
     height: int = 0
 
 
-_PROP_EVENT = re.compile(r"PTP Property ([0-9a-fA-F]{1,4}) changed")
+_PROP_EVENT = re.compile(r'PTP Property ([0-9a-fA-F]+) changed(?:, "([^"]*)"(?: to "([^"]*)")?)?')
+
+
+def parse_property_change(text: object) -> tuple[int, str | None, str | None] | None:
+    """(PTP property code, widget name, new value) from a libgphoto2 ptp2 UNKNOWN event text, or
+    None. Real bodies emit ``PTP Property 0000500f changed, "iso" to "800"`` (8 hex digits, the
+    gphoto2 widget name, the new value); the bare ``PTP Property <hex> changed`` form has no
+    name or value."""
+    m = _PROP_EVENT.search(str(text))
+    return (int(m.group(1), 16), m.group(2), m.group(3)) if m else None
 
 
 def parse_property_event(text: object) -> int | None:
-    """PTP device property code from a libgphoto2 ptp2 UNKNOWN event text, else None.
-
-    ptp2 formats (strings present in libgphoto2 2.5.31 ptp2.so): ``PTP Property %04x changed``
-    and ``PTP Property %04x changed, "%s" to "%s"`` (label, new value)."""
-    m = _PROP_EVENT.search(str(text))
-    return int(m.group(1), 16) if m else None
+    """PTP device property code from a ptp2 UNKNOWN event text, else None."""
+    ch = parse_property_change(text)
+    return ch[0] if ch else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +134,7 @@ class CameraBackend(Protocol):
 
     # Called (on the worker thread) with the PTP code of each property-change event that
     # wait_for_event sees; set by the camera service.
-    property_listener: Callable[[int], None] | None
+    property_listener: Callable[[int, str | None, str | None], None] | None
 
     @property
     def is_open(self) -> bool:

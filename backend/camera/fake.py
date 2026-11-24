@@ -34,7 +34,7 @@ from backend.camera.backend import (
     EventType,
     FileKind,
     StorageInfo,
-    parse_property_event,
+    parse_property_change,
 )
 from backend.core.errors import (
     CameraBusy,
@@ -388,7 +388,9 @@ class FakeCamera:
         self._late: list[tuple[str, str, _File]] = []
         self._emit_complete = emit_capture_complete
         self._prop_events = property_events
-        self.property_listener: Callable[[int], None] | None = None
+        self.focus_travel: int | None = None  # lens travel in drive steps; None = unlimited
+        self._focus_pos = 0
+        self.property_listener: Callable[[int, str | None, str | None], None] | None = None
         self._capture_exits_lv = capture_exits_liveview
         self._pv_flag = False  # mirrors Gphoto2Backend._viewfinder_on
         self._rng = random.Random(seed)  # noqa: S311
@@ -629,8 +631,13 @@ class FakeCamera:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
         new = self._coerce(s, value)
-        if name == "manualfocusdrive" and self._values["liveviewaffocus"] == "Full-time-servo AF":
+        if name == "manualfocusdrive" and str(self._values["liveviewaffocus"]) != "Single-servo AF":
             raise CameraBusy("set_config(manualfocusdrive): I/O in progress")  # PTP -110
+        if name == "manualfocusdrive" and self.focus_travel is not None:
+            pos = self._focus_pos + int(new)
+            if not 0 <= pos <= self.focus_travel:  # a move past the end of the lens travel
+                raise CameraOperationFailed("set_config(manualfocusdrive): Unspecified error")
+            self._focus_pos = pos
         if name == "changeafarea":  # like ptp2: "XxY" in full-sensor pixels, live view on
             m = re.fullmatch(r"(\d+)x(\d+)", str(new))
             if not self._values["viewfinder"]:
@@ -688,8 +695,7 @@ class FakeCamera:
         code = self._PROP_CODES.get(name)
         if code is None:
             return
-        label = self._specs[name].label
-        text = f'PTP Property {code:04x} changed, "{label}" to "{value}"'
+        text = f'PTP Property {code:08x} changed, "{name}" to "{value}"'
         with self._cond:
             self._events.append(
                 CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": 99, "data": text})
@@ -918,9 +924,9 @@ class FakeCamera:
                 self._cond.wait_for(lambda: bool(self._events), timeout=max(0.0, timeout_s))
             if self._events:
                 ev = self._events.popleft()
-                code = parse_property_event(ev.payload.get("data")) if ev.payload else None
-                if code is not None and self.property_listener is not None:
-                    self.property_listener(code)
+                change = parse_property_change(ev.payload.get("data")) if ev.payload else None
+                if change is not None and self.property_listener is not None:
+                    self.property_listener(*change)
                 return ev
         return CameraEvent(EventType.TIMEOUT)
 

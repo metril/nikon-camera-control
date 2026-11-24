@@ -54,6 +54,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `LOCATION_BUSY` | 409 | `LocationBusy` | Storage location is busy |
 | `MOUNT_FAILED` | 502 | `MountFailed` | Mount failed |
 | `FILE_TOO_LARGE` | 413 | `FileTooLarge` | File is too large for the target filesystem (FAT32 limit is 4 GiB) |
+| `FOCUS_LIMIT` | 409 | `FocusLimit` | The lens is at the end of its focus travel |
 
 ## Endpoints
 
@@ -2375,6 +2376,8 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | camera | `keep_card_copy` | boolean | `true` |  | Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card. |
 | camera | `download_photos` | boolean | `true` |  | Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner. |
 | camera | `filename_prefix` | string \| null | `null` | `maxLength=40` | Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes. |
+| camera | `focus_step_small` | integer | `150` | `>=1`, `<=32767` | Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps. |
+| camera | `focus_step_large` | integer | `1000` | `>=1`, `<=32767` | Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps. |
 | liveview | `target_fps` | integer | `8` | `>=1`, `<=30` | Higher is smoother but uses more USB bandwidth. 5-15 fps is typical. |
 | liveview | `quality` | enum("small", "medium", "large") | `"medium"` |  | Size of the frames the camera sends. |
 | liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Quality used when re-encoding streamed frames. |

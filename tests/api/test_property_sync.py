@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 
 from backend.api.schemas.common import EventType
-from backend.camera.backend import parse_property_event
+from backend.camera.backend import parse_property_change, parse_property_event
 from backend.camera.fake import FakeCamera
 from backend.core import camera_service, property_sync
 
@@ -40,6 +40,9 @@ async def _changes(app: FastAPI, name: str, action, wait_s: float = 0.5) -> list
 @pytest.mark.parametrize(
     ("text", "code"),
     [
+        ('PTP Property 0000500f changed, "iso" to "800"', 0x500F),
+        ('PTP Property 0000d100 changed, "shutterspeed2" to "1/80"', 0xD100),
+        ('PTP Property 0000d0b5 changed, "ISOControlSensitivity" to "320"', 0xD0B5),
         ('PTP Property 500f changed, "ISO Speed" to "400"', 0x500F),
         ("PTP Property d1a2 changed", 0xD1A2),
         ('PTP Property 500D changed, "Exposure Time"', 0x500D),
@@ -116,3 +119,70 @@ async def test_status_reports_property_events_once_seen(
     await connected_client.get("/api/v1/settings")
     svc._on_property_code(0x500F)
     assert (await connected_client.get("/api/v1/camera")).json()["property_events"] is True
+
+
+@pytest.mark.parametrize(
+    ("text", "parsed"),
+    [
+        ('PTP Property 0000500f changed, "iso" to "800"', (0x500F, "iso", "800")),
+        (
+            'PTP Property 0000500d changed, "shutterspeed" to "0.0125s"',
+            (0x500D, "shutterspeed", "0.0125s"),
+        ),
+        ('PTP Property 00005007 changed, "f-number" to "f/4.5"', (0x5007, "f-number", "f/4.5")),
+        (
+            'PTP Property 0000d100 changed, "shutterspeed2" to "1/80"',
+            (0xD100, "shutterspeed2", "1/80"),
+        ),
+        (
+            'PTP Property 0000d0b5 changed, "ISOControlSensitivity" to "320"',
+            (0xD0B5, "ISOControlSensitivity", "320"),
+        ),
+        ('PTP Property 0000500a changed, "focusmode" to "AF-C"', (0x500A, "focusmode", "AF-C")),
+        ("PTP Property 500f changed", (0x500F, None, None)),
+    ],
+)
+def test_parse_property_change(text: str, parsed: tuple) -> None:
+    assert parse_property_change(text) == parsed
+
+
+async def test_reported_value_is_applied_without_reread(
+    app: FastAPI, connected_client, fake_camera: FakeCamera
+) -> None:
+    await connected_client.get("/api/v1/settings")
+    svc = app.state.camera_service
+    gets = fake_camera.calls.get("get_config", 0)
+
+    async def go() -> None:
+        svc._on_property_code(0x500F, "iso", "800")
+
+    seen = await _changes(app, "iso", go)
+    assert seen == ["800"]
+    assert fake_camera.calls.get("get_config", 0) == gets
+    assert svc.cached_setting("iso").value == "800"
+
+
+async def test_unparsable_value_falls_back_to_reread(
+    app: FastAPI, connected_client, fake_camera: FakeCamera
+) -> None:
+    await connected_client.get("/api/v1/settings")
+    svc = app.state.camera_service
+    fake_camera._values["iso"] = "1600"
+
+    async def go() -> None:
+        svc._on_property_code(0x500F, "iso", "not-a-choice")
+
+    assert await _changes(app, "iso", go) == ["1600"]
+
+
+async def test_reported_name_wins_over_code(
+    app: FastAPI, connected_client, fake_camera: FakeCamera
+) -> None:
+    await connected_client.get("/api/v1/settings")
+    svc = app.state.camera_service
+    fake_camera._values["iso"] = "3200"
+
+    async def go() -> None:
+        svc._on_property_code(0xD0B5, "iso", None)  # unknown code, known name
+
+    assert await _changes(app, "iso", go) == ["3200"]

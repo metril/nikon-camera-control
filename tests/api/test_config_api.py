@@ -123,3 +123,13 @@ async def test_patch_and_reset_report_changed_fields(client: httpx.AsyncClient) 
     assert "liveview.target_fps" in rr.json()["changed"]
     await client.patch(U, json={"demo_camera": True})
     assert "demo_camera" in (await client.post(f"{U}/reset")).json()["changed"]
+
+
+async def test_focus_steps_default_and_order(client: httpx.AsyncClient) -> None:
+    cam = (await client.get(U)).json()["camera"]
+    assert (cam["focus_step_small"], cam["focus_step_large"]) == (150, 1000)
+    r = await client.patch(U, json={"camera": {"focus_step_small": 2000}})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "CONFIG_INVALID"
+    r = await client.patch(U, json={"camera": {"focus_step_small": 40, "focus_step_large": 400}})
+    assert r.status_code == 200
+    assert r.json()["config"]["camera"]["focus_step_large"] == 400

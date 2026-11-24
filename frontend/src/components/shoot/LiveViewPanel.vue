@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
 import { useFocusStore } from '@/stores/focus'
+import { useConfigStore } from '@/stores/config'
 import { useCaptureStore } from '@/stores/capture'
 import { useFilesStore } from '@/stores/files'
 import { liveviewPauseReason } from '@/labels'
@@ -32,7 +33,7 @@ import { drawGrid, drawFocusBrackets, drawLoupe } from './overlays/drawing.js'
 
 const STALE_MS = 3000
 const ANALYSIS_WIDTH = 480 // frames are downsampled to this width for histogram, clipping, peaking
-const FOCUS_STEP = { small: 50, large: 250 }
+const FOCUS_STEP = { small: 150, large: 1000 } // fallback until the config loads
 const LOCK_MS = 1400
 const TAP_SLOP_PX = 8
 const HIDDEN_CLOSE_MS = 5000
@@ -42,6 +43,8 @@ const auth = useAuthStore()
 const liveview = useLiveViewStore()
 const toasts = useToastsStore()
 const focus = useFocusStore()
+const config = useConfigStore()
+const focusMode = ref(readFocusMode()) // 'af' | 'manual', remembered per browser
 const capture = useCaptureStore()
 const files = useFilesStore()
 const visible = useVisibility()
@@ -401,6 +404,32 @@ watch(
   () => [camera.model, camera.connectedAt],
   () => (pointUnsupported = false),
 )
+function readFocusMode() {
+  try {
+    return localStorage.getItem('focusMode') === 'manual' ? 'manual' : 'af'
+  } catch {
+    return 'af'
+  }
+}
+function setFocusMode(m) {
+  focusMode.value = m
+  try {
+    localStorage.setItem('focusMode', m)
+  } catch {
+    /* storage unavailable: per-session only */
+  }
+}
+// Manual: a tap only moves the AF point; no autofocus run.
+async function movePointOnly() {
+  const { w, h } = frameSize.value
+  if (pointUnsupported) return
+  try {
+    await focus.setPoint(focusPt.value.x / (w || 1), focusPt.value.y / (h || 1))
+  } catch (e) {
+    if (e?.status === 501 || e?.code === 'FEATURE_UNSUPPORTED') pointUnsupported = true
+    toasts.warn('Could not move the focus point.')
+  }
+}
 async function runAutofocus(move = false) {
   if (!camera.connected) return
   clearTimeout(lockTimer)
@@ -433,7 +462,10 @@ async function runAutofocus(move = false) {
   }
 }
 async function focusStep(dir, size) {
-  let n = dir * FOCUS_STEP[size]
+  const cam = config.config?.camera
+  const step =
+    (size === 'large' ? cam?.focus_step_large : cam?.focus_step_small) ?? FOCUS_STEP[size]
+  let n = dir * step
   const r = focus.status?.range
   if (r) n = Math.max(r.min, Math.min(r.max, n))
   try {
@@ -472,7 +504,8 @@ function onPointerUp(e) {
   down = null
   if (tap && frameFocused()) {
     focusPt.value = framePoint(e)
-    runAutofocus(true)
+    if (focusMode.value === 'manual') movePointOnly()
+    else runAutofocus(true)
   }
 }
 function onPointerCancel() {
@@ -670,6 +703,8 @@ onUnmounted(() => {
         <FocusPill
           :disabled="!camera.connected"
           :busy="afBusy"
+          :mode="focusMode"
+          @mode="setFocusMode"
           @step="focusStep"
           @autofocus="runAutofocus()"
         />

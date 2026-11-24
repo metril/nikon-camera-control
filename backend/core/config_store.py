@@ -101,6 +101,28 @@ class CameraConfig(_Section):
         description="Added to the start of every downloaded photo's name. Up to 40 characters; "
         "spaces and symbols become dashes.",
     )
+    focus_step_small: int = Field(
+        default=150,
+        ge=1,
+        le=32767,
+        title="Small focus step",
+        description="Motor steps per click; lenses differ, a full sweep on a typical zoom is "
+        "~6000-8000 steps.",
+    )
+    focus_step_large: int = Field(
+        default=1000,
+        ge=1,
+        le=32767,
+        title="Large focus step",
+        description="Motor steps per click; lenses differ, a full sweep on a typical zoom is "
+        "~6000-8000 steps.",
+    )
+
+    @model_validator(mode="after")
+    def _focus_steps(self) -> CameraConfig:
+        if self.focus_step_small > self.focus_step_large:
+            raise ValueError("focus_step_small must not be larger than focus_step_large")
+        return self
 
 
 class LiveViewConfig(_Section):

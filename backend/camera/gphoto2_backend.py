@@ -26,7 +26,7 @@ from backend.camera.backend import (
     EventType,
     FileKind,
     StorageInfo,
-    parse_property_event,
+    parse_property_change,
 )
 from backend.camera.usb_access import (
     DEFAULT_DEV_ROOT,
@@ -249,7 +249,7 @@ class Gphoto2Backend:
     _last_port: tuple[int, int] | None = None
 
     # Called with the PTP property code of every DevicePropChanged event seen by wait_for_event.
-    property_listener: Callable[[int], None] | None = None
+    property_listener: Callable[[int, str | None, str | None], None] | None = None
 
     def __init__(
         self,
@@ -502,10 +502,10 @@ class Gphoto2Backend:
             )
         if etype == gp.GP_EVENT_CAPTURE_COMPLETE:
             return CameraEvent(EventType.CAPTURE_COMPLETE)
-        code = parse_property_event(data)
-        if code is not None and self.property_listener is not None:
+        change = parse_property_change(data)
+        if change is not None and self.property_listener is not None:
             with contextlib.suppress(Exception):
-                self.property_listener(code)
+                self.property_listener(*change)
         return CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": etype, "data": str(data)})
 
     # -- filesystem

@@ -13,9 +13,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from backend.api.schemas.common import EventType
+from backend.camera.backend import ConfigType
 from backend.core.errors import AppError
 
 if TYPE_CHECKING:
@@ -44,7 +46,7 @@ PROP_WIDGETS: dict[int, tuple[str, ...]] = {
 class PropertySync:
     def __init__(self, camera: CameraService) -> None:
         self._camera = camera
-        self._pending: set[str] = set()
+        self._pending: dict[str, str | None] = {}  # widget -> latest reported value
         self._written: dict[str, float] = {}
         self._refreshed: dict[str, float] = {}
         self._timer: asyncio.TimerHandle | None = None
@@ -53,29 +55,35 @@ class PropertySync:
     def note_write(self, name: str) -> None:
         """The app just wrote ``name``: ignore the body's echo of it for ``ECHO_S``."""
         self._written[name] = time.monotonic()
-        self._pending.discard(name)
+        self._pending.pop(name, None)
 
     def on_codes(self, codes: list[int]) -> None:
         """Loop thread. Queue the widgets behind these property codes."""
-        now = time.monotonic()
         for code in codes:
-            candidates = PROP_WIDGETS.get(code)
-            if not candidates:
-                continue
-            # Only a name already known to exist: an unknown one would cost a full config read.
-            name = self._camera.known_setting_name(candidates)
-            if name is not None:
-                if now - self._written.get(name, -ECHO_S) < ECHO_S:
-                    continue
-                self._pending.add(name)
-        if self._pending and self._timer is None:
+            self.on_event(code)
+
+    def on_event(self, code: int, name: str | None = None, value: str | None = None) -> None:
+        """Loop thread. Queue one property change. The reported widget ``name`` wins over the
+        code table; a reported ``value`` is applied directly when it fits the widget, else the
+        widget is re-read."""
+        # Only a name already known to exist: an unknown one would cost a full config read.
+        found = self._camera.known_setting_name((name,)) if name else None
+        if found is None:
+            found = self._camera.known_setting_name(PROP_WIDGETS.get(code, ()))
+            value = None if name else value  # a value for an unrecognised name is not ours
+        if found is None:
+            return
+        if time.monotonic() - self._written.get(found, -ECHO_S) < ECHO_S:
+            return
+        self._pending[found] = value
+        if self._timer is None:
             self._timer = asyncio.get_running_loop().call_later(DEBOUNCE_S, self._flush)
 
     def _flush(self) -> None:
         self._timer = None
         now = time.monotonic()
         due = [n for n in self._pending if now - self._refreshed.get(n, -MIN_GAP_S) >= MIN_GAP_S]
-        self._pending.difference_update(due)
+        values = {n: self._pending.pop(n) for n in due}
         if self._pending:  # rate-limited ones go again once their gap has passed
             wait = min(
                 MIN_GAP_S - (now - self._refreshed[n])
@@ -85,9 +93,38 @@ class PropertySync:
             self._timer = asyncio.get_running_loop().call_later(max(wait, 0.05), self._flush)
         for name in due:
             self._refreshed[name] = now
+            raw = values[name]
+            if raw is not None and self._apply(name, raw):
+                continue
             task = asyncio.get_running_loop().create_task(self._refresh(name))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
+
+    def _apply(self, name: str, raw: str) -> bool:
+        """Take the value the body reported without a re-read; False if it does not fit the
+        cached widget (unknown choice, unparsable number)."""
+        w = self._camera.cached_setting(name)
+        if w is None:
+            return False
+        value: str | int | float | bool
+        if w.type in (ConfigType.RADIO, ConfigType.MENU):
+            if raw not in w.choices:
+                return False
+            value = raw
+        elif w.type == ConfigType.TEXT:
+            value = raw
+        elif w.type == ConfigType.RANGE:
+            try:
+                value = float(raw)
+            except ValueError:
+                return False
+        else:
+            return False
+        if w.value == value:
+            return True
+        self._camera.store_setting(replace(w, value=value))
+        self._camera.bus.publish(EventType.SETTING_CHANGED, {"name": name, "value": value})
+        return True
 
     async def _refresh(self, name: str) -> None:
         before = self._camera.cached_setting(name)

@@ -47,6 +47,7 @@ class ErrorCode(StrEnum):
     LOCATION_BUSY = "LOCATION_BUSY"
     MOUNT_FAILED = "MOUNT_FAILED"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    FOCUS_LIMIT = "FOCUS_LIMIT"
 
 
 class AppError(Exception):
@@ -173,6 +174,14 @@ class InvalidState(AppError):
     code = ErrorCode.INVALID_STATE
     http_status = 409
     default_message = "Operation not allowed in the current state"
+
+
+class FocusLimit(AppError):
+    """A manual focus drive hit the end of the lens travel."""
+
+    code = ErrorCode.FOCUS_LIMIT
+    http_status = 409
+    default_message = "The lens is at the end of its focus travel"
 
 
 class SettingNotFound(AppError):

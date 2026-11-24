@@ -2,9 +2,9 @@
 /** Bottom-centre focus pill: large and small steps nearer and farther, Autofocus in the middle. */
 import UiIcon from '@/components/ui/UiIcon.vue'
 
-defineProps({ disabled: Boolean, busy: Boolean })
+defineProps({ disabled: Boolean, busy: Boolean, mode: { type: String, default: 'af' } })
 /** step(direction, size): direction -1 nearer / 1 farther; size 'small' | 'large' */
-const emit = defineEmits(['step', 'autofocus'])
+const emit = defineEmits(['step', 'autofocus', 'mode'])
 </script>
 
 <template>
@@ -30,6 +30,24 @@ const emit = defineEmits(['step', 'autofocus'])
       <UiIcon name="ChevronLeft" :size="16" />
     </button>
     <button
+      type="button"
+      class="mode"
+      :aria-pressed="mode === 'manual'"
+      :aria-label="
+        mode === 'manual' ? 'Manual focus: tap moves the AF point only' : 'Autofocus: tap focuses'
+      "
+      :title="
+        mode === 'manual'
+          ? 'Manual: tapping only moves the AF point'
+          : 'Autofocus: tapping runs autofocus'
+      "
+      data-testid="lv-focus-mode"
+      @click="emit('mode', mode === 'manual' ? 'af' : 'manual')"
+    >
+      {{ mode === 'manual' ? 'Manual' : 'Auto' }}
+    </button>
+    <button
+      v-if="mode !== 'manual'"
       type="button"
       class="af"
       aria-label="Autofocus"
