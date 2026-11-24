@@ -308,7 +308,7 @@ async def test_second_render_never_overwrites(
     a = await _render(client, sid, {"output_name": "same"})
     first = (store.folder(sid) / "videos" / "same.mp4").read_bytes()
     b = await _render(client, sid, {"output_name": "same"})
-    assert (a["result"]["name"], b["result"]["name"]) == ("same.mp4", "same_1.mp4")
+    assert (a["result"]["name"], b["result"]["name"]) == ("same.mp4", "same-1.mp4")
     assert (store.folder(sid) / "videos" / "same.mp4").read_bytes() == first
     assert len((await store.get(sid)).videos) == 2
 

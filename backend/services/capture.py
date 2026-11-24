@@ -25,9 +25,9 @@ _PREFIX_BAD = re.compile(r"[^A-Za-z0-9_-]+")
 
 
 def sanitize_prefix(prefix: str | None) -> str:
-    """Safe filename prefix (``[A-Za-z0-9_-]``, max 40 chars) with a trailing ``_``, or ''."""
-    cleaned = _PREFIX_BAD.sub("_", prefix or "").strip("_")[:40]
-    return f"{cleaned}_" if cleaned else ""
+    """Safe filename prefix (``[A-Za-z0-9_-]``, max 40 chars) with a trailing ``-``, or ''."""
+    cleaned = _PREFIX_BAD.sub("-", prefix or "").strip("_-")[:40].strip("_-")
+    return f"{cleaned}-" if cleaned else ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +80,7 @@ class CaptureService:
         delete_from_camera: bool = False,
     ) -> list[Path]:
         """Capture and download into ``dest_dir`` (e.g. a time-lapse session folder), as the
-        lease ``owner`` if given. Files are named ``<name_prefix>YYYYmmdd_HHMMSS_<camera name>``."""
+        lease ``owner`` if given. Files: ``<name_prefix>YYYY-mm-dd-HHMMSS-<camera name>``."""
         _, local = await self._shoot(
             dest_dir,
             download=True,
@@ -202,7 +202,7 @@ class CaptureService:
         name_prefix: str,
         delete_from_camera: bool,
     ) -> list[Path]:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_")
+        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-")
         saved = 0
 
         def stored(path: Path) -> None:

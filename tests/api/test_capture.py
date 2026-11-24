@@ -19,7 +19,8 @@ async def test_capture_downloads_and_names(
     body = r.json()
     assert len(body["files"]) == 1 and len(body["camera_files"]) == 1
     f = body["files"][0]
-    assert re.fullmatch(r"\d{8}_\d{6}_DSC_\d{4}\.JPG", f["name"]) and f["kind"] == "image"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{6}-DSC_\d{4}\.JPG", f["name"])
+    assert f["kind"] == "image"
     p: Path = tmp_dirs.output_dir / f["path"]
     assert await asyncio.to_thread(p.stat) and f["size"] > 0
     assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"
@@ -33,7 +34,7 @@ async def test_capture_raw_plus_jpeg_two_files_with_prefix(
     r = await connected_client.post(C, json={"filename_prefix": "../my shot!"})
     names = [f["name"] for f in r.json()["files"]]
     assert len(names) == 2 and {n.rsplit(".", 1)[1] for n in names} == {"NEF", "JPG"}
-    assert all(n.startswith("my_shot_2") and "/" not in n for n in names)
+    assert all(n.startswith("my-shot-2") and "/" not in n for n in names)
 
 
 async def test_capture_names_never_collide_within_a_second(
@@ -116,8 +117,8 @@ async def test_capture_to_session_folder(app: FastAPI, connected_client: httpx.A
     svc = app.state.services.get("capture", lambda: None)
     dest = app.state.storage.root() / "sess"
     async with app.state.camera_service.lease("tl"):
-        paths = await svc.capture_to(dest, owner="tl", name_prefix="f001_")
-    assert len(paths) == 1 and paths[0].parent == dest and paths[0].name.startswith("f001_")
+        paths = await svc.capture_to(dest, owner="tl", name_prefix="f001-")
+    assert len(paths) == 1 and paths[0].parent == dest and paths[0].name.startswith("f001-")
     assert not list(dest.glob("*.part"))
     r = await connected_client.get("/api/v1/files", params={"folder": "sess"})
     assert r.json()["total"] == 1  # index invalidated
@@ -178,7 +179,7 @@ async def test_stray_file_is_downloaded_in_background_and_announced(
     r = await connected_client.post(C, json={"download": False})  # builds CaptureService
     assert r.status_code == 200
     deadline = asyncio.get_running_loop().time() + 5
-    while len(list(tmp_dirs.output_dir.glob("**/*_" + stray[0].name))) != 1:
+    while len(list(tmp_dirs.output_dir.glob("**/*-" + stray[0].name))) != 1:
         assert asyncio.get_running_loop().time() < deadline
         await asyncio.sleep(0.02)
     assert not app.state.camera_service.stray_files

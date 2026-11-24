@@ -727,7 +727,7 @@ class TimelapseRunner:
                         await self._settings.set_many(step.settings, owner=OWNER)
                         await self._wait(SETTLE_S, self._stop_wake)
                     prefix = (
-                        f"s{set_index:05d}_{i:02d}_" if step is not None else f"f{set_index:05d}_"
+                        f"s{set_index:05d}-{i:02d}-" if step is not None else f"f{set_index:05d}-"
                     )
                     paths = await self._capture.capture_to(folder, owner=OWNER, name_prefix=prefix)
                     if not paths:

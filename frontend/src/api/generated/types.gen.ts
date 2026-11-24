@@ -362,6 +362,8 @@ export type BracketRequest = {
     download?: boolean;
     /**
      * Filename Prefix
+     *
+     * Prefix for file names; unsafe characters become -
      */
     filename_prefix?: string | null;
 };
@@ -402,6 +404,8 @@ export type BulbRequest = {
     download?: boolean;
     /**
      * Filename Prefix
+     *
+     * Prefix for file names; unsafe characters become -
      */
     filename_prefix?: string | null;
     /**
@@ -881,7 +885,7 @@ export type CaptureRequest = {
     /**
      * Filename Prefix
      *
-     * Prefix for file names; unsafe characters become _
+     * Prefix for file names; unsafe characters become -
      */
     filename_prefix?: string | null;
 };

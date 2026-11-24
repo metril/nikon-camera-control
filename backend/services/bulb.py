@@ -356,7 +356,7 @@ class BulbService:
             )
         local: list[Path] = []
         if req.download:
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_")
+            stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-")
             try:
                 local = await download_files(
                     self._camera,

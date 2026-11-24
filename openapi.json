@@ -606,6 +606,7 @@
                 "type": "null"
               }
             ],
+            "description": "Prefix for file names; unsafe characters become -",
             "title": "Filename Prefix"
           }
         },
@@ -675,6 +676,7 @@
                 "type": "null"
               }
             ],
+            "description": "Prefix for file names; unsafe characters become -",
             "title": "Filename Prefix"
           },
           "seconds": {
@@ -1432,7 +1434,7 @@
                 "type": "null"
               }
             ],
-            "description": "Prefix for file names; unsafe characters become _",
+            "description": "Prefix for file names; unsafe characters become -",
             "title": "Filename Prefix"
           }
         },

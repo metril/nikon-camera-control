@@ -36,7 +36,7 @@ def test_unique_path_does_not_collide_same_second(tmp_path: Path) -> None:
     paths = {unique_path(tmp_path, "20260101_120000_DSC_0001.NEF") for _ in range(5)}
     assert len(paths) == 5
     assert all(p.exists() for p in paths)
-    assert (tmp_path / "20260101_120000_DSC_0001_1.NEF") in paths
+    assert (tmp_path / "20260101_120000_DSC_0001-1.NEF") in paths
 
 
 async def test_unique_path_race_safe(tmp_path: Path) -> None:
@@ -96,3 +96,11 @@ async def test_app_startup_runs_cleanup(app: FastAPI, tmp_dirs: TmpDirs) -> None
     (leftover / "000001.jpg").write_bytes(b"1")
     async with app.router.lifespan_context(app):
         assert not leftover.exists()
+
+
+def test_sanitize_prefix_dashes() -> None:
+    from backend.services.capture import sanitize_prefix
+
+    assert sanitize_prefix("wedding day!") == "wedding-day-"
+    assert sanitize_prefix("-a/b-") == "a-b-"
+    assert sanitize_prefix("  ") == "" and sanitize_prefix(None) == ""

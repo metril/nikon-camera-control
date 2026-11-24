@@ -228,8 +228,8 @@ class FocusService:
             raise
 
     def _make_dest(self, name: str | None) -> Path:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        label = sanitize_name(_SAFE.sub("_", name or ""), default="").strip("_")
+        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        label = sanitize_name(_SAFE.sub("-", name or ""), default="").strip("_-")
         base = self._store.root() / "stacks"
         base.mkdir(parents=True, exist_ok=True)
         stem = f"{stamp}-{label}" if label else stamp
@@ -262,7 +262,7 @@ class FocusService:
                     break
                 ctx.report(i / shots, f"Shot {i + 1}/{shots}")
                 paths = await self._capture.capture_to(
-                    dest, owner=OWNER, name_prefix=f"{i + 1:03d}_"
+                    dest, owner=OWNER, name_prefix=f"{i + 1:03d}-"
                 )
                 files += len(paths)
                 if i < shots - 1:

@@ -552,7 +552,7 @@ operation_id: `capture_photo`
 |---|---|---|---|---|---|
 | `download` | boolean | no | `true` |  | Download the captured files to the server |
 | `delete_from_camera` | boolean | no | `false` |  | Delete from the card after download (ignored if download=false) |
-| `filename_prefix` | string \| null | no |  | `maxLength=40` | Prefix for file names; unsafe characters become _ |
+| `filename_prefix` | string \| null | no |  | `maxLength=40` | Prefix for file names; unsafe characters become - |
 
 **Responses**
 
@@ -611,7 +611,7 @@ it closes the shutter at once and still keeps the frame.
 |---|---|---|---|---|---|
 | `seconds` | number | yes |  | `>=1.0`, `<=3600.0` | Exposure time in seconds. |
 | `download` | boolean | no | `true` |  | Download the frame(s) to the output dir. |
-| `filename_prefix` | string \| null | no |  | `maxLength=80` |  |
+| `filename_prefix` | string \| null | no |  | `maxLength=80` | Prefix for file names; unsafe characters become - |
 
 **Responses**
 
@@ -637,7 +637,7 @@ Capture one bracket set (every step applied and shot), then restore the settings
 |---|---|---|---|---|---|
 | `bracketing` | NoBracketing \| StepsBracketing \| QuickBracketing \| PresetBracketing | no |  |  | Same union as the time-lapse; must resolve to at least 2 steps. |
 | `download` | boolean | no | `true` |  | Download the frames to the output dir. |
-| `filename_prefix` | string \| null | no |  | `maxLength=80` |  |
+| `filename_prefix` | string \| null | no |  | `maxLength=80` | Prefix for file names; unsafe characters become - |
 
 **Responses**
 
