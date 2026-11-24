@@ -126,13 +126,10 @@ export const CAMERA_STATES = {
 }
 export const cameraState = labeller(CAMERA_STATES)
 
+/** Render request codec enum (API `codec`), each once. */
 export const VIDEO_CODECS = {
   h264: 'H.264',
   h265: 'H.265',
-  libvpx_vp9: 'VP9',
-  'libvpx-vp9': 'VP9',
-  libx264: 'H.264',
-  libx265: 'H.265',
   prores: 'ProRes',
   vp9: 'VP9',
 }

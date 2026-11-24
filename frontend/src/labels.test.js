@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
   settingValueLabel,
@@ -52,6 +53,12 @@ describe('label maps', () => {
   })
   it('builds select options', () => {
     expect(options(VIDEO_CODECS)[0]).toEqual({ value: 'h264', label: 'H.264' })
+  })
+  it('lists each API codec once, matching the generated enum', () => {
+    const src = readFileSync('src/api/generated/types.gen.ts', 'utf8')
+    const m = src.match(/codec\?: ((?:'\w+' \| )*'\w+')/)
+    const enumVals = [...m[1].matchAll(/'(\w+)'/g)].map((x) => x[1])
+    expect(options(VIDEO_CODECS).map((o) => o.value).sort()).toEqual(enumVals.sort())
   })
   it('labels time-lapse warnings, states and ffprobe encoder names', () => {
     expect(timelapseWarning('interval_too_short')).toBe(

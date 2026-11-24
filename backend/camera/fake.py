@@ -582,11 +582,15 @@ class FakeCamera:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
         new = self._coerce(s, value)
-        if name == "changeafarea":  # like ptp2: "XxY" inside the live view frame, live view on
+        if name == "changeafarea":  # like ptp2: "XxY" in full-sensor pixels, live view on
             m = re.fullmatch(r"(\d+)x(\d+)", str(new))
             if not self._values["viewfinder"]:
                 raise CameraOperationFailed("Camera is not in live view")
-            if not m or int(m[1]) >= _IMG_SIZE[0] or int(m[2]) >= _IMG_SIZE[1]:
+            fw, fh = max(
+                (tuple(map(int, c.split("x"))) for c in self._spec("imagesize").choices),
+                key=lambda d: d[0] * d[1],
+            )
+            if not m or int(m[1]) >= fw or int(m[2]) >= fh:
                 raise SettingInvalid(f"Invalid AF area {new!r}", details={"name": name})
         if self._shutter_shift and name == "shutterspeed" and new not in ("Bulb", "1/8000"):
             i = s.choices.index(str(new))

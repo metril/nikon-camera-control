@@ -93,6 +93,10 @@ export function formatBytes(n) {
 
 export function formatDuration(s) {
   if (!Number.isFinite(s) || s < 0) return '-'
+  if (s < 10 && s !== Math.round(s)) {
+    const d = s.toFixed(1)
+    if (d !== '0.0' && d !== '10.0') return `${d} s`
+  }
   const t = Math.round(s)
   const h = Math.floor(t / 3600)
   const m = Math.floor((t % 3600) / 60)

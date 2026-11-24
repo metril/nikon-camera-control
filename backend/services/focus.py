@@ -45,6 +45,8 @@ RETURN_TIMEOUT_S = 60.0
 DRIVE_WAIT_S = 30.0  # bound on waiting for an in-flight drive after a cancel
 _S = CameraState
 _NO_MF_DRIVE = frozenset({"AF-C", "AF-A"})
+_SIZE = re.compile(r"(\d+)x(\d+)")
+_MODEL_SIZES = {"D500": (5568, 3712)}
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
 
 Sleep = Callable[[float], Awaitable[object]]
@@ -71,6 +73,7 @@ class FocusService:
         self._pos = 0
         self._last_af_at: datetime | None = None
         self._range: tuple[int, int, int] | None = None
+        self._size: tuple[tuple[Any, Any], tuple[int, int]] | None = None
 
     @property
     def relative_position(self) -> int:
@@ -129,15 +132,39 @@ class FocusService:
         self._last_af_at = datetime.now(UTC)
         return True
 
+    async def _full_size(self) -> tuple[int, int]:
+        """Full-sensor pixel size ``changeafarea`` is expressed in: the largest ``imagesize``
+        choice, else a per-model table, else the live view preview size. Cached per connection."""
+        st = self._camera.status()
+        key = (st.model, st.connected_at)
+        if self._size is not None and self._size[0] == key:
+            return self._size[1]
+        size: tuple[int, int] | None = None
+        try:
+            w: ConfigWidget = await self._camera.call(
+                lambda b: b.get_config("imagesize"), priority=Priority.CONTROL
+            )
+            dims = [(int(m[1]), int(m[2])) for c in w.choices if (m := _SIZE.fullmatch(c.strip()))]
+            size = max(dims, key=lambda d: d[0] * d[1]) if dims else None
+        except AppError:
+            pass
+        if size is None:
+            model = (st.model or "").upper()
+            size = next((v for k, v in _MODEL_SIZES.items() if k in model), None)
+        if size is None:
+            with Image.open(io.BytesIO(await self._camera.preview_frame())) as im:
+                size = im.size
+        self._size = (key, size)
+        return size
+
     async def set_af_point(self, x: float, y: float) -> tuple[int, int]:
-        """Move the AF point to normalized (x, y) of the live view frame via ``changeafarea``
-        (text "XxY" in live view frame pixels). Needs live view; the frame size is read from a
-        fresh preview frame. Returns the pixel point sent."""
+        """Move the AF point to normalized (x, y) via ``changeafarea`` (text "XxY" in
+        full-sensor pixels; the camera clamps to keep the AF box inside). Needs live view.
+        Returns the pixel point sent."""
         self._require_free(None)
         if self._camera.state != _S.LIVEVIEW:
             raise InvalidState("Live view must be on to move the AF point")
-        with Image.open(io.BytesIO(await self._camera.preview_frame())) as im:
-            w, h = im.size
+        w, h = await self._full_size()
         px, py = min(w - 1, int(x * w)), min(h - 1, int(y * h))
         async with self._lock:
             try:

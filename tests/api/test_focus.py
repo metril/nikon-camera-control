@@ -309,16 +309,16 @@ async def test_stack_and_mf_refused_in_af_c_with_clear_error(
     assert (await connected_client.get("/api/v1/camera")).json()["leased_by"] is None
 
 
-async def test_af_point_maps_normalized_to_frame_pixels(
+async def test_af_point_maps_normalized_to_full_sensor_pixels(
     connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     c = connected_client
     assert (await c.post("/api/v1/liveview/start")).status_code < 300
-    r = await c.post(f"{F}/point", json={"x": 0.5, "y": 0.25})
-    assert r.status_code == 200 and r.json() == {"ok": True, "x": 160, "y": 53}
-    assert fake_camera._values["changeafarea"] == "160x53"
+    r = await c.post(f"{F}/point", json={"x": 0.5, "y": 0.5})
+    assert r.status_code == 200 and r.json() == {"ok": True, "x": 2784, "y": 1856}
+    assert fake_camera._values["changeafarea"] == "2784x1856"
     r = await c.post(f"{F}/point", json={"x": 1, "y": 1})
-    assert r.json()["x"] == 319 and r.json()["y"] == 212
+    assert r.json()["x"] == 5567 and r.json()["y"] == 3711
 
 
 async def test_af_point_needs_liveview_and_valid_range(
