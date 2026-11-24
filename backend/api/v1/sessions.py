@@ -22,7 +22,7 @@ from backend.services.sessions import SessionStore
 
 def build_sessions_service(state: object) -> SessionStore:
     # crash recovery (recover_interrupted) runs in a thread at app startup (backend/app.py)
-    return SessionStore(state.output_dir)  # type: ignore[attr-defined]
+    return SessionStore(state.storage)  # type: ignore[attr-defined]
 
 
 get_sessions = service_dep("sessions", build_sessions_service)

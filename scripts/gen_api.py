@@ -28,7 +28,7 @@ def build_app(tmp: Path) -> Any:
     from backend.app import create_app
 
     return create_app(
-        data_dir=tmp / "data", output_dir=tmp / "output", auto_connect=False, frontend_dist=None
+        data_dir=tmp / "data", target_dir=tmp / "output", auto_connect=False, frontend_dist=None
     )
 
 

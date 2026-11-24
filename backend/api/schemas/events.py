@@ -122,6 +122,21 @@ class PresetsChangedData(_Payload):
     kind: str | None = None
 
 
+class LocationsChangedData(_Payload):
+    reason: str = Field(description="mounted, unmounted, unplugged, added, updated, target, ...")
+    id: str | None = None
+    target_id: str | None = None
+
+
+class BackupStatusData(_Payload):
+    running: bool
+    pending: int = Field(default=0, description="Files still to copy in this run")
+    copied: int = 0
+    failed: int = 0
+    current: str | None = None
+    backup_id: str | None = None
+
+
 class ErrorData(_Payload):
     code: str
     message: str
@@ -262,6 +277,16 @@ class PresetsChangedEvent(_EventBase):
     data: PresetsChangedData
 
 
+class LocationsChangedEvent(_EventBase):
+    type: Literal[EventType.LOCATIONS_CHANGED] = EventType.LOCATIONS_CHANGED
+    data: LocationsChangedData
+
+
+class BackupStatusEvent(_EventBase):
+    type: Literal[EventType.BACKUP_STATUS] = EventType.BACKUP_STATUS
+    data: BackupStatusData
+
+
 class ErrorEvent(_EventBase):
     type: Literal[EventType.ERROR] = EventType.ERROR
     data: ErrorData
@@ -294,6 +319,8 @@ TypedEvent = Annotated[
     | JobCancelledEvent
     | ConfigChangedEvent
     | PresetsChangedEvent
+    | LocationsChangedEvent
+    | BackupStatusEvent
     | ErrorEvent,
     Field(discriminator="type"),
 ]
@@ -325,5 +352,7 @@ EVENT_MODELS: dict[EventType, type[BaseModel]] = {
     EventType.JOB_CANCELLED: JobCancelledEvent,
     EventType.CONFIG_CHANGED: ConfigChangedEvent,
     EventType.PRESETS_CHANGED: PresetsChangedEvent,
+    EventType.LOCATIONS_CHANGED: LocationsChangedEvent,
+    EventType.BACKUP_STATUS: BackupStatusEvent,
     EventType.ERROR: ErrorEvent,
 }

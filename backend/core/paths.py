@@ -15,5 +15,4 @@ def _pick(name: str) -> Path:
 
 
 DATA_DIR: Path = _pick("data")
-OUTPUT_DIR: Path = _pick("output")
 CONFIG_FILE: Path = DATA_DIR / "config.json"

@@ -39,6 +39,7 @@ from backend.core.errors import (
 from backend.core.events import EventBus
 from backend.core.jobs import Job, JobContext, JobManager
 from backend.core.state import CameraState
+from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import classify, download_files
 
 log = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ class RecordingService:
         camera: CameraService,
         bus: EventBus,
         jobs: JobManager,
-        output_dir: Path,
+        output_dir: Path | StorageRoot,
         *,
         liveview_running: Callable[[], bool] = lambda: False,
         clock: Callable[[], float] = time.monotonic,
@@ -145,7 +146,7 @@ class RecordingService:
         self._camera = camera
         self._bus = bus
         self._jobs = jobs
-        self._output = output_dir
+        self._store = as_root(output_dir)
         self._lv_running = liveview_running
         self._clock = clock
         self._sleep = sleep
@@ -200,6 +201,8 @@ class RecordingService:
                 raise InvalidState("Recording service is shutting down")
             if self._active is not None:
                 raise InvalidState("A recording is already in progress")
+            if download_after:
+                self._store.root()  # NoTargetError (409) before recording starts
             st = self._camera.state
             if st in (_S.DISCONNECTED, _S.CONNECTING):
                 raise CameraNotConnected()
@@ -524,13 +527,18 @@ class RecordingService:
         return out
 
     def _submit_download(self, clips: list[CameraFilePath]) -> Job:
-        dest = self._output / RECORDINGS_DIR
         camera = self._camera
+        store = self._store
 
         async def run(ctx: JobContext) -> dict[str, object]:
+            root = store.root()
+            for _clip, size in await self._sizes(clips):
+                store.check_file_size(size)  # FAT32 4 GiB limit
             ctx.report(0.0, "Downloading recording")
-            paths = await download_files(camera, clips, dest)
+            paths = await download_files(
+                camera, clips, root / RECORDINGS_DIR, on_stored=store.stored
+            )
             ctx.report(1.0, "Done")
-            return {"files": [p.relative_to(self._output).as_posix() for p in paths]}
+            return {"files": [p.relative_to(root).as_posix() for p in paths]}
 
         return self._jobs.submit("recording_download", run)

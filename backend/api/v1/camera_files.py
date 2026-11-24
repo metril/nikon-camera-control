@@ -32,9 +32,7 @@ from backend.services.camera_files import (
 
 get_camera_files = service_dep(
     "camera_files",
-    lambda s: CameraFilesService(
-        s.camera_service, s.event_bus, s.job_manager, s.data_dir, s.output_dir
-    ),
+    lambda s: CameraFilesService(s.camera_service, s.event_bus, s.job_manager, s.storage),
 )
 FilesDep = Annotated[CameraFilesService, Depends(get_camera_files)]
 

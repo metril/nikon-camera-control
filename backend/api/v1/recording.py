@@ -30,7 +30,7 @@ def build_recording_service(s: State) -> RecordingService:
         s.camera_service,
         s.event_bus,
         s.job_manager,
-        s.output_dir,
+        s.storage,
         liveview_running=lambda: lv.running,
     )
 

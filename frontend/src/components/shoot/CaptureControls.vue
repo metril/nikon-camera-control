@@ -8,13 +8,17 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiToggle from '@/components/ui/UiToggle.vue'
 import UiText from '@/components/ui/UiText.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
+import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
+import { useStorageStore } from '@/stores/storage'
+import { isNoTarget } from '@/api'
 
-const emit = defineEmits(['open-gallery'])
+const emit = defineEmits(['open-gallery', 'open-settings'])
 
 const camera = useCameraStore()
 const capture = useCaptureStore()
 const files = useFilesStore()
 const toasts = useToastsStore()
+const storage = useStorageStore()
 
 const download = ref(true)
 const deleteAfter = ref(false)
@@ -30,7 +34,10 @@ onUnmounted(() => {
 const busyReason = computed(() =>
   camera.leasedBy ? `Busy: ${String(camera.leasedBy).replace(/[-_]/g, ' ')} running` : '',
 )
-const canShoot = computed(() => camera.connected && !capture.inFlight && !camera.leasedBy)
+const noTarget = computed(() => storage.noTarget || isNoTarget(capture.lastError))
+const canShoot = computed(
+  () => camera.connected && !capture.inFlight && !camera.leasedBy && !noTarget.value,
+)
 const result = computed(() => capture.lastCapture)
 const savedFiles = computed(() => result.value?.files || [])
 const cardFiles = computed(() => result.value?.camera_files || [])
@@ -110,6 +117,7 @@ watch(
           >{{ capture.inFlight ? 'Capturing...' : 'Capture' }}</UiButton
         >
         <p class="text-xs text-camera-muted">Press Space to capture</p>
+        <NoTargetNotice v-if="noTarget" compact @open-settings="emit('open-settings')" />
         <p v-if="busyReason" class="text-sm text-camera-warning" role="status" aria-live="polite">
           {{ busyReason }}
         </p>
@@ -130,7 +138,11 @@ watch(
         </div>
       </div>
 
-      <div v-if="capture.lastError && !result" class="text-sm text-camera-error" aria-live="polite">
+      <div
+        v-if="capture.lastError && !result && !noTarget"
+        class="text-sm text-camera-error"
+        aria-live="polite"
+      >
         {{ capture.lastError.message }}
       </div>
 

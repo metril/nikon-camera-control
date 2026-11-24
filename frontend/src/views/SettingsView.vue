@@ -9,6 +9,7 @@ import UiEmpty from '@/components/ui/UiEmpty.vue'
 import SchemaField from '@/components/settings/SchemaField.vue'
 import ApiKeySection from '@/components/settings/ApiKeySection.vue'
 import DemoCameraSection from '@/components/settings/DemoCameraSection.vue'
+import StorageSection from '@/components/settings/StorageSection.vue'
 import AboutSection from '@/components/settings/AboutSection.vue'
 import {
   buildSections,
@@ -29,7 +30,15 @@ const saving = ref(false)
 const resetting = ref(false)
 const loadError = ref('')
 
-const sections = computed(() => buildSections(config.schema))
+// Storage locations/target/backups are managed by StorageSection, not the generic form.
+const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
+const sections = computed(() =>
+  buildSections(config.schema).map((s) =>
+    s.key === 'storage'
+      ? { ...s, fields: s.fields.filter((f) => !STORAGE_OWNED.includes(f.name)) }
+      : s,
+  ),
+)
 const dirty = computed(() =>
   config.config ? dirtyPaths(sections.value, config.config, draft.value, ['demo_camera']) : [],
 )
@@ -136,6 +145,7 @@ async function resetDefaults() {
 
     <template v-else-if="config.config && sections.length">
       <ApiKeySection />
+      <StorageSection />
       <DemoCameraSection
         :model-value="!!draft.demo_camera"
         :dirty="isFieldDirty('demo_camera')"

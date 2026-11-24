@@ -52,7 +52,7 @@ def install(app: FastAPI) -> FakeTime:
             st.camera_service,
             st.job_manager,
             st.event_bus,
-            st.output_dir,
+            st.storage,
             files.index.invalidate,
             quiet_window_s=0.02,
             sleep=ft.sleep,
@@ -96,7 +96,7 @@ async def test_bulb_happy_path(
     assert ft.sleeps[:5] == [1.0] * 5
     assert j["result"]["seconds"] == 5
     (name,) = j["result"]["files"]
-    assert (app.state.output_dir / name).is_file()
+    assert (app.state.storage.root() / name).is_file()
     assert "star_" in name
     assert fake_camera._values["shutterspeed"] == "1/60"  # real prior value restored
     assert fake_camera._values["bulb"] is False
@@ -311,7 +311,7 @@ async def test_cancel_mid_exposure_closes_shutter_and_keeps_frame(
     assert r.status_code == 200 and r.json()["status"] == "cancelled", r.text
     assert fake_camera._values["bulb"] is False
     assert len(card_files(fake_camera)) == 1
-    assert len(list(app.state.output_dir.glob("*.JPG"))) == 1  # frame still downloaded
+    assert len(list(app.state.storage.root().glob("*.JPG"))) == 1  # frame still downloaded
     cam = app.state.camera_service
     assert cam.state == CameraState.IDLE
     assert cam.status().leased_by is None

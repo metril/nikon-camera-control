@@ -16,7 +16,7 @@ from backend.services.bulb import BulbService, _Run
 def make(app: FastAPI, t: list[float]) -> BulbService:
     st = app.state
     return BulbService(
-        st.camera_service, st.job_manager, st.event_bus, st.output_dir, lambda: None,
+        st.camera_service, st.job_manager, st.event_bus, st.storage, lambda: None,
         clock=lambda: t[0],
     )  # fmt: skip
 

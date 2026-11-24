@@ -1,0 +1,337 @@
+#!/bin/sh
+# ncc-storage: root helper that mounts/unmounts removable USB and SMB storage for the app.
+# Invoked only via sudo (see docker/sudoers-ncc). Every argument is validated before use;
+# filesystem type always comes from blkid, never from the caller.
+# Exit codes: 0 ok, 1 operation failed, 2 usage/validation, 16 mount busy.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+# Helper-private state lives in a root-owned tmpfs the app user cannot touch.
+RUN_DIR=/run/ncc-root
+DEVDIR=$RUN_DIR/dev
+CREDDIR=$RUN_DIR/cred
+MNT=/mnt/loc
+SEP=$(printf '\037')
+NL='
+'
+
+die() { # message [code]
+    echo "ncc-storage: $1" >&2
+    exit "${2:-1}"
+}
+
+usage() {
+    echo "usage: ncc-storage list-usb | mount-usb <uuid> | mount-smb <id> <//host/share> (credentials on stdin) | unmount <usb-|smb-id> [--lazy] | fsck <uuid>" >&2
+    exit 2
+}
+
+# match <ERE> <value>: value must be a single line matching the whole pattern.
+match() {
+    case $2 in *"$NL"*) return 1 ;; esac
+    printf '%s\n' "$2" | grep -Eq "$1"
+}
+
+need_root() { [ "$(id -u)" = 0 ] || die "must run as root" 1; }
+
+jstr() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"; }
+jnull() { if [ -n "$1" ]; then jstr "$1"; else printf 'null'; fi; }
+
+# Mountpoint (or empty) of a device (major:minor) or of a fixed mountpoint path.
+find_mount() { # majmin mountpoint
+    awk -v mm="$1" -v mp="$2" '$3 == mm || $5 == mp { print $5; exit }' /proc/self/mountinfo
+}
+
+# Remove an empty mountpoint directory under /mnt/loc (best effort).
+drop_mountpoint() { # usb-<uuid> | smb-<id>
+    rmdir "/mnt/loc/$1" 2>/dev/null || true
+}
+
+# private_dir <path>: a root-only directory that is not a symlink.
+private_dir() {
+    [ ! -L "$1" ] || die "$1 is a symlink" 1
+    mkdir -p "$1"
+    { [ -d "$1" ] && [ ! -L "$1" ]; } || die "$1 is not a directory" 1
+    chown root:root "$1"
+    chmod 0700 "$1"
+}
+
+prepare_dev_dir() {
+    private_dir "$RUN_DIR"
+    private_dir "$DEVDIR"
+}
+
+# Emit one record per USB-backed block device with a usable size:
+# name SEP uuid SEP fstype SEP label SEP bytes SEP major:minor
+scan() {
+    prepare_dev_dir
+    for s in /sys/class/block/*; do
+        [ -e "$s/dev" ] || continue
+        n=${s##*/}
+        case $n in '' | *[!A-Za-z0-9_-]*) continue ;; esac
+        case $(readlink -f "$s") in */usb*) ;; *) continue ;; esac
+        # Whole disks that have partitions are skipped; their partitions are listed instead.
+        if [ ! -e "$s/partition" ]; then
+            has=0
+            for p in "$s"/"$n"*; do
+                if [ -d "$p" ]; then
+                    has=1
+                    break
+                fi
+            done
+            [ "$has" = 0 ] || continue
+        fi
+        sectors=$(cat "$s/size" 2>/dev/null || echo 0)
+        case $sectors in '' | *[!0-9]*) continue ;; esac
+        [ "$sectors" -gt 0 ] || continue
+        mm=$(cat "$s/dev" 2>/dev/null || true)
+        match '^[0-9]+:[0-9]+$' "$mm" || continue
+        node=$DEVDIR/$n
+        rm -f "$node"
+        mknod -m 600 "$node" b "${mm%%:*}" "${mm##*:}" 2>/dev/null || continue
+        uuid='' fstype='' label=''
+        out=$(blkid -o export -p "$node" 2>/dev/null || true)
+        while IFS= read -r line; do
+            case $line in
+                UUID=*) uuid=${line#UUID=} ;;
+                TYPE=*) fstype=${line#TYPE=} ;;
+                LABEL=*) label=${line#LABEL=} ;;
+            esac
+        done <<EOF
+$out
+EOF
+        match '^[A-Za-z0-9-]{1,64}$' "$uuid" || uuid=''
+        match '^[A-Za-z0-9_.+-]{1,32}$' "$fstype" || fstype=''
+        label=$(printf '%s' "$label" | tr -d '\000-\037')
+        printf '%s\037%s\037%s\037%s\037%s\037%s\n' "$n" "$uuid" "$fstype" "$label" "$((sectors * 512))" "$mm"
+    done
+}
+
+# classify <fstype> <uuid> -> SUP (true|false), REASON
+classify() {
+    SUP=true REASON=''
+    case $1 in
+        exfat | vfat | ntfs | ext2 | ext3 | ext4 | btrfs | xfs | f2fs | hfsplus) ;;
+        crypto_LUKS) SUP=false REASON='encrypted (LUKS) volume' ;;
+        apfs) SUP=false REASON='APFS is not supported' ;;
+        swap) SUP=false REASON='swap partition' ;;
+        '') SUP=false REASON='unknown filesystem' ;;
+        *) SUP=false REASON="unsupported filesystem: $1" ;;
+    esac
+    if [ "$SUP" = true ] && [ -z "$2" ]; then
+        SUP=false REASON='no UUID'
+    fi
+    return 0
+}
+
+# POSIX filesystems keep captures in an app-owned <mount>/ncc directory.
+is_posix() {
+    case $1 in ext2 | ext3 | ext4 | btrfs | xfs | f2fs) return 0 ;; *) return 1 ;; esac
+}
+
+# find_usb <uuid>: sets F_NAME F_FSTYPE F_MM; fails unless exactly one supported USB device matches.
+find_usb() {
+    recs=$(scan | awk -F "$SEP" -v u="$1" '$2 == u') || true
+    [ -n "$recs" ] || die "no USB device with UUID $1" 1
+    case $recs in *"$NL"*) die "UUID $1 is not unique among USB devices" 1 ;; esac
+    F_NAME=$(printf '%s' "$recs" | cut -d "$SEP" -f1)
+    F_FSTYPE=$(printf '%s' "$recs" | cut -d "$SEP" -f3)
+    F_MM=$(printf '%s' "$recs" | cut -d "$SEP" -f6)
+    classify "$F_FSTYPE" "$1"
+    [ "$SUP" = true ] || die "cannot use $1: $REASON" 1
+}
+
+cmd_list_usb() {
+    need_root
+    first=1
+    printf '['
+    scan | while IFS=$SEP read -r name uuid fstype label size mm; do
+        classify "$fstype" "$uuid"
+        mpath=$(find_mount "$mm" "$MNT/usb-${uuid:-none}")
+        [ "$first" = 1 ] || printf ','
+        first=0
+        mounted=false root=''
+        if [ -n "$mpath" ]; then
+            mounted=true root=$mpath
+            is_posix "$fstype" && root=$mpath/ncc
+        fi
+        printf '{"name":%s,"uuid":%s,"fstype":%s,"label":%s,"size":%s,"supported":%s,"reason":%s,"mounted":%s,"mount_path":%s,"root":%s}' \
+            "$(jstr "$name")" "$(jnull "$uuid")" "$(jnull "$fstype")" "$(jnull "$label")" "$size" \
+            "$SUP" "$(jnull "$REASON")" "$mounted" "$(jnull "$mpath")" "$(jnull "$root")"
+    done
+    printf ']\n'
+}
+
+result() { # id root fstype [encrypted]
+    printf '{"id":%s,"root":%s,"fstype":%s' "$(jstr "$1")" "$(jstr "$2")" "$(jstr "$3")"
+    [ $# -lt 4 ] || printf ',"encrypted":%s' "$4"
+    printf '}\n'
+}
+
+cmd_mount_usb() {
+    uuid=$1
+    need_root
+    find_usb "$uuid"
+    mp=$MNT/usb-$uuid
+    [ -z "$(find_mount "$F_MM" "$mp")" ] || die "$uuid is already mounted" 1
+    drv=$F_FSTYPE
+    base=nosuid,nodev,noexec,nosymfollow
+    posix=0
+    case $F_FSTYPE in
+        exfat) opts=$base,uid=1000,gid=1000,umask=022 ;;
+        vfat) opts=$base,uid=1000,gid=1000,umask=022,utf8,shortname=mixed ;;
+        ntfs)
+            drv=ntfs3
+            opts=$base,uid=1000,gid=1000,umask=022
+            ;;
+        ext2 | ext3 | ext4 | btrfs | xfs | f2fs)
+            opts=$base
+            posix=1
+            ;;
+        hfsplus) opts=$base,uid=1000,gid=1000 ;;
+        *) die "unsupported filesystem $F_FSTYPE" 1 ;;
+    esac
+    mkdir -p "$MNT"
+    mkdir -p "$mp"
+    if ! out=$(mount -t "$drv" -o "$opts" "$DEVDIR/$F_NAME" "$mp" 2>&1); then
+        drop_mountpoint "usb-$uuid"
+        die "mount failed: $out" 1
+    fi
+    # A journaled HFS+ volume is mounted read-only by the kernel: refuse it.
+    if [ "$F_FSTYPE" = hfsplus ] && awk -v mp="$mp" '$5 == mp { n = split($6, o, ","); for (i = 1; i <= n; i++) if (o[i] == "ro") f = 1 } END { exit !f }' /proc/self/mountinfo; then
+        umount "$mp" 2>/dev/null || true
+        drop_mountpoint "usb-$uuid"
+        die "journaled HFS+ volumes are read-only and not supported" 1
+    fi
+    root=$mp
+    if [ "$posix" = 1 ]; then
+        # The drive content is untrusted: never follow a planted symlink as root.
+        if [ -L "$mp/ncc" ] || { [ -e "$mp/ncc" ] && [ ! -d "$mp/ncc" ]; }; then
+            umount "$mp" 2>/dev/null || true
+            drop_mountpoint "usb-$uuid"
+            die "$uuid has an unsafe ncc entry (symlink or not a directory)" 1
+        fi
+        mkdir -p "$mp/ncc"
+        chown -h 1000:1000 "$mp/ncc"
+        root=$mp/ncc
+    fi
+    result "usb-$uuid" "$root" "$F_FSTYPE"
+}
+
+cmd_mount_smb() {
+    id=$1 unc=$2
+    need_root
+    mp=$MNT/smb-$id
+    cred=''
+    trap '[ -z "$cred" ] || rm -f "$cred"' EXIT
+    if [ -n "$(find_mount none "$mp")" ]; then die "smb-$id is already mounted" 1; fi
+    # Credentials arrive on stdin as cifs "credentials" lines; they never touch app-owned paths.
+    creds=$(cat)
+    auth=guest
+    if [ -n "$creds" ]; then
+        printf '%s\n' "$creds" | grep -Eqv '^(username|password|domain)=[^[:cntrl:]]*$' &&
+            die "invalid credentials" 2
+        private_dir "$RUN_DIR"
+        private_dir "$CREDDIR"
+        cred=$(mktemp "$CREDDIR/cred.XXXXXX")
+        chmod 0600 "$cred"
+        printf '%s\n' "$creds" >"$cred"
+        auth=credentials=$cred
+    fi
+    base=uid=1000,gid=1000,file_mode=0644,dir_mode=0755,vers=3.0,cache=strict,nobrl,nosuid,nodev,noexec,nosymfollow
+    mkdir -p "$MNT"
+    mkdir -p "$mp"
+    enc=true
+    if ! out=$(mount -t cifs -o "$auth,$base,seal" "$unc" "$mp" 2>&1); then
+        # Only fall back to an unencrypted mount when the server/kernel lacks SMB3 encryption,
+        # never on authentication or permission failures.
+        case $out in
+            *"error(95)"* | *"error(22)"* | *"Operation not supported"* | *"Invalid argument"* | *"nknown mount option"*) ;;
+            *)
+                drop_mountpoint "smb-$id"
+                die "mount failed: $out" 1
+                ;;
+        esac
+        enc=false
+        if ! out=$(mount -t cifs -o "$auth,$base" "$unc" "$mp" 2>&1); then
+            drop_mountpoint "smb-$id"
+            die "mount failed: $out" 1
+        fi
+    fi
+    result "smb-$id" "$mp" cifs "$enc"
+}
+
+cmd_unmount() {
+    id=$1 lazy=${2:-}
+    need_root
+    mp=$MNT/$id
+    if [ -n "$(find_mount none "$mp")" ]; then
+        sync
+        if [ -n "$lazy" ]; then
+            out=$(umount -l "$mp" 2>&1) || die "umount failed: $out" 1
+        else
+            out=$(umount "$mp" 2>&1) || {
+                case $out in
+                    *busy*) die "$id is busy: $out" 16 ;;
+                    *) die "umount failed: $out" 1 ;;
+                esac
+            }
+        fi
+    fi
+    drop_mountpoint "$id"
+    echo "ok"
+}
+
+cmd_fsck() {
+    uuid=$1
+    need_root
+    find_usb "$uuid"
+    [ -z "$(find_mount "$F_MM" "$MNT/usb-$uuid")" ] || die "$uuid is mounted; unmount it first" 1
+    dev=$DEVDIR/$F_NAME
+    rc=0
+    case $F_FSTYPE in
+        exfat) fsck.exfat -y "$dev" 2>&1 || rc=$? ;;
+        vfat) fsck.vfat -a "$dev" 2>&1 || rc=$? ;;
+        ntfs) ntfsfix "$dev" 2>&1 || rc=$? ;;
+        ext2 | ext3 | ext4) e2fsck -p "$dev" 2>&1 || rc=$? ;;
+        xfs) xfs_repair "$dev" 2>&1 || rc=$? ;;
+        btrfs) btrfs check "$dev" 2>&1 || rc=$? ;;
+        f2fs) fsck.f2fs -a "$dev" 2>&1 || rc=$? ;;
+        *) die "no repair tool for $F_FSTYPE" 1 ;;
+    esac
+    exit "$rc"
+}
+
+[ $# -ge 1 ] || usage
+cmd=$1
+shift
+case $cmd in
+    list-usb)
+        [ $# -eq 0 ] || usage
+        cmd_list_usb
+        ;;
+    mount-usb)
+        [ $# -eq 1 ] || usage
+        match '^[A-Za-z0-9-]{1,64}$' "$1" || die "invalid uuid" 2
+        cmd_mount_usb "$1"
+        ;;
+    mount-smb)
+        [ $# -eq 2 ] || usage
+        match '^[a-z0-9][a-z0-9-]{0,39}$' "$1" || die "invalid id" 2
+        match '^//[A-Za-z0-9._-]+/[^,]+$' "$2" || die "invalid unc path" 2
+        cmd_mount_smb "$1" "$2"
+        ;;
+    unmount)
+        { [ $# -ge 1 ] && [ $# -le 2 ]; } || usage
+        match '^(usb|smb)-[A-Za-z0-9-]{1,64}$' "$1" || die "invalid mount id" 2
+        [ "${2:---lazy}" = --lazy ] || usage
+        cmd_unmount "$1" "${2:-}"
+        ;;
+    fsck)
+        [ $# -eq 1 ] || usage
+        match '^[A-Za-z0-9-]{1,64}$' "$1" || die "invalid uuid" 2
+        cmd_fsck "$1"
+        ;;
+    *) usage ;;
+esac

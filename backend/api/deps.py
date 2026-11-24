@@ -9,7 +9,7 @@ Feature services are built lazily, once per app, via ``service_dep`` (no shared 
     from backend.features.widgets import WidgetService
 
     get_widgets = service_dep(
-        "widgets", lambda s: WidgetService(s.camera_service, s.event_bus, s.output_dir)
+        "widgets", lambda s: WidgetService(s.camera_service, s.event_bus, s.storage)
     )
     router = APIRouter(prefix="/widgets", tags=["widgets"])
 
@@ -17,7 +17,7 @@ Feature services are built lazily, once per app, via ``service_dep`` (no shared 
     async def list_widgets(svc: Annotated[WidgetService, Depends(get_widgets)]): ...
 
 The same dependency works in ``@ws_router.websocket(...)`` handlers. The factory receives
-``app.state`` (config_store, camera_service, event_bus, job_manager, data_dir, output_dir).
+``app.state`` (config_store, camera_service, event_bus, job_manager, data_dir, storage).
 Services with ``aclose()``/``close()`` are closed at shutdown in reverse creation order.
 """
 
@@ -36,6 +36,7 @@ from backend.core.config_store import ConfigStore
 from backend.core.events import EventBus
 from backend.core.jobs import JobManager
 from backend.core.registry import ServiceRegistry
+from backend.services.locations import LocationService
 
 T = TypeVar("T")
 
@@ -74,8 +75,9 @@ def get_services(conn: HTTPConnection) -> ServiceRegistry:
     return conn.app.state.services
 
 
-def get_output_dir(conn: HTTPConnection) -> Path:
-    return conn.app.state.output_dir
+def get_storage(conn: HTTPConnection) -> LocationService:
+    """The storage service: locations, the target (``root()``/``cache()``) and mounts."""
+    return conn.app.state.storage
 
 
 def get_data_dir(conn: HTTPConnection) -> Path:
@@ -84,7 +86,7 @@ def get_data_dir(conn: HTTPConnection) -> Path:
 
 # WebSocket variants (same implementation; ``HTTPConnection`` covers both)
 ws_get_services = get_services
-ws_get_output_dir = get_output_dir
+ws_get_storage = get_storage
 ws_get_data_dir = get_data_dir
 
 
@@ -104,5 +106,5 @@ CameraServiceDep = Annotated[CameraService, Depends(get_camera_service)]
 EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 JobManagerDep = Annotated[JobManager, Depends(get_job_manager)]
 ServicesDep = Annotated[ServiceRegistry, Depends(get_services)]
-OutputDirDep = Annotated[Path, Depends(get_output_dir)]
+StorageDep = Annotated[LocationService, Depends(get_storage)]
 DataDirDep = Annotated[Path, Depends(get_data_dir)]

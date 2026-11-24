@@ -110,7 +110,7 @@ async def test_bracket_each_mode_restores_exactly(
     shots = j["result"]["shots"]
     assert [s["index"] for s in shots] == list(range(n))
     assert all(len(s["files"]) == 1 for s in shots)
-    out = app.state.output_dir
+    out = app.state.storage.root()
     assert all((out / f).is_file() for s in shots for f in s["files"])
     assert j["result"]["directory"].startswith("brackets/")
     assert all(f.startswith(j["result"]["directory"]) for s in shots for f in s["files"])

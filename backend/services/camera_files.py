@@ -24,9 +24,10 @@ from typing import TYPE_CHECKING, Any
 from backend.api.schemas.common import EventType
 from backend.camera.backend import CameraFileInfo, CameraFilePath, FileKind
 from backend.core.camera_service import CameraService, Priority
-from backend.core.errors import AppError, CameraNotConnected, PathNotAllowed
+from backend.core.errors import AppError, CameraNotConnected, NoTargetError, PathNotAllowed
 from backend.core.events import EventBus, Subscription
 from backend.core.jobs import Job, JobContext, JobManager
+from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import download_files
 
 if TYPE_CHECKING:
@@ -200,15 +201,13 @@ class CameraFilesService:
         camera: CameraService,
         bus: EventBus,
         jobs: JobManager,
-        data_dir: Path,
-        output_dir: Path,
+        store: Path | StorageRoot,
     ) -> None:
         self._camera = camera
         self._bus = bus
         self._jobs = jobs
-        self._data_dir = data_dir
-        self._dest = output_dir / "camera"
-        self._ledger = DownloadLedger(data_dir / "downloaded.jsonl")
+        self._store = as_root(store)
+        self._ledgers: dict[Path, DownloadLedger] = {}
         self._cache = _Cache()
         self._sub: Subscription | None = None
         self._task: asyncio.Task[None] | None = None
@@ -280,7 +279,13 @@ class CameraFilesService:
         from backend.api.schemas.camera_files import CameraFileEntry
 
         infos = await self.list_infos(folder, recursive)
-        await self._ledger.load()
+        ledger: DownloadLedger | None
+        try:  # without a target nothing counts as downloaded
+            ledger = self._ledger
+        except NoTargetError:
+            ledger = None
+        if ledger is not None:
+            await ledger.load()
         return [
             CameraFileEntry(
                 folder=i.folder,
@@ -288,15 +293,25 @@ class CameraFilesService:
                 size=i.size,
                 mtime=i.mtime,
                 type=file_type(i.name),  # type: ignore[arg-type]
-                downloaded=self._ledger.has(i),
+                downloaded=ledger is not None and ledger.has(i),
             )
             for i in infos
         ]
 
+    @property
+    def _ledger(self) -> DownloadLedger:
+        """The download ledger of the current target (``<target>/.ncc/downloaded.jsonl``)."""
+        path = self._store.cache() / "downloaded.jsonl"
+        ledger = self._ledgers.get(path)
+        if ledger is None:
+            self._ledgers.clear()
+            ledger = self._ledgers[path] = DownloadLedger(path)
+        return ledger
+
     # single file ----------------------------------------------------------
     async def fetch_to_temp(self, folder: str, name: str) -> tuple[Path, Path]:
         """Stream one file to a fresh temp dir under the data dir; returns (dir, file)."""
-        tmp_root = self._data_dir / "tmp"
+        tmp_root = self._store.cache() / "tmp"
 
         def _mk() -> Path:
             tmp_root.mkdir(parents=True, exist_ok=True)
@@ -338,14 +353,16 @@ class CameraFilesService:
         ctx.report(0.0, "Listing files")
         self.invalidate()
         infos = await self.list_infos(req.folder or "/", True)
-        await self._ledger.load()
-        todo = [i for i in infos if not (req.only_new and self._ledger.has(i))]
+        ledger = self._ledger
+        await ledger.load()
+        dest = self._store.root() / "camera"
+        todo = [i for i in infos if not (req.only_new and ledger.has(i))]
         skipped = len(infos) - len(todo)
         downloaded = 0
         failed: list[str] = []
         got: list[str] = []
         n_failed = 0
-        await asyncio.to_thread(self._dest.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(dest.mkdir, parents=True, exist_ok=True)
         try:
             for idx, info in enumerate(todo, start=1):
                 if ctx.cancelled:
@@ -358,8 +375,9 @@ class CameraFilesService:
                     await download_files(
                         self._camera,
                         [CameraFilePath(info.folder, info.name)],
-                        self._dest,
+                        dest,
                         delete_from_camera=req.delete_after,
+                        on_stored=self._store.stored,
                     )
                 except CameraNotConnected:
                     raise
@@ -372,7 +390,7 @@ class CameraFilesService:
                 downloaded += 1
                 if len(got) < _NAME_CAP:
                     got.append(info.name)
-                await self._ledger.add(info)
+                await ledger.add(info)
         finally:
             if req.delete_after:
                 self.invalidate()

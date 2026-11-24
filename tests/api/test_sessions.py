@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI
 
 from backend.api.schemas.sessions import SessionFile, SessionFrame
+from tests.conftest import TmpDirs
 
 S = "/api/v1/sessions"
 
@@ -80,19 +81,19 @@ async def test_operation_ids(app: FastAPI) -> None:
     }
 
 
-async def test_crashed_sessions_recovered_at_startup_off_the_request_path(app: FastAPI) -> None:
-    from backend.api.v1.sessions import build_sessions_service
+async def test_crashed_sessions_recovered_at_startup_off_the_request_path(
+    app: FastAPI, tmp_dirs: TmpDirs
+) -> None:
     from backend.services.sessions import SessionStore
 
-    out = app.state.output_dir
-    old = SessionStore(out, fsync=False)
+    old = SessionStore(tmp_dirs.output_dir, fsync=False)
     m = await old.create("crashed", {}, 5)
     await old.update(m.id, status="running")
     for i in range(3):
         await old.add_frame(m.id, _frame(i))
     await old.aclose()
     # building the service no longer scans sessions synchronously (it would block the loop)
-    assert (await build_sessions_service(app.state).get(m.id)).status == "running"
+    assert (await SessionStore(tmp_dirs.output_dir).get(m.id)).status == "running"
     async with app.router.lifespan_context(app):  # startup hook recovers in a thread
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:

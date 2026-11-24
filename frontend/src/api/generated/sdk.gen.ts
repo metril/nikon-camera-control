@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApplyPresetData, ApplyPresetErrors, ApplyPresetResponses, AutofocusData, AutofocusErrors, AutofocusResponses, CancelJobData, CancelJobErrors, CancelJobResponses, CapturePhotoData, CapturePhotoErrors, CapturePhotoResponses, ConnectCameraData, ConnectCameraErrors, ConnectCameraResponses, CreateApiKeyData, CreateApiKeyErrors, CreateApiKeyResponses, CreatePresetData, CreatePresetErrors, CreatePresetFromCameraData, CreatePresetFromCameraErrors, CreatePresetFromCameraResponses, CreatePresetResponses, DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteCameraFileData, DeleteCameraFileErrors, DeleteCameraFileResponses, DeleteFileData, DeleteFileErrors, DeleteFileResponses, DeletePresetData, DeletePresetErrors, DeletePresetResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteVideoData, DeleteVideoErrors, DeleteVideoResponses, DisconnectCameraData, DisconnectCameraErrors, DisconnectCameraResponses, DownloadAllCameraFilesData, DownloadAllCameraFilesErrors, DownloadAllCameraFilesResponses, DownloadCameraFileData, DownloadCameraFileErrors, DownloadCameraFileResponses, DownloadFileData, DownloadFileErrors, DownloadFileResponses, DownloadVideoData, DownloadVideoErrors, DownloadVideoResponses, ExportPresetsData, ExportPresetsErrors, ExportPresetsResponses, GetBulbStatusData, GetBulbStatusErrors, GetBulbStatusResponses, GetCameraBatteryData, GetCameraBatteryErrors, GetCameraBatteryResponses, GetCameraData, GetCameraDatetimeData, GetCameraDatetimeErrors, GetCameraDatetimeResponses, GetCameraErrors, GetCameraResponses, GetCameraStorageData, GetCameraStorageErrors, GetCameraStorageResponses, GetCameraSummaryData, GetCameraSummaryErrors, GetCameraSummaryResponses, GetCaptureTargetData, GetCaptureTargetErrors, GetCaptureTargetResponses, GetConfigData, GetConfigErrors, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaErrors, GetConfigSchemaResponses, GetEventSchemaData, GetEventSchemaErrors, GetEventSchemaResponses, GetFocusData, GetFocusErrors, GetFocusResponses, GetHealthData, GetHealthResponses, GetInfoData, GetInfoErrors, GetInfoResponses, GetJobData, GetJobErrors, GetJobResponses, GetLiveviewData, GetLiveviewErrors, GetLiveviewResponses, GetLiveviewSnapshotData, GetLiveviewSnapshotErrors, GetLiveviewSnapshotResponses, GetPresetData, GetPresetErrors, GetPresetResponses, GetRecordingData, GetRecordingErrors, GetRecordingResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetSettingData, GetSettingErrors, GetSettingResponses, GetThumbnailData, GetThumbnailErrors, GetThumbnailResponses, GetTimelapseStatusData, GetTimelapseStatusErrors, GetTimelapseStatusResponses, ImportPresetsData, ImportPresetsErrors, ImportPresetsResponses, ListCameraFilesData, ListCameraFilesErrors, ListCameraFilesResponses, ListCameraFoldersData, ListCameraFoldersErrors, ListCameraFoldersResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListJobsData, ListJobsErrors, ListJobsResponses, ListPresetsData, ListPresetsErrors, ListPresetsResponses, ListSessionFramesData, ListSessionFramesErrors, ListSessionFramesResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListSettingsData, ListSettingsErrors, ListSettingsResponses, ListTimelapsePresetsData, ListTimelapsePresetsErrors, ListTimelapsePresetsResponses, ListVideosData, ListVideosErrors, ListVideosResponses, ManualFocusData, ManualFocusErrors, ManualFocusResponses, PauseTimelapseData, PauseTimelapseErrors, PauseTimelapseResponses, PreviewTimelapseData, PreviewTimelapseDraftData, PreviewTimelapseDraftErrors, PreviewTimelapseDraftResponses, PreviewTimelapseErrors, PreviewTimelapseResponses, RefreshSettingsData, RefreshSettingsErrors, RefreshSettingsResponses, RenameSessionData, RenameSessionErrors, RenameSessionResponses, RenderSessionVideoData, RenderSessionVideoErrors, RenderSessionVideoResponses, ResetConfigData, ResetConfigErrors, ResetConfigResponses, ResetFocusPositionData, ResetFocusPositionErrors, ResetFocusPositionResponses, ResumeTimelapseData, ResumeTimelapseErrors, ResumeTimelapseResponses, SetCameraDatetimeData, SetCameraDatetimeErrors, SetCameraDatetimeResponses, SetCaptureTargetData, SetCaptureTargetErrors, SetCaptureTargetResponses, SetSettingData, SetSettingErrors, SetSettingResponses, SetTimelapseConfigData, SetTimelapseConfigErrors, SetTimelapseConfigResponses, StartBracketCaptureData, StartBracketCaptureErrors, StartBracketCaptureResponses, StartBulbCaptureData, StartBulbCaptureErrors, StartBulbCaptureResponses, StartFocusStackData, StartFocusStackErrors, StartFocusStackResponses, StartLiveviewData, StartLiveviewErrors, StartLiveviewResponses, StartRecordingData, StartRecordingErrors, StartRecordingResponses, StartTimelapseData, StartTimelapseErrors, StartTimelapseResponses, StopLiveviewData, StopLiveviewErrors, StopLiveviewResponses, StopRecordingData, StopRecordingErrors, StopRecordingResponses, StopTimelapseData, StopTimelapseErrors, StopTimelapseResponses, TriggerCaptureData, TriggerCaptureErrors, TriggerCaptureResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdatePresetData, UpdatePresetErrors, UpdatePresetResponses, UpdateSettingsData, UpdateSettingsErrors, UpdateSettingsResponses } from './types.gen';
+import type { AddLocationData, AddLocationErrors, AddLocationResponses, ApplyPresetData, ApplyPresetErrors, ApplyPresetResponses, AutofocusData, AutofocusErrors, AutofocusResponses, CancelJobData, CancelJobErrors, CancelJobResponses, CapturePhotoData, CapturePhotoErrors, CapturePhotoResponses, CheckLocationData, CheckLocationErrors, CheckLocationResponses, ConnectCameraData, ConnectCameraErrors, ConnectCameraResponses, CreateApiKeyData, CreateApiKeyErrors, CreateApiKeyResponses, CreatePresetData, CreatePresetErrors, CreatePresetFromCameraData, CreatePresetFromCameraErrors, CreatePresetFromCameraResponses, CreatePresetResponses, DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteCameraFileData, DeleteCameraFileErrors, DeleteCameraFileResponses, DeleteFileData, DeleteFileErrors, DeleteFileResponses, DeleteLocationData, DeleteLocationErrors, DeleteLocationResponses, DeletePresetData, DeletePresetErrors, DeletePresetResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteVideoData, DeleteVideoErrors, DeleteVideoResponses, DisconnectCameraData, DisconnectCameraErrors, DisconnectCameraResponses, DownloadAllCameraFilesData, DownloadAllCameraFilesErrors, DownloadAllCameraFilesResponses, DownloadCameraFileData, DownloadCameraFileErrors, DownloadCameraFileResponses, DownloadFileData, DownloadFileErrors, DownloadFileResponses, DownloadVideoData, DownloadVideoErrors, DownloadVideoResponses, ExportPresetsData, ExportPresetsErrors, ExportPresetsResponses, GetBackupStatusData, GetBackupStatusErrors, GetBackupStatusResponses, GetBulbStatusData, GetBulbStatusErrors, GetBulbStatusResponses, GetCameraBatteryData, GetCameraBatteryErrors, GetCameraBatteryResponses, GetCameraData, GetCameraDatetimeData, GetCameraDatetimeErrors, GetCameraDatetimeResponses, GetCameraErrors, GetCameraResponses, GetCameraStorageData, GetCameraStorageErrors, GetCameraStorageResponses, GetCameraSummaryData, GetCameraSummaryErrors, GetCameraSummaryResponses, GetCaptureTargetData, GetCaptureTargetErrors, GetCaptureTargetResponses, GetConfigData, GetConfigErrors, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaErrors, GetConfigSchemaResponses, GetEventSchemaData, GetEventSchemaErrors, GetEventSchemaResponses, GetFocusData, GetFocusErrors, GetFocusResponses, GetHealthData, GetHealthResponses, GetInfoData, GetInfoErrors, GetInfoResponses, GetJobData, GetJobErrors, GetJobResponses, GetLiveviewData, GetLiveviewErrors, GetLiveviewResponses, GetLiveviewSnapshotData, GetLiveviewSnapshotErrors, GetLiveviewSnapshotResponses, GetPresetData, GetPresetErrors, GetPresetResponses, GetRecordingData, GetRecordingErrors, GetRecordingResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetSettingData, GetSettingErrors, GetSettingResponses, GetThumbnailData, GetThumbnailErrors, GetThumbnailResponses, GetTimelapseStatusData, GetTimelapseStatusErrors, GetTimelapseStatusResponses, ImportPresetsData, ImportPresetsErrors, ImportPresetsResponses, ListCameraFilesData, ListCameraFilesErrors, ListCameraFilesResponses, ListCameraFoldersData, ListCameraFoldersErrors, ListCameraFoldersResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListJobsData, ListJobsErrors, ListJobsResponses, ListLocationsData, ListLocationsErrors, ListLocationsResponses, ListPresetsData, ListPresetsErrors, ListPresetsResponses, ListSessionFramesData, ListSessionFramesErrors, ListSessionFramesResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListSettingsData, ListSettingsErrors, ListSettingsResponses, ListTimelapsePresetsData, ListTimelapsePresetsErrors, ListTimelapsePresetsResponses, ListVideosData, ListVideosErrors, ListVideosResponses, ManualFocusData, ManualFocusErrors, ManualFocusResponses, MountLocationData, MountLocationErrors, MountLocationResponses, PauseTimelapseData, PauseTimelapseErrors, PauseTimelapseResponses, PreviewTimelapseData, PreviewTimelapseDraftData, PreviewTimelapseDraftErrors, PreviewTimelapseDraftResponses, PreviewTimelapseErrors, PreviewTimelapseResponses, RefreshSettingsData, RefreshSettingsErrors, RefreshSettingsResponses, RenameSessionData, RenameSessionErrors, RenameSessionResponses, RenderSessionVideoData, RenderSessionVideoErrors, RenderSessionVideoResponses, ResetConfigData, ResetConfigErrors, ResetConfigResponses, ResetFocusPositionData, ResetFocusPositionErrors, ResetFocusPositionResponses, ResumeTimelapseData, ResumeTimelapseErrors, ResumeTimelapseResponses, RunBackupData, RunBackupErrors, RunBackupResponses, SetCameraDatetimeData, SetCameraDatetimeErrors, SetCameraDatetimeResponses, SetCaptureTargetData, SetCaptureTargetErrors, SetCaptureTargetResponses, SetSettingData, SetSettingErrors, SetSettingResponses, SetStorageBackupsData, SetStorageBackupsErrors, SetStorageBackupsResponses, SetStorageTargetData, SetStorageTargetErrors, SetStorageTargetResponses, SetTimelapseConfigData, SetTimelapseConfigErrors, SetTimelapseConfigResponses, StartBracketCaptureData, StartBracketCaptureErrors, StartBracketCaptureResponses, StartBulbCaptureData, StartBulbCaptureErrors, StartBulbCaptureResponses, StartFocusStackData, StartFocusStackErrors, StartFocusStackResponses, StartLiveviewData, StartLiveviewErrors, StartLiveviewResponses, StartOffloadData, StartOffloadErrors, StartOffloadResponses, StartRecordingData, StartRecordingErrors, StartRecordingResponses, StartTimelapseData, StartTimelapseErrors, StartTimelapseResponses, StartVerifyData, StartVerifyErrors, StartVerifyResponses, StopLiveviewData, StopLiveviewErrors, StopLiveviewResponses, StopRecordingData, StopRecordingErrors, StopRecordingResponses, StopTimelapseData, StopTimelapseErrors, StopTimelapseResponses, TestSmbLocationData, TestSmbLocationErrors, TestSmbLocationResponses, TriggerCaptureData, TriggerCaptureErrors, TriggerCaptureResponses, UnmountLocationData, UnmountLocationErrors, UnmountLocationResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateLocationData, UpdateLocationErrors, UpdateLocationResponses, UpdatePresetData, UpdatePresetErrors, UpdatePresetResponses, UpdateSettingsData, UpdateSettingsErrors, UpdateSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,26 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * Run Backup
+ *
+ * Start a sync now (a run in progress is repeated once it ends).
+ */
+export const runBackup = <ThrowOnError extends boolean = false>(options?: Options<RunBackupData, ThrowOnError>): RequestResult<RunBackupResponses, RunBackupErrors, ThrowOnError> => (options?.client ?? client).post<RunBackupResponses, RunBackupErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/backup/run',
+    ...options
+});
+
+/**
+ * Get Backup Status
+ */
+export const getBackupStatus = <ThrowOnError extends boolean = false>(options?: Options<GetBackupStatusData, ThrowOnError>): RequestResult<GetBackupStatusResponses, GetBackupStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetBackupStatusResponses, GetBackupStatusErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/backup/status',
+    ...options
+});
 
 /**
  * Get Camera
@@ -480,6 +500,107 @@ export const stopLiveview = <ThrowOnError extends boolean = false>(options?: Opt
 });
 
 /**
+ * List Locations
+ */
+export const listLocations = <ThrowOnError extends boolean = false>(options?: Options<ListLocationsData, ThrowOnError>): RequestResult<ListLocationsResponses, ListLocationsErrors, ThrowOnError> => (options?.client ?? client).get<ListLocationsResponses, ListLocationsErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations',
+    ...options
+});
+
+/**
+ * Add Location
+ */
+export const addLocation = <ThrowOnError extends boolean = false>(options: Options<AddLocationData, ThrowOnError>): RequestResult<AddLocationResponses, AddLocationErrors, ThrowOnError> => (options.client ?? client).post<AddLocationResponses, AddLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Test Smb Location
+ */
+export const testSmbLocation = <ThrowOnError extends boolean = false>(options: Options<TestSmbLocationData, ThrowOnError>): RequestResult<TestSmbLocationResponses, TestSmbLocationErrors, ThrowOnError> => (options.client ?? client).post<TestSmbLocationResponses, TestSmbLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations/test-smb',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete Location
+ */
+export const deleteLocation = <ThrowOnError extends boolean = false>(options: Options<DeleteLocationData, ThrowOnError>): RequestResult<DeleteLocationResponses, DeleteLocationErrors, ThrowOnError> => (options.client ?? client).delete<DeleteLocationResponses, DeleteLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations/{location_id}',
+    ...options
+});
+
+/**
+ * Update Location
+ */
+export const updateLocation = <ThrowOnError extends boolean = false>(options: Options<UpdateLocationData, ThrowOnError>): RequestResult<UpdateLocationResponses, UpdateLocationErrors, ThrowOnError> => (options.client ?? client).patch<UpdateLocationResponses, UpdateLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations/{location_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Check Location
+ */
+export const checkLocation = <ThrowOnError extends boolean = false>(options: Options<CheckLocationData, ThrowOnError>): RequestResult<CheckLocationResponses, CheckLocationErrors, ThrowOnError> => (options.client ?? client).post<CheckLocationResponses, CheckLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations/{location_id}/fsck',
+    ...options
+});
+
+/**
+ * Mount Location
+ */
+export const mountLocation = <ThrowOnError extends boolean = false>(options: Options<MountLocationData, ThrowOnError>): RequestResult<MountLocationResponses, MountLocationErrors, ThrowOnError> => (options.client ?? client).post<MountLocationResponses, MountLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations/{location_id}/mount',
+    ...options
+});
+
+/**
+ * Unmount Location
+ */
+export const unmountLocation = <ThrowOnError extends boolean = false>(options: Options<UnmountLocationData, ThrowOnError>): RequestResult<UnmountLocationResponses, UnmountLocationErrors, ThrowOnError> => (options.client ?? client).post<UnmountLocationResponses, UnmountLocationErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/locations/{location_id}/unmount',
+    ...options
+});
+
+/**
+ * Start Offload
+ *
+ * Verified copy of files from one mounted location to another, then delete the source
+ * files (unless ``keep_source``) once the copy re-hashed equal. Files of running, paused or
+ * render-held sessions and files modified in the last 10 seconds are skipped.
+ */
+export const startOffload = <ThrowOnError extends boolean = false>(options: Options<StartOffloadData, ThrowOnError>): RequestResult<StartOffloadResponses, StartOffloadErrors, ThrowOnError> => (options.client ?? client).post<StartOffloadResponses, StartOffloadErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/offload',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * List Presets
  *
  * User presets plus the read-only built-in bracket presets (`builtin: true`).
@@ -753,6 +874,32 @@ export const setSetting = <ThrowOnError extends boolean = false>(options: Option
 });
 
 /**
+ * Set Storage Backups
+ */
+export const setStorageBackups = <ThrowOnError extends boolean = false>(options: Options<SetStorageBackupsData, ThrowOnError>): RequestResult<SetStorageBackupsResponses, SetStorageBackupsErrors, ThrowOnError> => (options.client ?? client).put<SetStorageBackupsResponses, SetStorageBackupsErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/storage/backups',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set Storage Target
+ */
+export const setStorageTarget = <ThrowOnError extends boolean = false>(options: Options<SetStorageTargetData, ThrowOnError>): RequestResult<SetStorageTargetResponses, SetStorageTargetErrors, ThrowOnError> => (options.client ?? client).put<SetStorageTargetResponses, SetStorageTargetErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/storage/target',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Get Thumbnail
  *
  * JPEG thumbnail of the file at ``path`` (relative to the output dir).
@@ -852,6 +999,22 @@ export const stopTimelapse = <ThrowOnError extends boolean = false>(options?: Op
     security: [{ name: 'X-API-Key', type: 'apiKey' }],
     url: '/api/v1/timelapse/stop',
     ...options
+});
+
+/**
+ * Start Verify
+ *
+ * Re-hash a location's files against its own SHA256SUMS (job result: ok, mismatched,
+ * missing and unlisted counts and lists).
+ */
+export const startVerify = <ThrowOnError extends boolean = false>(options: Options<StartVerifyData, ThrowOnError>): RequestResult<StartVerifyResponses, StartVerifyErrors, ThrowOnError> => (options.client ?? client).post<StartVerifyResponses, StartVerifyErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    url: '/api/v1/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

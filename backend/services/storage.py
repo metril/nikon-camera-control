@@ -85,6 +85,13 @@ def unique_path(dest_dir: Path, name: str) -> Path:
         return candidate
 
 
+def _notify_stored(on_stored: Callable[[Path], None], path: Path) -> None:
+    try:
+        on_stored(path)
+    except Exception:  # hashing/bookkeeping must never lose a capture
+        log.exception("post-store hook failed for %s", path)
+
+
 def _reader(f: CameraFilePath, part: Path) -> Callable[[CameraBackend], None]:
     def run(b: CameraBackend) -> None:
         b.read_file(f.folder, f.name, FileKind.NORMAL, part)
@@ -107,6 +114,7 @@ async def download_files(
     owner: str | None = None,
     delete_from_camera: bool = False,
     name_prefix: str = "",
+    on_stored: Callable[[Path], None] | None = None,
 ) -> list[Path]:
     """Stream each camera file to ``dest_dir/<name_prefix><camera name>`` and return the
     local paths in order. Each file is written to ``.part`` then renamed atomically.
@@ -124,6 +132,8 @@ async def download_files(
                 owner=owner,
             )
             await asyncio.to_thread(os.replace, part, final)
+            if on_stored is not None:
+                await asyncio.to_thread(_notify_stored, on_stored, final)
         except BaseException:
             with contextlib.suppress(OSError):
                 part.unlink(missing_ok=True)
@@ -160,13 +170,13 @@ def _sweep_parts(root: Path, cutoff: float, depth: int) -> None:
 
 
 def cleanup_stale(
-    data_dir: Path, output_dir: Path, *, part_max_age_s: float = STALE_PART_AGE_S
+    cache_dir: Path, output_dir: Path, *, part_max_age_s: float = STALE_PART_AGE_S
 ) -> None:
-    """Startup housekeeping (blocking; run in a thread): empty ``<data>/tmp`` and
-    ``<data>/video-tmp`` (nothing survives a restart) and delete ``*.part`` files under the
-    output dir older than ``part_max_age_s`` (leftovers of interrupted downloads/renders)."""
+    """Housekeeping when a target becomes available (blocking; run in a thread): empty
+    ``<cache>/tmp`` and ``<cache>/video-tmp`` (nothing survives a restart) and delete ``*.part``
+    files under the output dir older than ``part_max_age_s`` (interrupted downloads/renders)."""
     for name in ("tmp", "video-tmp"):
-        d = data_dir / name
+        d = cache_dir / name
         if d.is_dir():
             for child in d.iterdir():
                 if child.is_dir() and not child.is_symlink():

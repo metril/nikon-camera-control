@@ -25,8 +25,12 @@ from backend.core import paths
 from backend.core.camera_service import CameraService
 from backend.core.config_store import AppConfig, ConfigStore
 from backend.core.events import EventBus
-from backend.core.jobs import JobManager
+from backend.core.jobs import JobManager, JobStatus
 from backend.core.registry import ServiceRegistry
+from backend.core.secrets import SecretStore
+from backend.core.state import CameraState
+from backend.services.backup import BackupService
+from backend.services.locations import LocationService
 from backend.services.storage import cleanup_stale
 
 log = logging.getLogger(__name__)
@@ -83,7 +87,8 @@ def create_app(
     *,
     config_store: ConfigStore | None = None,
     data_dir: Path | None = None,
-    output_dir: Path | None = None,
+    target_dir: Path | None = None,
+    location_options: dict[str, Any] | None = None,
     backend_factory: Callable[[], CameraBackend] | None = None,
     frontend_dist: Path | None = None,
     auto_connect: bool = True,
@@ -92,12 +97,13 @@ def create_app(
 ) -> FastAPI:
     """Build the app. ``frontend_dist`` None means no SPA is served.
 
+    ``target_dir`` pins a fixed storage target (tests, tools): no mounting, no hashing, no backups.
+    ``location_options`` are extra ``LocationService`` arguments (fake runner, mount paths, ...).
     ``auto_connect`` starts a background connect attempt at startup (failures are logged).
     ``event_quiet_window_s`` / ``disconnect_wait_s`` override CameraService tuning (tests);
     the quiet window otherwise comes from ``config.camera.event_quiet_window_s``.
     """
     data = data_dir if data_dir is not None else paths.DATA_DIR
-    output = output_dir if output_dir is not None else paths.OUTPUT_DIR
     store = config_store if config_store is not None else ConfigStore(data / "config.json")
     factory = backend_factory if backend_factory is not None else _default_backend_factory(store)
 
@@ -123,13 +129,76 @@ def create_app(
         app.state.camera_service = service
         registry = ServiceRegistry()
         app.state.services = registry
-        try:  # startup housekeeping off the event loop; never blocks startup on failure
-            await asyncio.to_thread(cleanup_stale, data, output)
-            if (output / "sessions").is_dir():  # nothing to recover otherwise
+
+        def busy() -> bool:
+            if service.state in (
+                CameraState.CAPTURING,
+                CameraState.RECORDING,
+                CameraState.BULB,
+            ):
+                return True
+            if any(
+                j.kind != "verify" and j.status in (JobStatus.QUEUED, JobStatus.RUNNING)
+                for j in jobs.list()
+            ):
+                return True
+            tl = registry.peek("timelapse")
+            return tl is not None and tl.status().state in ("running", "paused", "stopping")
+
+        locations = LocationService(
+            store,
+            SecretStore(data / "secrets.json"),
+            bus,
+            busy=busy,
+            fixed_target=target_dir,
+            **(location_options or {}),
+        )
+        backup = BackupService(store, bus, locations.source, locations.destinations)
+        locations.on_stored = backup.trigger
+        app.state.storage = locations
+        app.state.backup = backup
+        registry.get("locations", lambda: locations)
+        registry.get("backup", lambda: backup)
+
+        def housekeep() -> None:
+            """Blocking: clean the target's caches and recover interrupted sessions."""
+            try:
+                root = locations.root()
+            except Exception:
+                return
+            cleanup_stale(locations.cache(), root)
+            if (root / "sessions").is_dir():  # nothing to recover otherwise
                 sessions = registry.get("sessions", lambda: build_sessions_service(app.state))
-                await asyncio.to_thread(sessions.recover_interrupted)
-        except Exception:
-            log.exception("startup cleanup failed")
+                sessions.recover_interrupted()
+
+        async def run_housekeeping() -> None:
+            try:
+                await asyncio.to_thread(housekeep)
+            except Exception:
+                log.exception("startup cleanup failed")
+
+        housekept: list[tuple[str, int] | None] = [None]
+
+        def start_housekeeping() -> None:
+            """Once per target change / new mount of the target, and never while busy."""
+            key = locations.housekeeping_key()
+            if key is None or key == housekept[0] or busy():
+                return
+            housekept[0] = key
+            loop.create_task(run_housekeeping(), name="storage-housekeeping")
+
+        def on_location(reason: str, location_id: str | None) -> None:
+            if reason == "mounted" and location_id != locations.target_id:
+                backup.trigger()  # a backup (or any location) came online
+            if reason in ("mounted", "target") and location_id == locations.target_id:
+                start_housekeeping()
+                backup.trigger()
+
+        locations.subscribe(on_location)
+        backup.start()
+        await locations.start()
+        if target_dir is not None:
+            await run_housekeeping()
         await service.start()
         bg: set[asyncio.Task[Any]] = set()
 
@@ -180,7 +249,6 @@ def create_app(
     app.state.config_store = store
     app.state.started_at = datetime.now(UTC)
     app.state.data_dir = data
-    app.state.output_dir = output
 
     # Added before install_error_handlers so the request-id middleware stays outermost.
     app.add_middleware(OriginGuardMiddleware, config_store=store)

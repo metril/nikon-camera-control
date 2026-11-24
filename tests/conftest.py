@@ -106,7 +106,7 @@ def app(tmp_dirs: TmpDirs, config_store: ConfigStore, fake_camera: FakeCamera) -
     return create_app(
         config_store=config_store,
         data_dir=tmp_dirs.data_dir,
-        output_dir=tmp_dirs.output_dir,
+        target_dir=tmp_dirs.output_dir,
         backend_factory=lambda: fake_camera,
         auto_connect=False,
         event_quiet_window_s=0.02,

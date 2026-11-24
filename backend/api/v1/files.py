@@ -24,7 +24,7 @@ router = APIRouter(
 
 
 def build_file_service(s: State) -> FileService:
-    return FileService(s.output_dir, s.data_dir, lambda: s.config_store.config.media.thumbnail_size)
+    return FileService(s.storage, lambda: s.config_store.config.media.thumbnail_size)
 
 
 get_files = service_dep("files", build_file_service)

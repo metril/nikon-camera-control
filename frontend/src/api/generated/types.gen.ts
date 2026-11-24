@@ -83,6 +83,110 @@ export type AutofocusResult = {
 };
 
 /**
+ * BackupStatusData
+ */
+export type BackupStatusData = {
+    /**
+     * Backup Id
+     */
+    backup_id?: string | null;
+    /**
+     * Copied
+     */
+    copied?: number;
+    /**
+     * Current
+     */
+    current?: string | null;
+    /**
+     * Failed
+     */
+    failed?: number;
+    /**
+     * Pending
+     *
+     * Files still to copy in this run
+     */
+    pending?: number;
+    /**
+     * Running
+     */
+    running: boolean;
+    [key: string]: unknown;
+};
+
+/**
+ * BackupStatusEvent
+ */
+export type BackupStatusEvent = {
+    data: BackupStatusData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'backup_status';
+};
+
+/**
+ * BackupStatusOut
+ */
+export type BackupStatusOut = {
+    /**
+     * Backup Ids
+     */
+    backup_ids?: Array<string>;
+    /**
+     * Backups Online
+     */
+    backups_online?: Array<string>;
+    /**
+     * Copied
+     */
+    copied: number;
+    /**
+     * Current
+     */
+    current?: string | null;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Last Error
+     */
+    last_error?: string | null;
+    /**
+     * Last Run
+     */
+    last_run?: string | null;
+    /**
+     * Pending
+     */
+    pending: number;
+    /**
+     * Running
+     */
+    running: boolean;
+    /**
+     * Source Id
+     */
+    source_id?: string | null;
+};
+
+/**
+ * BackupsSet
+ */
+export type BackupsSet = {
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+};
+
+/**
  * BatteryData
  */
 export type BatteryData = {
@@ -948,6 +1052,7 @@ export type ConfigPatch = {
     demo_camera?: boolean | null;
     liveview?: LiveViewConfigPatch | null;
     media?: MediaConfigPatch | null;
+    storage?: StorageConfigPatch | null;
     timelapse?: TimelapseConfigPatch | null;
     video?: VideoConfigPatch | null;
 };
@@ -1320,6 +1425,20 @@ export type FromCameraIn = {
      * Setting names to capture; null = the common writable settings.
      */
     names?: Array<string> | null;
+};
+
+/**
+ * FsckResult
+ */
+export type FsckResult = {
+    /**
+     * Output
+     */
+    output: string;
+    /**
+     * Returncode
+     */
+    returncode: number;
 };
 
 /**
@@ -1762,6 +1881,248 @@ export type LiveviewStoppedEvent = {
 };
 
 /**
+ * LocationCreate
+ */
+export type LocationCreate = {
+    /**
+     * Auto Mount
+     */
+    auto_mount?: boolean;
+    /**
+     * Domain
+     */
+    domain?: string | null;
+    /**
+     * Kind
+     */
+    kind: 'usb' | 'smb';
+    /**
+     * Name
+     */
+    name?: string;
+    /**
+     * Password
+     *
+     * Write-only
+     */
+    password?: string | null;
+    /**
+     * Unc
+     *
+     * smb: //host/share[/sub]
+     */
+    unc?: string | null;
+    /**
+     * Username
+     */
+    username?: string | null;
+    /**
+     * Uuid
+     *
+     * usb
+     */
+    uuid?: string | null;
+};
+
+/**
+ * LocationOut
+ */
+export type LocationOut = {
+    /**
+     * Auto Mount
+     */
+    auto_mount: boolean;
+    /**
+     * Configured
+     *
+     * False for a detected drive that is not registered yet
+     */
+    configured: boolean;
+    /**
+     * Domain
+     */
+    domain?: string | null;
+    /**
+     * Encrypted
+     *
+     * SMB: the session is encrypted (SMB3 seal); false = plaintext
+     */
+    encrypted?: boolean | null;
+    /**
+     * Error
+     *
+     * Last mount/health error, verbatim
+     */
+    error?: string | null;
+    /**
+     * Free
+     *
+     * Free bytes (mounted only)
+     */
+    free?: number | null;
+    /**
+     * Fstype
+     */
+    fstype?: string | null;
+    /**
+     * Has Password
+     *
+     * A password is stored (never returned)
+     */
+    has_password: boolean;
+    /**
+     * Id
+     *
+     * usb-<uuid> or smb-<slug>; dev-<name> for drives without uuid
+     */
+    id: string;
+    /**
+     * Is Backup
+     */
+    is_backup: boolean;
+    /**
+     * Is Target
+     */
+    is_target: boolean;
+    /**
+     * Kind
+     */
+    kind: 'usb' | 'smb';
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Mounted
+     */
+    mounted: boolean;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Present
+     *
+     * USB: connected. SMB: no known failure.
+     */
+    present: boolean;
+    /**
+     * Reason
+     *
+     * Why the drive cannot be mounted
+     */
+    reason?: string | null;
+    /**
+     * Size
+     *
+     * Total bytes
+     */
+    size?: number | null;
+    /**
+     * Supported
+     */
+    supported: boolean;
+    /**
+     * Unc
+     */
+    unc?: string | null;
+    /**
+     * Username
+     */
+    username?: string | null;
+    /**
+     * Uuid
+     */
+    uuid?: string | null;
+};
+
+/**
+ * LocationUpdate
+ */
+export type LocationUpdate = {
+    /**
+     * Auto Mount
+     */
+    auto_mount?: boolean | null;
+    /**
+     * Domain
+     */
+    domain?: string | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Password
+     *
+     * Write-only; empty string removes the stored password
+     */
+    password?: string | null;
+    /**
+     * Unc
+     */
+    unc?: string | null;
+    /**
+     * Username
+     */
+    username?: string | null;
+};
+
+/**
+ * LocationsChangedData
+ */
+export type LocationsChangedData = {
+    /**
+     * Id
+     */
+    id?: string | null;
+    /**
+     * Reason
+     *
+     * mounted, unmounted, unplugged, added, updated, target, ...
+     */
+    reason: string;
+    /**
+     * Target Id
+     */
+    target_id?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * LocationsChangedEvent
+ */
+export type LocationsChangedEvent = {
+    data: LocationsChangedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'locations_changed';
+};
+
+/**
+ * LocationsOut
+ */
+export type LocationsOut = {
+    /**
+     * Backup Ids
+     */
+    backup_ids?: Array<string>;
+    /**
+     * Locations
+     */
+    locations: Array<LocationOut>;
+    /**
+     * Target Id
+     */
+    target_id?: string | null;
+};
+
+/**
  * MediaConfig
  */
 export type MediaConfig = {
@@ -1825,6 +2186,49 @@ export type NoBracketing = {
      * Mode
      */
     mode?: 'none';
+};
+
+/**
+ * OffloadRequest
+ */
+export type OffloadRequest = {
+    /**
+     * From Id
+     */
+    from_id: string;
+    /**
+     * Keep Source
+     *
+     * Verified copy only; keep the source
+     */
+    keep_source?: boolean;
+    scope: OffloadScope;
+    /**
+     * To Id
+     */
+    to_id: string;
+};
+
+/**
+ * OffloadScope
+ */
+export type OffloadScope = {
+    /**
+     * Before
+     *
+     * For kind=older_than
+     */
+    before?: string | null;
+    /**
+     * Kind
+     */
+    kind: 'all' | 'session' | 'older_than';
+    /**
+     * Session Id
+     *
+     * For kind=session
+     */
+    session_id?: string | null;
 };
 
 /**
@@ -2824,6 +3228,42 @@ export type SettingsPresetIn = {
 };
 
 /**
+ * SmbTest
+ */
+export type SmbTest = {
+    /**
+     * Domain
+     */
+    domain?: string | null;
+    /**
+     * Password
+     */
+    password?: string | null;
+    /**
+     * Unc
+     */
+    unc: string;
+    /**
+     * Username
+     */
+    username?: string | null;
+};
+
+/**
+ * SmbTestResult
+ */
+export type SmbTestResult = {
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Ok
+     */
+    ok: boolean;
+};
+
+/**
  * StackRequest
  */
 export type StackRequest = {
@@ -2904,6 +3344,92 @@ export type StorageCardOut = {
 };
 
 /**
+ * StorageConfigPatch
+ */
+export type StorageConfigPatch = {
+    /**
+     * Backup Ids
+     *
+     * Backup locations
+     */
+    backup_ids?: Array<string> | null;
+    /**
+     * Backup Interval Min
+     *
+     * Periodic backup interval (minutes)
+     */
+    backup_interval_min?: number | null;
+    /**
+     * Deep Verify
+     *
+     * Backups re-hash existing destination files on every run
+     */
+    deep_verify?: boolean | null;
+    /**
+     * Locations
+     */
+    locations?: Array<StorageLocation> | null;
+    /**
+     * Sidecars
+     *
+     * Write a <file>.sha256 next to every file
+     */
+    sidecars?: boolean | null;
+    /**
+     * Target Id
+     *
+     * Location receiving all captures
+     */
+    target_id?: string | null;
+};
+
+/**
+ * StorageLocation
+ *
+ * A configured storage location. Passwords are never stored here (see SecretStore).
+ */
+export type StorageLocation = {
+    /**
+     * Auto Mount
+     *
+     * Mount automatically when available
+     */
+    auto_mount?: boolean;
+    /**
+     * Domain
+     */
+    domain?: string | null;
+    /**
+     * Id
+     *
+     * usb-<fs uuid> or smb-<slug>
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'usb' | 'smb';
+    /**
+     * Name
+     *
+     * Display name
+     */
+    name?: string;
+    /**
+     * Unc
+     */
+    unc?: string | null;
+    /**
+     * Username
+     */
+    username?: string | null;
+    /**
+     * Uuid
+     */
+    uuid?: string | null;
+};
+
+/**
  * StorageOut
  */
 export type StorageOut = {
@@ -2921,6 +3447,18 @@ export type SummaryOut = {
      * Summary
      */
     summary: string;
+};
+
+/**
+ * TargetSet
+ */
+export type TargetSet = {
+    /**
+     * Id
+     *
+     * Location id, or null for no target
+     */
+    id: string | null;
 };
 
 /**
@@ -3311,6 +3849,24 @@ export type Timing = {
 };
 
 /**
+ * VerifyRequest
+ */
+export type VerifyRequest = {
+    /**
+     * Folder
+     *
+     * Sub-folder to check, relative to the root
+     */
+    folder?: string;
+    /**
+     * Location Id
+     *
+     * Default: the target
+     */
+    location_id?: string | null;
+};
+
+/**
  * VideoConfig
  */
 export type VideoConfig = {
@@ -3439,6 +3995,96 @@ export type VideoEntry = {
      */
     size: number;
 };
+
+export type RunBackupData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/backup/run';
+};
+
+export type RunBackupErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RunBackupError = RunBackupErrors[keyof RunBackupErrors];
+
+export type RunBackupResponses = {
+    /**
+     * Successful Response
+     */
+    202: BackupStatusOut;
+};
+
+export type RunBackupResponse = RunBackupResponses[keyof RunBackupResponses];
+
+export type GetBackupStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/backup/status';
+};
+
+export type GetBackupStatusErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetBackupStatusError = GetBackupStatusErrors[keyof GetBackupStatusErrors];
+
+export type GetBackupStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: BackupStatusOut;
+};
+
+export type GetBackupStatusResponse = GetBackupStatusResponses[keyof GetBackupStatusResponses];
 
 export type GetCameraData = {
     body?: never;
@@ -4745,6 +5391,10 @@ export type GetEventSchemaResponses = {
     } & ConfigChangedEvent) | ({
         type: 'presets_changed';
     } & PresetsChangedEvent) | ({
+        type: 'locations_changed';
+    } & LocationsChangedEvent) | ({
+        type: 'backup_status';
+    } & BackupStatusEvent) | ({
         type: 'error';
     } & ErrorEvent);
 };
@@ -5540,6 +6190,436 @@ export type StopLiveviewResponses = {
 };
 
 export type StopLiveviewResponse = StopLiveviewResponses[keyof StopLiveviewResponses];
+
+export type ListLocationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/locations';
+};
+
+export type ListLocationsErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListLocationsError = ListLocationsErrors[keyof ListLocationsErrors];
+
+export type ListLocationsResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocationsOut;
+};
+
+export type ListLocationsResponse = ListLocationsResponses[keyof ListLocationsResponses];
+
+export type AddLocationData = {
+    body: LocationCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/locations';
+};
+
+export type AddLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type AddLocationError = AddLocationErrors[keyof AddLocationErrors];
+
+export type AddLocationResponses = {
+    /**
+     * Successful Response
+     */
+    201: LocationOut;
+};
+
+export type AddLocationResponse = AddLocationResponses[keyof AddLocationResponses];
+
+export type TestSmbLocationData = {
+    body: SmbTest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/locations/test-smb';
+};
+
+export type TestSmbLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type TestSmbLocationError = TestSmbLocationErrors[keyof TestSmbLocationErrors];
+
+export type TestSmbLocationResponses = {
+    /**
+     * Successful Response
+     */
+    200: SmbTestResult;
+};
+
+export type TestSmbLocationResponse = TestSmbLocationResponses[keyof TestSmbLocationResponses];
+
+export type DeleteLocationData = {
+    body?: never;
+    path: {
+        /**
+         * Location Id
+         */
+        location_id: string;
+    };
+    query?: never;
+    url: '/api/v1/locations/{location_id}';
+};
+
+export type DeleteLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DeleteLocationError = DeleteLocationErrors[keyof DeleteLocationErrors];
+
+export type DeleteLocationResponses = {
+    /**
+     * Successful Response
+     */
+    200: Ok;
+};
+
+export type DeleteLocationResponse = DeleteLocationResponses[keyof DeleteLocationResponses];
+
+export type UpdateLocationData = {
+    body: LocationUpdate;
+    path: {
+        /**
+         * Location Id
+         */
+        location_id: string;
+    };
+    query?: never;
+    url: '/api/v1/locations/{location_id}';
+};
+
+export type UpdateLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type UpdateLocationError = UpdateLocationErrors[keyof UpdateLocationErrors];
+
+export type UpdateLocationResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocationOut;
+};
+
+export type UpdateLocationResponse = UpdateLocationResponses[keyof UpdateLocationResponses];
+
+export type CheckLocationData = {
+    body?: never;
+    path: {
+        /**
+         * Location Id
+         */
+        location_id: string;
+    };
+    query?: never;
+    url: '/api/v1/locations/{location_id}/fsck';
+};
+
+export type CheckLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type CheckLocationError = CheckLocationErrors[keyof CheckLocationErrors];
+
+export type CheckLocationResponses = {
+    /**
+     * Successful Response
+     */
+    200: FsckResult;
+};
+
+export type CheckLocationResponse = CheckLocationResponses[keyof CheckLocationResponses];
+
+export type MountLocationData = {
+    body?: never;
+    path: {
+        /**
+         * Location Id
+         */
+        location_id: string;
+    };
+    query?: never;
+    url: '/api/v1/locations/{location_id}/mount';
+};
+
+export type MountLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type MountLocationError = MountLocationErrors[keyof MountLocationErrors];
+
+export type MountLocationResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocationOut;
+};
+
+export type MountLocationResponse = MountLocationResponses[keyof MountLocationResponses];
+
+export type UnmountLocationData = {
+    body?: never;
+    path: {
+        /**
+         * Location Id
+         */
+        location_id: string;
+    };
+    query?: never;
+    url: '/api/v1/locations/{location_id}/unmount';
+};
+
+export type UnmountLocationErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type UnmountLocationError = UnmountLocationErrors[keyof UnmountLocationErrors];
+
+export type UnmountLocationResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocationOut;
+};
+
+export type UnmountLocationResponse = UnmountLocationResponses[keyof UnmountLocationResponses];
+
+export type StartOffloadData = {
+    body: OffloadRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/offload';
+};
+
+export type StartOffloadErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type StartOffloadError = StartOffloadErrors[keyof StartOffloadErrors];
+
+export type StartOffloadResponses = {
+    /**
+     * Successful Response
+     */
+    202: JobOut;
+};
+
+export type StartOffloadResponse = StartOffloadResponses[keyof StartOffloadResponses];
 
 export type ListPresetsData = {
     body?: never;
@@ -6690,6 +7770,96 @@ export type SetSettingResponses = {
 
 export type SetSettingResponse = SetSettingResponses[keyof SetSettingResponses];
 
+export type SetStorageBackupsData = {
+    body: BackupsSet;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage/backups';
+};
+
+export type SetStorageBackupsErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SetStorageBackupsError = SetStorageBackupsErrors[keyof SetStorageBackupsErrors];
+
+export type SetStorageBackupsResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocationsOut;
+};
+
+export type SetStorageBackupsResponse = SetStorageBackupsResponses[keyof SetStorageBackupsResponses];
+
+export type SetStorageTargetData = {
+    body: TargetSet;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage/target';
+};
+
+export type SetStorageTargetErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SetStorageTargetError = SetStorageTargetErrors[keyof SetStorageTargetErrors];
+
+export type SetStorageTargetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocationsOut;
+};
+
+export type SetStorageTargetResponse = SetStorageTargetResponses[keyof SetStorageTargetResponses];
+
 export type GetThumbnailData = {
     body?: never;
     path: {
@@ -7151,6 +8321,51 @@ export type StopTimelapseResponses = {
 };
 
 export type StopTimelapseResponse = StopTimelapseResponses[keyof StopTimelapseResponses];
+
+export type StartVerifyData = {
+    body: VerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/verify';
+};
+
+export type StartVerifyErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type StartVerifyError = StartVerifyErrors[keyof StartVerifyErrors];
+
+export type StartVerifyResponses = {
+    /**
+     * Successful Response
+     */
+    202: JobOut;
+};
+
+export type StartVerifyResponse = StartVerifyResponses[keyof StartVerifyResponses];
 
 export type ListVideosData = {
     body?: never;

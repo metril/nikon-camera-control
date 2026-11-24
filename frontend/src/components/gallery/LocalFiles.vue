@@ -10,6 +10,9 @@ import { useFilesStore } from '@/stores/files'
 import { useCaptureStore } from '@/stores/capture'
 import { useJobsStore } from '@/stores/jobs'
 import { useToastsStore } from '@/stores/toasts'
+import { useStorageStore } from '@/stores/storage'
+import { isNoTarget } from '@/api'
+import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
 import Thumb from './Thumb.vue'
 import Lightbox from './Lightbox.vue'
 import { formatSize, formatDate, kindTone } from './media'
@@ -18,6 +21,7 @@ const files = useFilesStore()
 const capture = useCaptureStore()
 const jobs = useJobsStore()
 const toasts = useToastsStore()
+const storage = useStorageStore()
 
 const KINDS = [
   { value: 'all', label: 'All' },
@@ -36,6 +40,9 @@ const selected = ref(new Set())
 const lightboxIndex = ref(-1)
 const deleting = ref(false)
 const failedLoad = ref(false)
+const noTarget = computed(
+  () => storage.noTarget || (failedLoad.value && isNoTarget(files.lastError)),
+)
 
 const q = computed(() => files.query)
 const pages = computed(() => Math.max(1, Math.ceil(files.total / q.value.limit)))
@@ -51,7 +58,7 @@ async function load(params = {}) {
     await files.load(params)
   } catch (e) {
     failedLoad.value = true
-    toasts.error(e)
+    if (!isNoTarget(e)) toasts.error(e)
   }
 }
 const goFolder = (folder) => {
@@ -62,6 +69,10 @@ const setFilter = (key, value) => load({ [key]: value, page: 1 })
 const goPage = (page) => load({ page })
 
 onMounted(() => load())
+watch(
+  () => storage.targetId,
+  (v, old) => v !== old && load({ folder: '', page: 1 }),
+)
 
 // Refresh when a capture lands or a job completes.
 watch(
@@ -133,7 +144,8 @@ async function deleteFromLightbox(item) {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <NoTargetNotice v-if="noTarget" data-testid="no-target" />
+  <div v-else class="space-y-4">
     <nav aria-label="Folder" class="flex flex-wrap items-center gap-1 text-sm">
       <button
         type="button"

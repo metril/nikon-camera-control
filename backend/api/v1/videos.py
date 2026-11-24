@@ -27,7 +27,7 @@ from backend.services.video import VideoService
 
 def build_video_service(s: State) -> VideoService:
     sessions = s.services.get("sessions", lambda: build_sessions_service(s))
-    return VideoService(s.config_store, sessions, s.job_manager, s.data_dir)
+    return VideoService(s.config_store, sessions, s.job_manager, s.storage)
 
 
 get_videos = service_dep("videos", build_video_service)

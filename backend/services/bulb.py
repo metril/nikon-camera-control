@@ -35,6 +35,7 @@ from backend.core.errors import (
 from backend.core.events import EventBus
 from backend.core.jobs import HeldContext, Job, JobContext, JobManager
 from backend.core.state import CameraState
+from backend.core.storage_root import StorageRoot, as_root
 from backend.services.capture import sanitize_prefix
 from backend.services.storage import download_files
 
@@ -63,7 +64,7 @@ class BulbService:
         camera: CameraService,
         jobs: JobManager,
         bus: EventBus,
-        output_dir: Path,
+        output_dir: Path | StorageRoot,
         invalidate_index: Callable[[], None],
         *,
         quiet_window_s: float = 1.0,
@@ -73,7 +74,7 @@ class BulbService:
         self._camera = camera
         self._jobs = jobs
         self._bus = bus
-        self._output = output_dir
+        self._store = as_root(output_dir)
         self._invalidate = invalidate_index
         self._quiet = quiet_window_s
         self._sleep = sleep
@@ -108,6 +109,8 @@ class BulbService:
                 f"Bulb needs an idle camera (state is {st.state.value}); stop live view first",
                 details={"state": st.state.value},
             )
+        if req.download:
+            self._store.root()  # NoTargetError (409) before the shutter opens
         held = HeldContext(self._camera.lease(OWNER))
         await held.enter()  # 409 now, not inside the job
         try:
@@ -354,13 +357,14 @@ class BulbService:
                 local = await download_files(
                     self._camera,
                     files,
-                    self._output,
+                    self._store.root(),
                     owner=OWNER,
                     name_prefix=f"{sanitize_prefix(req.filename_prefix)}{stamp}",
+                    on_stored=self._store.stored,
                 )
             finally:
                 self._invalidate()
-        root = self._output.resolve()
+        root = self._store.root().resolve()
         return {
             "seconds": req.seconds,
             "files": [p.resolve().relative_to(root).as_posix() for p in local],

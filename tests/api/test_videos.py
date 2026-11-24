@@ -151,7 +151,7 @@ async def test_render_happy_path_manifest_and_progress(
     listed = (await client.get(V)).json()["items"][0]
     assert listed["duration_s"] == 1.0 and listed["frames"] == 10
     assert not list(store.folder(sid).glob("videos/*.part*"))
-    assert not list((app.state.data_dir / "video-tmp").glob("*"))
+    assert not list((app.state.storage.cache() / "video-tmp").glob("*"))
     assert any(e.get("job", {}).get("kind") == "render-video" for e in events)
 
 
@@ -288,7 +288,7 @@ async def test_output_name_traversal_cannot_escape_or_overwrite(
     """Regression: output_filename was joined unsanitised and ffmpeg ran with -y."""
     _, store = ctx
     sid = await _session(store, 3)
-    victim = app.state.output_dir / "victim.mp4"
+    victim = app.state.storage.root() / "victim.mp4"
     victim.write_bytes(b"precious")
     job = await _render(client, sid, {"output_name": "../../victim.mp4"})
     assert job["status"] == "completed" and job["result"]["name"] == "victim.mp4"
@@ -494,7 +494,7 @@ async def test_cancel_stops_prepare_thread_before_work_dir_removed(
     assert c.json()["status"] == "cancelled"
     # cancel returned only after the thread was stopped and the work dir removed
     assert stopped.is_set() and saw_cancel == [True]
-    tmp = app.state.data_dir / "video-tmp"
+    tmp = app.state.storage.cache() / "video-tmp"
     assert not tmp.exists() or list(tmp.iterdir()) == []
 
 

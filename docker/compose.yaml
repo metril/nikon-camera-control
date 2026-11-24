@@ -2,7 +2,7 @@
 # Everything is configured in the web UI (Settings); there is no environment configuration.
 services:
   nikon-camera-control:
-    image: ghcr.io/metril/nikon-camera-control:0.2.0
+    image: ghcr.io/metril/nikon-camera-control:0.3.0
     container_name: nikon-camera-control
     ports:
       - "8000:8000"
@@ -20,15 +20,39 @@ services:
     #   the camera plugged in:   stat -c %g /dev/bus/usb/BBB/DDD   (BBB/DDD from `lsusb`)
     #   docker/udev/99-nikon.rules sets that group (plugdev) on the node; on hosts where it is
     #   not 46 (or plugdev does not exist: Fedora, Arch) put the real gid here instead.
+    # Storage targets (USB drives and SMB shares) are mounted inside the container by a root
+    # helper that the app reaches through sudo (/usr/local/sbin/ncc-storage). That needs:
+    # - SYS_ADMIN: the mount(2) syscall.
+    # - MKNOD: the helper creates block device nodes for USB drives on demand in /run/ncc-root/dev
+    #   (the host /dev is not mounted).
+    # - apparmor:unconfined: Docker's default AppArmor profile denies mount(2).
+    # - device_cgroup_rules for block majors: 8 = SCSI/USB disks (sd*), 259 = extended
+    #   (nvme/USB-attached partitions), 179 = MMC/SD card readers. Only USB-backed devices
+    #   (sysfs path contains /usb) are ever listed or mounted by the helper.
+    # - tmpfs /run/ncc-root: the helper's private state (SMB credential files, device nodes)
+    #   lives in RAM, owned by root with mode 0700, so the app user cannot touch it (no
+    #   symlink or node-swap tricks). SMB credentials reach the helper on stdin. `dev` is
+    #   needed because Docker mounts tmpfs nodev by default, which would make the nodes unusable.
+    cap_add:
+      - SYS_ADMIN
+      - MKNOD
+    security_opt:
+      - "apparmor:unconfined"
+    tmpfs:
+      - "/run/ncc-root:uid=0,gid=0,mode=0700,dev"
     device_cgroup_rules:
       - "c 189:* rmw"
+      - "b 8:* rmw"
+      - "b 259:* rmw"
+      - "b 179:* rmw"
     group_add:
       - "46"
     # No /var/run/dbus mount: libgphoto2 does not use it. The host's gvfs-gphoto2 monitor
     # may grab the camera; the udev rule marks it as not-a-media-player to prevent that.
     volumes:
       - /dev/bus/usb:/dev/bus/usb
-      # Paths are relative to this file (docker/). Both must be writable by uid/gid 1000:
-      #   mkdir -p data output && sudo chown 1000:1000 data output
-      - ./data:/app/data      # config.json, api_key.json, presets, caches
-      - ./output:/app/output  # captured photos, sessions, videos, recordings
+      # Relative to this file (docker/); must be writable by uid/gid 1000:
+      #   mkdir -p data && sudo chown 1000:1000 data
+      # Config only (config.json, api_key.json, presets). No captures are stored on the host:
+      # they go to USB drives or SMB shares mounted from the web UI.
+      - ./data:/app/data

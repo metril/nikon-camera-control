@@ -3,7 +3,7 @@ import './client'
 import * as api from './generated/sdk.gen'
 
 export { api }
-export { ApiError, toApiError } from './errors'
+export { ApiError, toApiError, isNoTarget } from './errors'
 export { client } from './client'
 export * from './urls'
 export { createEventSocket, createLiveViewSocket } from './ws'

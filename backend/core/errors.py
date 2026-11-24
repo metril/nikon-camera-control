@@ -39,6 +39,11 @@ class ErrorCode(StrEnum):
     FORBIDDEN = "FORBIDDEN"
     FORBIDDEN_ORIGIN = "FORBIDDEN_ORIGIN"
     BULB_SHUTTER_OPEN = "BULB_SHUTTER_OPEN"
+    NO_TARGET = "NO_TARGET"
+    LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
+    LOCATION_BUSY = "LOCATION_BUSY"
+    MOUNT_FAILED = "MOUNT_FAILED"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
 
 
 class AppError(Exception):
@@ -216,3 +221,35 @@ class UnsupportedMedia(AppError):
     code = ErrorCode.UNSUPPORTED_MEDIA
     http_status = 415
     default_message = "No thumbnail can be generated for this file type"
+
+
+class NoTargetError(AppError):
+    """No storage target is selected or mounted (writes must never hit the container fs)."""
+
+    code = ErrorCode.NO_TARGET
+    http_status = 409
+    default_message = "No storage target is available. Select and mount a target in Settings."
+
+
+class LocationNotFound(AppError):
+    code = ErrorCode.LOCATION_NOT_FOUND
+    http_status = 404
+    default_message = "Storage location not found"
+
+
+class LocationBusy(AppError):
+    code = ErrorCode.LOCATION_BUSY
+    http_status = 409
+    default_message = "Storage location is busy"
+
+
+class MountFailed(AppError):
+    code = ErrorCode.MOUNT_FAILED
+    http_status = 502
+    default_message = "Mount failed"
+
+
+class FileTooLarge(AppError):
+    code = ErrorCode.FILE_TOO_LARGE
+    http_status = 413
+    default_message = "File is too large for the target filesystem (FAT32 limit is 4 GiB)"

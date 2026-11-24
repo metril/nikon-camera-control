@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.2.0
+# Nikon Camera Control API 0.3.0
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -46,6 +46,11 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `FORBIDDEN` | 403 | `Forbidden` | This operation is not allowed |
 | `FORBIDDEN_ORIGIN` | 403 | `ForbiddenOrigin` | Cross-origin request not allowed |
 | `BULB_SHUTTER_OPEN` | 502 | `ShutterOpen` | Could not close the shutter |
+| `NO_TARGET` | 409 | `NoTargetError` | No storage target is available. Select and mount a target in Settings. |
+| `LOCATION_NOT_FOUND` | 404 | `LocationNotFound` | Storage location not found |
+| `LOCATION_BUSY` | 409 | `LocationBusy` | Storage location is busy |
+| `MOUNT_FAILED` | 502 | `MountFailed` | Mount failed |
+| `FILE_TOO_LARGE` | 413 | `FileTooLarge` | File is too large for the target filesystem (FAT32 limit is 4 GiB) |
 
 ## Endpoints
 
@@ -178,6 +183,25 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | POST | `/api/v1/settings/refresh` | `refresh_settings` | Refresh Settings |
 | GET | `/api/v1/settings/{name}` | `get_setting` | Get Setting |
 | PUT | `/api/v1/settings/{name}` | `set_setting` | Set Setting |
+
+### storage
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/locations` | `list_locations` | List Locations |
+| POST | `/api/v1/locations` | `add_location` | Add Location |
+| DELETE | `/api/v1/locations/{location_id}` | `delete_location` | Delete Location |
+| PATCH | `/api/v1/locations/{location_id}` | `update_location` | Update Location |
+| POST | `/api/v1/locations/{location_id}/mount` | `mount_location` | Mount Location |
+| POST | `/api/v1/locations/{location_id}/unmount` | `unmount_location` | Unmount Location |
+| POST | `/api/v1/locations/{location_id}/fsck` | `check_location` | Check Location |
+| POST | `/api/v1/locations/test-smb` | `test_smb_location` | Test Smb Location |
+| PUT | `/api/v1/storage/target` | `set_storage_target` | Set Storage Target |
+| PUT | `/api/v1/storage/backups` | `set_storage_backups` | Set Storage Backups |
+| GET | `/api/v1/backup/status` | `get_backup_status` | Get Backup Status |
+| POST | `/api/v1/backup/run` | `run_backup` | Run Backup |
+| POST | `/api/v1/offload` | `start_offload` | Start Offload |
+| POST | `/api/v1/verify` | `start_verify` | Start Verify |
 
 ### system
 
@@ -657,6 +681,7 @@ operation_id: `update_config`
 | `timelapse` | TimelapseConfigPatch \| null | no |  |  |  |
 | `video` | VideoConfigPatch \| null | no |  |  |  |
 | `media` | MediaConfigPatch \| null | no |  |  |  |
+| `storage` | StorageConfigPatch \| null | no |  |  |  |
 | `cors_origins` | list[string] \| null | no |  |  | Allowed CORS origins; empty = same-origin only |
 | `demo_camera` | boolean \| null | no |  |  | Use the simulated camera |
 
@@ -755,7 +780,7 @@ generated client carry the event types.
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `application/json`: `CameraStateEvent \| CameraConnectedEvent \| CameraDisconnectedEvent \| SettingChangedEvent \| BatteryEvent \| CaptureStartedEvent \| CaptureCompleteEvent \| LiveviewStartedEvent \| LiveviewStoppedEvent \| TimelapseStartedEvent \| TimelapsePausedEvent \| TimelapseResumedEvent \| TimelapseStoppedEvent \| TimelapseCompletedEvent \| TimelapseFrameEvent \| TimelapseWarningEvent \| TimelapseErrorEvent \| RecordingStartedEvent \| RecordingStoppedEvent \| JobCreatedEvent \| JobProgressEvent \| JobCompletedEvent \| JobFailedEvent \| JobCancelledEvent \| ConfigChangedEvent \| PresetsChangedEvent \| ErrorEvent` |
+| 200 | Successful Response | `application/json`: `CameraStateEvent \| CameraConnectedEvent \| CameraDisconnectedEvent \| SettingChangedEvent \| BatteryEvent \| CaptureStartedEvent \| CaptureCompleteEvent \| LiveviewStartedEvent \| LiveviewStoppedEvent \| TimelapseStartedEvent \| TimelapsePausedEvent \| TimelapseResumedEvent \| TimelapseStoppedEvent \| TimelapseCompletedEvent \| TimelapseFrameEvent \| TimelapseWarningEvent \| TimelapseErrorEvent \| RecordingStartedEvent \| RecordingStoppedEvent \| JobCreatedEvent \| JobProgressEvent \| JobCompletedEvent \| JobFailedEvent \| JobCancelledEvent \| ConfigChangedEvent \| PresetsChangedEvent \| LocationsChangedEvent \| BackupStatusEvent \| ErrorEvent` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -1624,6 +1649,332 @@ operation_id: `set_setting`
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
+## storage
+
+### `GET /api/v1/locations`
+
+operation_id: `list_locations`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `LocationsOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/locations`
+
+operation_id: `add_location`
+
+**Request body** (`application/json`): `LocationCreate`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `kind` | enum("usb", "smb") | yes |  |  |  |
+| `name` | string | no | `""` | `maxLength=64` |  |
+| `uuid` | string \| null | no |  | `pattern=^[0-9A-Za-z-]{1,64}$` | usb |
+| `unc` | string \| null | no |  | `pattern=^//[A-Za-z0-9._-]+/[A-Za-z0-9._ $-]+(/[A-Za-z0-9._ $-]+)*$` | smb: //host/share[/sub] |
+| `username` | string \| null | no |  | `maxLength=128`, `pattern=^[^\x00-\x1f,]*$` |  |
+| `password` | string \| null | no |  | `maxLength=256`, `pattern=^[^\x00-\x1f]*$` | Write-only |
+| `domain` | string \| null | no |  | `maxLength=128`, `pattern=^[^\x00-\x1f,]*$` |  |
+| `auto_mount` | boolean | no | `true` |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 201 | Successful Response | `application/json`: `LocationOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `DELETE /api/v1/locations/{location_id}`
+
+operation_id: `delete_location`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `location_id` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `Ok` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `PATCH /api/v1/locations/{location_id}`
+
+operation_id: `update_location`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `location_id` | path | string | yes |  |  |  |
+
+**Request body** (`application/json`): `LocationUpdate`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `name` | string \| null | no |  | `maxLength=64` |  |
+| `unc` | string \| null | no |  | `pattern=^//[A-Za-z0-9._-]+/[A-Za-z0-9._ $-]+(/[A-Za-z0-9._ $-]+)*$` |  |
+| `username` | string \| null | no |  | `maxLength=128`, `pattern=^[^\x00-\x1f,]*$` |  |
+| `password` | string \| null | no |  | `maxLength=256`, `pattern=^[^\x00-\x1f]*$` | Write-only; empty string removes the stored password |
+| `domain` | string \| null | no |  | `maxLength=128`, `pattern=^[^\x00-\x1f,]*$` |  |
+| `auto_mount` | boolean \| null | no |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `LocationOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/locations/{location_id}/mount`
+
+operation_id: `mount_location`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `location_id` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `LocationOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/locations/{location_id}/unmount`
+
+operation_id: `unmount_location`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `location_id` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `LocationOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/locations/{location_id}/fsck`
+
+operation_id: `check_location`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `location_id` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `FsckResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/locations/test-smb`
+
+operation_id: `test_smb_location`
+
+**Request body** (`application/json`): `SmbTest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `unc` | string | yes |  | `pattern=^//[A-Za-z0-9._-]+/[A-Za-z0-9._ $-]+(/[A-Za-z0-9._ $-]+)*$` |  |
+| `username` | string \| null | no |  | `maxLength=128`, `pattern=^[^\x00-\x1f,]*$` |  |
+| `password` | string \| null | no |  | `maxLength=256`, `pattern=^[^\x00-\x1f]*$` |  |
+| `domain` | string \| null | no |  | `maxLength=128`, `pattern=^[^\x00-\x1f,]*$` |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `SmbTestResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `PUT /api/v1/storage/target`
+
+operation_id: `set_storage_target`
+
+**Request body** (`application/json`): `TargetSet`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `id` | string \| null | yes |  |  | Location id, or null for no target |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `LocationsOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `PUT /api/v1/storage/backups`
+
+operation_id: `set_storage_backups`
+
+**Request body** (`application/json`): `BackupsSet`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `ids` | list[string] | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `LocationsOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/backup/status`
+
+operation_id: `get_backup_status`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `BackupStatusOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/backup/run`
+
+operation_id: `run_backup`
+
+Start a sync now (a run in progress is repeated once it ends).
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `BackupStatusOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/offload`
+
+operation_id: `start_offload`
+
+Verified copy of files from one mounted location to another, then delete the source
+files (unless ``keep_source``) once the copy re-hashed equal. Files of running, paused or
+render-held sessions and files modified in the last 10 seconds are skipped.
+
+**Request body** (`application/json`): `OffloadRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `from_id` | string | yes |  |  |  |
+| `to_id` | string | yes |  |  |  |
+| `scope` | OffloadScope | yes |  |  |  |
+| `keep_source` | boolean | no | `false` |  | Verified copy only; keep the source |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/verify`
+
+operation_id: `start_verify`
+
+Re-hash a location's files against its own SHA256SUMS (job result: ok, mismatched,
+missing and unlisted counts and lists).
+
+**Request body** (`application/json`): `VerifyRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `location_id` | string \| null | no |  |  | Default: the target |
+| `folder` | string | no | `""` |  | Sub-folder to check, relative to the root |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ## system
 
 ### `GET /api/v1/health`
@@ -1972,6 +2323,8 @@ Payload keys are found by a static scan of `publish(...)` call sites; `(dynamic)
 | `job_cancelled` | `job` |
 | `config_changed` | `config`, `restart_required` |
 | `presets_changed` | `action`, `id`, `kind` |
+| `locations_changed` | `id`, `reason`, `target_id` |
+| `backup_status` | `copied`, `current`, `failed`, `pending`, `running` |
 | `error` | `cause`, `code`, `message` |
 
 ## Configuration reference
@@ -2001,6 +2354,12 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | video | `fps` | integer | `24` | `>=1`, `<=120` | Output frame rate |
 | video | `timeout_s` | integer | `3600` | `>=10`, `<=86400` | Upper bound for one ffmpeg run (s) |
 | media | `thumbnail_size` | integer | `200` | `>=32`, `<=1024` | Thumbnail longest edge (px) |
+| storage | `locations` | list[StorageLocation] |  |  |  |
+| storage | `target_id` | string \| null | `null` |  | Location receiving all captures |
+| storage | `backup_ids` | list[string] |  |  | Backup locations |
+| storage | `backup_interval_min` | integer | `15` | `>=1`, `<=1440` | Periodic backup interval (minutes) |
+| storage | `deep_verify` | boolean | `false` |  | Backups re-hash existing destination files on every run |
+| storage | `sidecars` | boolean | `true` |  | Write a <file>.sha256 next to every file |
 | (root) | `cors_origins` | list[string] |  |  | Allowed CORS origins; empty = same-origin only |
 | (root) | `demo_camera` | boolean | `false` |  | Use the simulated camera |
 | (root) | `api_key_hash` | string \| null | `null` |  | sha256 of the API key; None = open |

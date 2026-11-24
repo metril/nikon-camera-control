@@ -19,7 +19,7 @@ async def spa_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     app = create_app(
         config_store=ConfigStore(tmp_path / "data" / "config.json"),
         data_dir=tmp_path / "data",
-        output_dir=tmp_path / "out",
+        target_dir=tmp_path / "out",
         frontend_dist=dist,
         auto_connect=False,
     )

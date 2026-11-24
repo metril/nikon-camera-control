@@ -41,6 +41,7 @@ from backend.api.schemas.sessions import (
     SessionVideo,
 )
 from backend.core.errors import InvalidState, PathNotAllowed, SessionNotFound
+from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import safe_join
 
 log = logging.getLogger(__name__)
@@ -70,15 +71,15 @@ def _now() -> datetime:
 class SessionStore:
     def __init__(
         self,
-        output_dir: Path,
+        output_dir: Path | StorageRoot,
         *,
         fsync: bool = True,
         header_flush_every: int = 25,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         self._clock = clock
-        self.root = Path(output_dir) / "sessions"
-        self.root.mkdir(parents=True, exist_ok=True)
+        self._store = as_root(output_dir)
+        self._root_seen: Path | None = None
         self._fsync = fsync
         self._flush_every = max(1, header_flush_every)
         self._locks: dict[str, asyncio.Lock] = {}
@@ -87,6 +88,17 @@ class SessionStore:
         self._holds: dict[str, int] = {}  # session id -> active holders (e.g. renders)
 
     # ---- helpers -------------------------------------------------------------------------
+    @property
+    def root(self) -> Path:
+        """``<target>/sessions``; raises NoTargetError. Per-session caches are dropped when
+        the target changes (the same id on another location is a different session)."""
+        base = self._store.root()
+        if self._root_seen != base:
+            self._root_seen = base
+            self._cache.clear()
+            self._unflushed.clear()
+        return base / "sessions"
+
     @staticmethod
     def validate_id(session_id: str) -> str:
         if not SESSION_ID_RE.fullmatch(session_id):
@@ -110,6 +122,12 @@ class SessionStore:
                 self._holds[session_id] = n
             else:
                 self._holds.pop(session_id, None)
+
+    async def in_use_ids(self) -> frozenset[str]:
+        """Ids of sessions that are running/paused or held by a render (not safe to move)."""
+        listed = await self.list()
+        active = {x.id for x in listed if x.status in ACTIVE_STATUSES}
+        return frozenset(active | {sid for sid, n in self._holds.items() if n})
 
     def _lock(self, session_id: str) -> asyncio.Lock:
         return self._locks.setdefault(session_id, asyncio.Lock())
@@ -141,6 +159,7 @@ class SessionStore:
     def _load(self, session_id: str) -> SessionManifest:
         """Cached header (call under the session lock for read-modify-write)."""
         self.validate_id(session_id)
+        _ = self.root  # drops caches of another target
         m = self._cache.get(session_id)
         if m is None:
             m = self._read_header(session_id)
@@ -166,6 +185,7 @@ class SessionStore:
         while True:
             sid = f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
             try:
+                self.root.mkdir(parents=True, exist_ok=True)
                 (self.root / sid).mkdir()
                 break
             except FileExistsError:
@@ -201,6 +221,8 @@ class SessionStore:
 
     def _list(self) -> list[SessionSummary]:
         out: list[SessionSummary] = []
+        if not self.root.is_dir():
+            return out
         for d in self.root.iterdir():
             if not d.is_dir() or not SESSION_ID_RE.fullmatch(d.name):
                 continue
@@ -399,6 +421,8 @@ class SessionStore:
         """Mark running/paused sessions ``interrupted`` and recount frames from the log.
         Synchronous: call once at startup (the service factory does). Returns changed ids."""
         changed: list[str] = []
+        if not self.root.is_dir():
+            return changed
         for d in self.root.iterdir():
             if not d.is_dir() or not SESSION_ID_RE.fullmatch(d.name):
                 continue

@@ -113,7 +113,7 @@ async def test_download_one_and_cleanup(
     assert r.status_code == 200 and r.content[:2] == b"\xff\xd8"
     assert "image/jpeg" in r.headers["content-type"]
     assert name in r.headers["content-disposition"]
-    tmp = tmp_dirs.data_dir / "tmp"
+    tmp = tmp_dirs.output_dir / ".ncc" / "tmp"
     assert not tmp.exists() or list(tmp.iterdir()) == []  # background cleanup ran
     r = await connected_client.get(f"{F}{CARD_FOLDER}/NOPE.JPG")
     assert r.status_code == 404 and r.json()["error"]["code"] == "FILE_NOT_FOUND"
@@ -172,7 +172,7 @@ async def test_download_all_happy_and_only_new(
     assert (res["downloaded"], res["skipped"], res["failed"]) == (4, 0, 0)
     out = tmp_dirs.output_dir / "camera"
     assert len(list(out.iterdir())) == 4
-    ledger = (tmp_dirs.data_dir / "downloaded.jsonl").read_text().splitlines()
+    ledger = (tmp_dirs.output_dir / ".ncc" / "downloaded.jsonl").read_text().splitlines()
     assert len(ledger) == 4
     items = (await c.get(F, params={"folder": CARD_FOLDER})).json()["items"]
     assert all(i["downloaded"] for i in items)
@@ -228,7 +228,7 @@ async def test_download_all_cancel_midway(
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
     fake_camera.set_latency("read_file", 0)
     await asyncio.sleep(0.15)  # let the in-flight worker call drain
-    ledger_file = app.state.data_dir / "downloaded.jsonl"
+    ledger_file = app.state.storage.cache() / "downloaded.jsonl"
     ledger = ledger_file.read_text().splitlines() if ledger_file.exists() else []
     assert len(ledger) < 4
     assert j["message"]
@@ -287,7 +287,7 @@ async def test_stale_download_temp_dirs_swept_on_next_download(
 ) -> None:
     import os
 
-    stale = tmp_dirs.data_dir / "tmp" / "old"
+    stale = tmp_dirs.output_dir / ".ncc" / "tmp" / "old"
     stale.mkdir(parents=True)
     (stale / "big.NEF").write_bytes(b"x")
     os.utime(stale, (1, 1))

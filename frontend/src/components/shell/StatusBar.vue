@@ -7,10 +7,13 @@ import { useAsync, useVisiblePolling } from '@/composables'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { formatBytes } from './format'
+import StorageChip from './StorageChip.vue'
+import { useStorageStore } from '@/stores/storage'
 
 const camera = useCameraStore()
 const events = useEventsStore()
 const toasts = useToastsStore()
+const storage = useStorageStore()
 
 const TONES = {
   disconnected: 'neutral',
@@ -57,7 +60,10 @@ const refresh = () => {
   if (camera.connected && !camera.leasedBy) camera.fetchStorage().catch(() => {})
 }
 watch(() => [camera.connected, camera.leasedBy], refresh)
-onMounted(refresh)
+onMounted(() => {
+  refresh()
+  if (!storage.loaded) storage.refresh().catch(() => {})
+})
 useVisiblePolling(refresh, 60000)
 </script>
 
@@ -67,6 +73,7 @@ useVisiblePolling(refresh, 60000)
     <span v-if="camera.model" class="text-camera-text" data-test="model">{{ camera.model }}</span>
     <span v-if="battery" class="text-camera-muted" data-test="battery">Battery {{ battery }}</span>
     <span v-if="free" class="text-camera-muted" data-test="storage">{{ free }} free</span>
+    <StorageChip />
     <UiBadge v-if="camera.leasedBy" tone="warn" data-test="lease"
       >Busy: {{ camera.leasedBy }}</UiBadge
     >

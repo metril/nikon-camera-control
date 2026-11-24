@@ -29,7 +29,7 @@ def install(app: FastAPI, sleeps: list[float] | None = None) -> FocusService:
             st.camera_service,
             st.services.get("capture", lambda: build_capture_service(st)),
             st.job_manager,
-            st.output_dir,
+            st.storage,
             sleep=sleep,
         ),
     )

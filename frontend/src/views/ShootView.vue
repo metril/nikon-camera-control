@@ -5,7 +5,7 @@ import CaptureControls from '@/components/shoot/CaptureControls.vue'
 import SettingsPanel from '@/components/shoot/SettingsPanel.vue'
 
 // Emitted so the shell can switch to the Gallery view.
-const emit = defineEmits(['open-gallery'])
+const emit = defineEmits(['open-gallery', 'open-settings'])
 </script>
 
 <template>
@@ -14,7 +14,10 @@ const emit = defineEmits(['open-gallery'])
     <div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div class="flex min-w-0 flex-col gap-4">
         <LiveViewPanel />
-        <CaptureControls @open-gallery="emit('open-gallery')" />
+        <CaptureControls
+          @open-gallery="emit('open-gallery')"
+          @open-settings="emit('open-settings')"
+        />
       </div>
       <SettingsPanel class="min-w-0" />
     </div>

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 
@@ -11,8 +10,10 @@ from backend import __version__
 from backend.api.deps import CameraServiceDep, ConfigStoreDep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.system import HealthOut, InfoOut
+from backend.core.errors import NoTargetError
 from backend.core.security import require_api_key
 from backend.core.state import CameraState
+from backend.services.locations import LocationService
 
 router = APIRouter(tags=["system"])
 
@@ -29,10 +30,10 @@ async def get_health(camera: CameraServiceDep) -> HealthOut:
     )
 
 
-def _free_bytes(path: Path) -> int | None:
+def _free_bytes(storage: LocationService) -> int | None:
     try:
-        return shutil.disk_usage(path).free
-    except OSError:
+        return shutil.disk_usage(storage.root()).free
+    except (OSError, NoTargetError):
         return None
 
 
@@ -49,7 +50,7 @@ async def get_info(request: Request, store: ConfigStoreDep) -> InfoOut:
         version=__version__,
         backend="demo" if cfg.demo_camera else "real",
         auth_enabled=cfg.api_key_hash is not None,
-        output_free_bytes=_free_bytes(request.app.state.output_dir),
+        output_free_bytes=_free_bytes(request.app.state.storage),
         ffmpeg_available=shutil.which("ffmpeg") is not None,
         started_at=request.app.state.started_at,
     )

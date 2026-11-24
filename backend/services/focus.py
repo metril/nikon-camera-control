@@ -29,6 +29,7 @@ from backend.core.errors import (
 )
 from backend.core.jobs import HeldContext, Job, JobContext, JobManager
 from backend.core.state import CameraState
+from backend.core.storage_root import StorageRoot, as_root
 from backend.services.capture import CaptureService
 from backend.services.storage import sanitize_name
 
@@ -50,7 +51,7 @@ class FocusService:
         camera: CameraService,
         capture: CaptureService,
         jobs: JobManager,
-        output_dir: Path,
+        output_dir: Path | StorageRoot,
         *,
         sleep: Sleep = asyncio.sleep,
         return_timeout_s: float = RETURN_TIMEOUT_S,
@@ -58,7 +59,7 @@ class FocusService:
         self._camera = camera
         self._capture = capture
         self._jobs = jobs
-        self._output = output_dir
+        self._store = as_root(output_dir)
         self._sleep = sleep
         self._return_timeout = return_timeout_s
         self._lock = asyncio.Lock()
@@ -179,6 +180,7 @@ class FocusService:
         name: str | None,
     ) -> Job:
         self._require_free(None)
+        self._store.root()  # NoTargetError (409) before any camera work
         sign = 1 if direction == "near_to_far" else -1
         delta = sign * steps_per_shot
         lo, hi, step = await self.get_range()
@@ -209,7 +211,7 @@ class FocusService:
     def _make_dest(self, name: str | None) -> Path:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         label = sanitize_name(_SAFE.sub("_", name or ""), default="").strip("_")
-        base = self._output / "stacks"
+        base = self._store.root() / "stacks"
         base.mkdir(parents=True, exist_ok=True)
         stem = f"{stamp}-{label}" if label else stamp
         dest, n = base / stem, 1
@@ -233,7 +235,7 @@ class FocusService:
         prior = self._camera.state
         start_pos = self._pos
         dest = await asyncio.to_thread(self._make_dest, name)
-        folder = dest.relative_to(self._output).as_posix()
+        folder = dest.relative_to(self._store.root()).as_posix()
         files = moves = 0
         try:
             for i in range(shots):

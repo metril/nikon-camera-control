@@ -28,15 +28,15 @@ A web app that controls a Nikon D500 over USB: live view, exposure and focus set
 sudo cp docker/udev/99-nikon.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger   # then replug the camera
 cd docker
-mkdir -p data output && sudo chown 1000:1000 data output
+mkdir -p data && sudo chown 1000:1000 data
 docker compose -f compose.yaml up -d   # pulls ghcr.io/metril/nikon-camera-control (amd64 and arm64)
 ```
 
-**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.2.0`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` and `output/` are kept.
+**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.3.0`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` is kept.
 
 Open http://localhost:8000 and press Connect. Replugging or power-cycling the camera does not require a container restart (the compose file bind-mounts `/dev/bus/usb`, so the new device node is visible).
 
-`docker/data` and `docker/output` are bind-mounted (paths relative to the compose file). The container runs as uid/gid 1000 and gets USB access through `group_add`, which must be the **numeric gid that owns the camera node on the host** (default `"46"`, Debian/Ubuntu `plugdev`). With the camera plugged in, check `stat -c %g /dev/bus/usb/BBB/DDD` (BBB/DDD from `lsusb`); if it is not 46 (or `plugdev` does not exist, e.g. Fedora/Arch), edit `group_add` in `docker/compose.yaml`. The udev rule is what sets that group on the node. No privileged mode, no extra capabilities, no environment variables.
+`docker/data` (config only) is bind-mounted (paths relative to the compose file). The container runs as uid/gid 1000 and gets USB access through `group_add`, which must be the **numeric gid that owns the camera node on the host** (default `"46"`, Debian/Ubuntu `plugdev`). With the camera plugged in, check `stat -c %g /dev/bus/usb/BBB/DDD` (BBB/DDD from `lsusb`); if it is not 46 (or `plugdev` does not exist, e.g. Fedora/Arch), edit `group_add` in `docker/compose.yaml`. The udev rule is what sets that group on the node. No privileged mode and no environment variables; storage mounting needs the extra privileges described under Storage below.
 
 ## First-run setup in the web UI
 
@@ -90,15 +90,19 @@ The Vite proxy (`/api`, including WebSockets) keeps the browser's `Host` (`chang
 
 Hardware tests (skipped by default; one camera, so no xdist): `.venv/bin/pytest -m hardware --real-camera -n 0 -s tests/hardware`. Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Storage
+
+Captures go to a storage location chosen in the web UI: a USB drive (mounted inside the container) or an SMB share. USB filesystems: exFAT, FAT, NTFS (ntfs3), ext2/3/4, btrfs, XFS, F2FS, HFS+ (non-journaled only). Encrypted (LUKS), APFS and swap volumes are listed but cannot be used. A "Check & repair" action runs the filesystem's fsck while unmounted. Prefer exFAT or a POSIX filesystem: FAT32 caps files at 4 GiB.
+
 ## Data layout
 
 - `data/` (config): `config.json`, `api_key.json`, `presets.json`, `downloaded.jsonl` (ledger of cards files already pulled), thumbnail cache, temp dirs
-- `output/`: `sessions/` (time-lapse sessions and rendered videos), `camera/` (downloads from the card), `recordings/` (video clips), captured stills
+- Captures (`sessions/`, `camera/`, `recordings/`, stills) are written to the selected USB or SMB storage location, never to the host. Nothing is stored on the host except `data/`.
 
 ## Security notes
 
 - No authentication until a key is generated. Meant for a trusted LAN; do not expose it to the internet. Put it behind a reverse proxy with TLS if you need remote access.
-- The container is non-root, not privileged, and gets only the `/dev/bus/usb` tree and the USB character-device cgroup rule (see the trade-off comment in `docker/compose.yaml`).
+- The app runs non-root and is not `--privileged`. For storage mounting it adds `SYS_ADMIN`, `MKNOD`, `apparmor:unconfined` and block-device cgroup rules (8, 259, 179); sudo allows the app to run only `/usr/local/sbin/ncc-storage`, which validates every argument and only touches USB-backed devices (see comments in `docker/compose.yaml`).
 - `docker/udev/99-nikon.rules` grants the `plugdev` group (mode 0660), not everyone; `group_add` in the compose file must be that group's numeric gid on the host.
 - Cross-origin protection: POST/PUT/PATCH/DELETE requests and WebSocket handshakes that carry an `Origin` header must be same-origin (same host:port as `Host`, scheme ignored) or listed in `cors_origins` (read live), otherwise they get 403 `FORBIDDEN_ORIGIN` (WebSocket: close code 4403). This stops other web pages on the LAN from driving the camera in open mode. Requests without `Origin` (curl, scripts) are unaffected, so it is not a substitute for an API key. Behind a reverse proxy that rewrites `Host`, add the public origin to `cors_origins`.
 - Rotating, removing or creating the API key closes open WebSockets with code 4401.
@@ -128,5 +132,5 @@ Hardware tests (skipped by default; one camera, so no xdist): `.venv/bin/pytest 
 - **Settings not applying:** mode dial (above). Aperture needs A or M, shutter speed S or M; Auto-ISO can override manual ISO.
 - **Live view freezes:** the 60 s link timeout may have hit; keep keepalive enabled; disconnect and reconnect.
 - **Container cannot reach USB:** `ls -la /dev/bus/usb/*/` should show mode 0660 and the group whose numeric gid (`stat -c %g`) equals `group_add` in the compose file (default 46). `docker compose logs -f` shows connect errors.
-- **Cannot write data/output:** `sudo chown -R 1000:1000 data output`.
+- **Cannot write data:** `sudo chown -R 1000:1000 data`.
 - **Locked out:** delete `data/api_key.json`.

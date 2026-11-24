@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from backend.core.errors import PathNotAllowed
 from backend.services.storage import classify, download_files, safe_join, unique_path
+from tests.conftest import TmpDirs
 
 
 @pytest.mark.parametrize(
@@ -89,8 +90,8 @@ def test_cleanup_stale_empties_tmp_dirs_and_removes_only_old_part_files(tmp_path
     assert not old.exists() and new.exists() and keep.exists()
 
 
-async def test_app_startup_runs_cleanup(app: FastAPI) -> None:
-    leftover = app.state.data_dir / "video-tmp" / "dead"
+async def test_app_startup_runs_cleanup(app: FastAPI, tmp_dirs: TmpDirs) -> None:
+    leftover = tmp_dirs.output_dir / ".ncc" / "video-tmp" / "dead"
     leftover.mkdir(parents=True)
     (leftover / "000001.jpg").write_bytes(b"1")
     async with app.router.lifespan_context(app):

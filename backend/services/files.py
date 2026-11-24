@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from backend.core.errors import FileNotFoundError_, PathNotAllowed
+from backend.core.storage_root import StorageRoot, as_root
+from backend.services import integrity
 from backend.services.storage import MediaKindName, classify, safe_join
 from backend.services.thumbnails import DEFAULT_SIZE, ThumbnailService
 
@@ -40,7 +43,7 @@ class Listing:
 
 
 def _hidden(name: str) -> bool:
-    return name.startswith(".") or name.endswith(".part")
+    return integrity.is_aux(name)
 
 
 class FileIndex:
@@ -50,8 +53,15 @@ class FileIndex:
     directory, none per file, on a cache hit).
     """
 
-    def __init__(self, root: Path) -> None:
-        self._root = root
+    def __init__(self, root: Path | StorageRoot | Callable[[], Path]) -> None:
+        if isinstance(root, Path):
+            fixed = root
+            self._root_fn: Callable[[], Path] = lambda: fixed
+        elif callable(root):
+            self._root_fn = root
+        else:
+            self._root_fn = root.root
+        self._root = Path()  # set on first snapshot
         self._lock = threading.Lock()
         self._files: list[IndexedFile] = []
         self._dirs: dict[str, int] = {}  # relative dir -> mtime_ns
@@ -105,6 +115,9 @@ class FileIndex:
 
     def snapshot(self) -> tuple[list[IndexedFile], list[str]]:
         with self._lock:
+            root = self._root_fn()  # NoTargetError when nothing is mounted
+            if root != self._root:  # target switched: the old listing is another location's
+                self._root, self._valid = root, False
             if not self._fresh():
                 self._valid = False
                 self._scan()
@@ -136,10 +149,14 @@ class FileIndex:
 
 
 class FileService:
-    def __init__(self, root: Path, data_dir: Path, thumb_size: Any = None) -> None:
-        self.root = root
-        self.index = FileIndex(root)
-        self.thumbnails = ThumbnailService(data_dir, thumb_size or (lambda: DEFAULT_SIZE))
+    def __init__(self, store: Path | StorageRoot, thumb_size: Any = None) -> None:
+        self._store = as_root(store)
+        self.index = FileIndex(self._store)
+        self.thumbnails = ThumbnailService(self._store.cache, thumb_size or (lambda: DEFAULT_SIZE))
+
+    @property
+    def root(self) -> Path:
+        return self._store.root()
 
     async def list(
         self, folder: str, page: int, limit: int, kind: KindFilter, sort: SortOrder
@@ -168,6 +185,7 @@ class FileService:
                 raise PathNotAllowed("Folders cannot be deleted here")
             try:
                 p.unlink()
+                integrity.forget(p)
             except FileNotFoundError:
                 raise FileNotFoundError_() from None
             finally:

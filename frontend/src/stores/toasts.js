@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 let nextId = 1
+export const NO_TARGET_MESSAGE = 'No storage target. Choose one in Settings › Storage.'
 
 export const useToastsStore = defineStore('toasts', () => {
   const items = ref([])
@@ -27,7 +28,8 @@ export const useToastsStore = defineStore('toasts', () => {
   /** Errors are sticky (dismissed by the user); an ApiError keeps code, status and requestId. */
   function error(e) {
     if (typeof e === 'string') return push('error', e, 0)
-    return push('error', e?.message || 'Error', 0, {
+    const message = e?.code === 'NO_TARGET' ? NO_TARGET_MESSAGE : e?.message || 'Error'
+    return push('error', message, 0, {
       code: e?.code ?? null,
       status: e?.status ?? null,
       requestId: e?.requestId ?? null,

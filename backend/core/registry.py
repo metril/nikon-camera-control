@@ -31,6 +31,10 @@ class ServiceRegistry:
         self._services[name] = svc
         return svc
 
+    def peek(self, name: str) -> Any | None:
+        """The service ``name`` if it was already built, else None (never builds)."""
+        return self._services.get(name)
+
     def __contains__(self, name: str) -> bool:
         return name in self._services
 

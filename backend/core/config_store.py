@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.core.errors import ConfigInvalid
 from backend.core.security import ApiKeyStore
@@ -114,6 +114,60 @@ class MediaConfig(_Section):
     )
 
 
+class StorageLocation(_Section):
+    """A configured storage location. Passwords are never stored here (see SecretStore)."""
+
+    id: str = Field(
+        pattern=r"^(usb-[0-9A-Za-z-]{1,64}|smb-[a-z0-9][a-z0-9_-]{0,31})$",
+        description="usb-<fs uuid> or smb-<slug>",
+    )
+    kind: Literal["usb", "smb"]
+    name: str = Field(default="", max_length=64, description="Display name")
+    uuid: str | None = Field(default=None, pattern=r"^[0-9A-Za-z-]{1,64}$")
+    unc: str | None = Field(
+        default=None, pattern=r"^//[A-Za-z0-9._-]+/[A-Za-z0-9._ $-]+(/[A-Za-z0-9._ $-]+)*$"
+    )
+    username: str | None = Field(default=None, max_length=128, pattern=r"^[^\x00-\x1f,]*$")
+    domain: str | None = Field(default=None, max_length=128, pattern=r"^[^\x00-\x1f,]*$")
+    auto_mount: bool = Field(default=True, description="Mount automatically when available")
+
+    @model_validator(mode="after")
+    def _kind_fields(self) -> StorageLocation:
+        if self.kind == "usb" and not self.uuid:
+            raise ValueError("a USB location needs a filesystem uuid")
+        if self.kind == "smb" and not self.unc:
+            raise ValueError("an SMB location needs a //host/share path")
+        return self
+
+
+class StorageConfig(_Section):
+    locations: list[StorageLocation] = Field(default_factory=list)
+    target_id: str | None = Field(default=None, description="Location receiving all captures")
+    backup_ids: list[str] = Field(default_factory=list, description="Backup locations")
+    backup_interval_min: int = Field(
+        default=15, ge=1, le=1440, description="Periodic backup interval (minutes)"
+    )
+    deep_verify: bool = Field(
+        default=False, description="Backups re-hash existing destination files on every run"
+    )
+    sidecars: bool = Field(default=True, description="Write a <file>.sha256 next to every file")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> StorageConfig:
+        ids = [loc.id for loc in self.locations]
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate location ids")
+        if self.target_id is not None and self.target_id not in ids:
+            raise ValueError("target_id is not a configured location")
+        if any(b not in ids for b in self.backup_ids) or len(set(self.backup_ids)) != len(
+            self.backup_ids
+        ):
+            raise ValueError("backup_ids must be unique configured locations")
+        if self.target_id is not None and self.target_id in self.backup_ids:
+            raise ValueError("the target cannot also be a backup")
+        return self
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -125,6 +179,7 @@ class AppConfig(BaseModel):
     timelapse: TimelapseConfig = Field(default_factory=TimelapseConfig)
     video: VideoConfig = Field(default_factory=VideoConfig)
     media: MediaConfig = Field(default_factory=MediaConfig)
+    storage: StorageConfig = Field(default_factory=StorageConfig)
     cors_origins: list[str] = Field(
         default_factory=list, description="Allowed CORS origins; empty = same-origin only"
     )
@@ -331,13 +386,14 @@ class ConfigStore:
         return new, _restart_fields(changed)
 
     def reset(self) -> tuple[AppConfig, list[str]]:
-        """Restore defaults and persist; the API key hash is preserved.
+        """Restore defaults and persist; the API key hash and the ``storage`` section
+        (locations, target, backups; their secrets stay referenced) are preserved.
 
         Returns ``(new_config, restart_fields)`` like ``update``.
         """
         with self._lock:
             old = self._config
-            new = AppConfig(api_key_hash=old.api_key_hash)
+            new = AppConfig(api_key_hash=old.api_key_hash, storage=old.storage)
             changed = _changed_paths(old.model_dump(mode="json"), new.model_dump(mode="json"))
             self._write(new)
             self._config = new

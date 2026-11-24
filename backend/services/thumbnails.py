@@ -203,10 +203,18 @@ class ThumbnailService:
     ``default_size`` is read live so config changes apply without a restart.
     """
 
-    def __init__(self, data_dir: Path, default_size: Callable[[], int] = lambda: DEFAULT_SIZE):
-        self._dir = data_dir / "thumbs"
+    def __init__(
+        self,
+        cache_dir: Path | Callable[[], Path],
+        default_size: Callable[[], int] = lambda: DEFAULT_SIZE,
+    ):
+        self._cache = cache_dir if callable(cache_dir) else (lambda: cache_dir)
         self._default = default_size
         self._locks: dict[str, asyncio.Lock] = {}
+
+    @property
+    def _dir(self) -> Path:
+        return self._cache() / "thumbs"
 
     async def get(self, path: Path, size: int | None = None) -> Path:
         s = clamp_size(size if size is not None else self._default())

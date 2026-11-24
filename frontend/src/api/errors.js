@@ -39,3 +39,6 @@ export function toApiError(error, response) {
     requestId: response.headers?.get?.('X-Request-ID') ?? null,
   })
 }
+
+/** True when the server refused because no storage target is chosen (HTTP 409 NO_TARGET). */
+export const isNoTarget = (e) => e?.code === 'NO_TARGET'

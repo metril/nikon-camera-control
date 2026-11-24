@@ -15,7 +15,7 @@ def _jpg(p: Path, size: tuple[int, int] = (640, 480)) -> None:
 
 
 def _out(app: FastAPI) -> Path:
-    return app.state.output_dir
+    return app.state.storage.root()
 
 
 async def test_list_recursive_with_folders_and_filters(
@@ -133,7 +133,7 @@ async def test_thumbnail_is_small_jpeg_not_original(
     assert max(Image.open(BytesIO(r.content)).size) == 100
     assert (await client.get(f"{T}/s/a.jpg", params={"size": 10})).status_code == 422
     assert (await client.get(f"{T}/s/a.jpg", params={"size": 5000})).status_code == 422
-    assert list((app.state.data_dir / "thumbs").glob("*.jpg"))
+    assert list((app.state.storage.cache() / "thumbs").glob("*.jpg"))
 
 
 async def test_thumbnail_unsupported_415(app: FastAPI, client: httpx.AsyncClient) -> None:

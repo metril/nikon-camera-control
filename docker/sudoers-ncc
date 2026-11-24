@@ -1,0 +1,2 @@
+Defaults!/usr/local/sbin/ncc-storage env_reset
+app ALL=(root) NOPASSWD: /usr/local/sbin/ncc-storage

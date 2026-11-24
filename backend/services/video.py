@@ -37,6 +37,7 @@ from backend.core.errors import (
     SessionNotFound,
 )
 from backend.core.jobs import Job, JobContext, JobManager
+from backend.core.storage_root import StorageRoot, as_root
 from backend.services.sessions import SessionStore
 from backend.services.storage import VIDEO_EXTS, safe_join, sanitize_name, unique_path
 from backend.services.thumbnails import load_full_image
@@ -236,7 +237,7 @@ class VideoService:
         config: ConfigStore,
         sessions: SessionStore,
         jobs: JobManager,
-        data_dir: Path,
+        store: Path | StorageRoot,
         *,
         ffmpeg_path: str | None = None,
         base_timeout_s: float = BASE_TIMEOUT_S,
@@ -246,7 +247,7 @@ class VideoService:
         self._config = config
         self._sessions = sessions
         self._jobs = jobs
-        self._tmp_root = Path(data_dir) / "video-tmp"
+        self._store = as_root(store)
         self._ffmpeg_path = ffmpeg_path
         self._base_timeout = base_timeout_s
         self._per_frame = per_frame_timeout_s
@@ -350,7 +351,7 @@ class VideoService:
         opts: RenderOptions,
         name: str,
     ) -> dict[str, Any]:
-        work = self._tmp_root / uuid.uuid4().hex
+        work = self._store.cache() / "video-tmp" / uuid.uuid4().hex
         final: Path | None = None
         part: Path | None = None
         ok = False
@@ -382,6 +383,7 @@ class VideoService:
             if not part.is_file() or part.stat().st_size == 0:
                 raise RenderFailed("ffmpeg produced no output")
             await asyncio.to_thread(os.replace, part, final)
+            await asyncio.to_thread(self._store.stored, final)
             size = final.stat().st_size
             await self._sessions.add_video(
                 session_id,

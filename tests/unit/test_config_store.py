@@ -206,3 +206,13 @@ def test_new_config_fields_and_bounds(tmp_path: Path) -> None:
     for bad in ({"timelapse": {"failure_budget": 0}}, {"timelapse": {"failure_budget": 101}}):
         with pytest.raises(ConfigInvalid):
             store.update(bad)
+
+
+def test_reset_preserves_storage_section(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "config.json")
+    store.update({"storage": {"locations": [{"id": "smb-nas", "kind": "smb", "unc": "//n/s"}]}})
+    store.update({"storage": {"target_id": "smb-nas"}})
+    new, _ = store.reset()
+    assert new.storage.target_id == "smb-nas" and [x.id for x in new.storage.locations] == [
+        "smb-nas"
+    ]

@@ -304,7 +304,7 @@ async def test_restart_shows_interrupted_session_and_idle_status(
     app2 = create_app(
         config_store=config_store,
         data_dir=tmp_dirs.data_dir,
-        output_dir=tmp_dirs.output_dir,
+        target_dir=tmp_dirs.output_dir,
         backend_factory=lambda: FakeCamera(),
         auto_connect=False,
         event_quiet_window_s=0.02,

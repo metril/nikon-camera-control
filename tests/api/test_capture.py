@@ -47,7 +47,7 @@ async def test_capture_names_never_collide_within_a_second(
     one = (await app.state.camera_service.capture())[0]
     files = [CameraFilePath(one.folder, one.name)] * 2
     paths = await svc._download(
-        files, app.state.output_dir, owner=None, name_prefix="", delete_from_camera=False
+        files, app.state.storage.root(), owner=None, name_prefix="", delete_from_camera=False
     )
     assert len(set(paths)) == 2 and all(p.stat().st_size > 0 for p in paths)
 
@@ -114,7 +114,7 @@ async def test_capture_to_session_folder(app: FastAPI, connected_client: httpx.A
 
     await connected_client.post(C, json={})  # builds the service
     svc = app.state.services.get("capture", lambda: None)
-    dest = app.state.output_dir / "sess"
+    dest = app.state.storage.root() / "sess"
     async with app.state.camera_service.lease("tl"):
         paths = await svc.capture_to(dest, owner="tl", name_prefix="f001_")
     assert len(paths) == 1 and paths[0].parent == dest and paths[0].name.startswith("f001_")

@@ -60,6 +60,8 @@ class EventType(StrEnum):
     JOB_CANCELLED = "job_cancelled"
     CONFIG_CHANGED = "config_changed"
     PRESETS_CHANGED = "presets_changed"
+    LOCATIONS_CHANGED = "locations_changed"
+    BACKUP_STATUS = "backup_status"
     ERROR = "error"
 
 
