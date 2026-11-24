@@ -48,6 +48,12 @@ CLOSE_WAIT_S = 90.0  # bound on a shielded close sequence
 CANCEL_COLLECT_GRACE_S = 5.0  # after a cancel, how long to wait for a frame still in flight
 _MANUAL = frozenset({"M", "MANUAL"})
 MODE_NAMES = ("expprogram", "autoexposuremode")  # widget names for the exposure program
+NR_NAMES = ("longexpnr", "longexposurenr")  # long-exposure noise reduction widgets
+_ON = frozenset({"on", "true", "1", "yes", "enabled"})
+NR_MARGIN_S = 15.0  # extra wait beyond the exposure for the dark frame
+NR_POLL_S = 1.0
+RESTORE_ATTEMPTS = 5
+RESTORE_RETRY_DELAY_S = 1.0
 
 
 @dataclass
@@ -57,6 +63,8 @@ class _Run:
     started: float | None = None  # clock value when the shutter opened
     ended: float | None = None
     files: list[CameraFilePath] = field(default_factory=list)
+    nr: bool = False  # long-exposure noise reduction on: the body is busy after the close
+    ctx: JobContext | None = None
 
 
 class BulbService:
@@ -128,21 +136,37 @@ class BulbService:
             raise
 
     # ---- job ----
-    async def _expprogram_warning(self) -> str | None:
+    async def _read_mode(self) -> tuple[str, str, bool] | None:
         try:
             name = await self._camera.resolve_setting("bulb-mode", MODE_NAMES)
             prog = await self._camera.refresh_setting(name)
         except AppError as e:
             log.info("could not read the exposure program: %s", e.message)
             return None
-        if str(prog.value).strip().upper() in _MANUAL:
+        return name, str(prog.value), bool(prog.readonly)
+
+    @staticmethod
+    def _mode_warning(mode: tuple[str, str, bool] | None) -> str | None:
+        if mode is None:
+            return None
+        name, value, readonly = mode
+        if value.strip().upper() in _MANUAL:
             return None
         how = (
             "turn the mode dial to M"
-            if prog.readonly
+            if readonly
             else f"set the exposure program ({name}) to M in Settings or on the mode dial"
         )
-        return f"Exposure program is {prog.value!r}, not M; bulb usually needs M ({how})."
+        return f"Exposure program is {value!r}, not M; bulb usually needs M ({how})."
+
+    async def _nr_on(self) -> bool:
+        for name in NR_NAMES:
+            try:
+                w = await self._camera.refresh_setting(name)
+            except AppError:
+                continue
+            return str(w.value).strip().lower() in _ON
+        return False
 
     async def _prepare_speed(self) -> str | None:
         """Best effort: select shutterspeed 'Bulb' if offered. Returns the value to restore."""
@@ -177,6 +201,7 @@ class BulbService:
         run = self._run = _Run(ctx.job_id, req.seconds)
         cam = self._camera
         prior_speed: str | None = None
+        prior_mode: tuple[str, str, bool] | None = None
         opened = False
         cancel: asyncio.CancelledError | None = None
         result: dict[str, Any] = {}
@@ -184,8 +209,11 @@ class BulbService:
         try:
             prior_state = await cam.transition(CameraState.BULB)
             try:
-                if (w := await self._expprogram_warning()) is not None:
+                prior_mode = await self._read_mode()
+                if (w := self._mode_warning(prior_mode)) is not None:
                     warnings.append(w)
+                run.nr = await self._nr_on()
+                run.ctx = ctx
                 prior_speed = await self._prepare_speed()
                 self._bus.publish(
                     EventType.CAPTURE_STARTED,
@@ -209,7 +237,9 @@ class BulbService:
                 if (recancel := await self._close_shielded(run)) is not None:
                     cancel = cancel or recancel
                 opened = False  # only after a close succeeded
-                files, collect_cancel = await self._collect(ctx, req.seconds, cancel is not None)
+                files, collect_cancel = await self._collect(
+                    ctx, req.seconds, cancel is not None, run.files
+                )
                 cancel = cancel or collect_cancel
                 run.files = files
                 if not files and cancel is not None:
@@ -226,7 +256,7 @@ class BulbService:
             finally:
                 if opened:
                     await self._emergency_close(run)
-                await self._restore(prior_speed)
+                await self._restore(prior_speed, prior_mode)
                 if cam.state == CameraState.BULB:
                     await cam.transition(prior_state)
         finally:
@@ -258,10 +288,27 @@ class BulbService:
             lambda b: b.set_config("bulb", value), priority=Priority.CAPTURE, owner=OWNER
         )
 
+    async def _peek_files(self, run: _Run) -> bool:
+        """Poll events once; a FILE_ADDED proves the shutter closed. True if any file is known."""
+        try:
+            ev = await self._camera.call(
+                lambda b: self._poll(b), priority=Priority.CAPTURE, owner=OWNER, timeout=10.0
+            )
+        except AppError:
+            return bool(run.files)
+        if ev is not None and ev not in run.files:
+            run.files.append(ev)
+        return bool(run.files)
+
     async def _close(self, run: _Run) -> None:
-        """bulb=0 with retries; if the shutter cannot be closed shout and flag the camera."""
+        """bulb=0 with retries. With noise reduction the body answers busy while it runs the
+        dark frame, so failures after the first attempt are waited out (exposure + margin)
+        and a FILE_ADDED proves the shutter closed. Else shout and flag the camera."""
         last: AppError | None = None
-        for attempt in range(CLOSE_ATTEMPTS):
+        t0 = self._clock()
+        window = run.seconds + NR_MARGIN_S
+        attempt = 0
+        while True:
             try:
                 await self._set_bulb(0)
                 run.ended = self._clock()
@@ -271,8 +318,19 @@ class BulbService:
             except AppError as e:
                 last = e
                 log.error("bulb close attempt %d failed: %s", attempt + 1, e.message)
-                if attempt < CLOSE_ATTEMPTS - 1:
-                    await self._sleep(CLOSE_RETRY_DELAY_S)
+            attempt += 1
+            if await self._peek_files(run):
+                run.ended = self._clock()
+                log.warning("bulb close failed but a frame arrived; shutter is closed")
+                return
+            if run.nr and self._clock() - t0 < window:
+                if run.ctx is not None:
+                    run.ctx.report(0.9, "Noise reduction…")
+                await self._sleep(NR_POLL_S)
+            elif not run.nr and attempt < CLOSE_ATTEMPTS:
+                await self._sleep(CLOSE_RETRY_DELAY_S)
+            else:
+                break
         msg = "COULD NOT CLOSE THE SHUTTER: the bulb exposure may still be open. Check the camera."
         self._bus.publish(
             EventType.ERROR,
@@ -284,17 +342,19 @@ class BulbService:
 
     async def _close_shielded(self, run: _Run) -> asyncio.CancelledError | None:
         """Run the close sequence to completion even if this task is cancelled again (bounded
-        by CLOSE_WAIT_S). Returns the cancellation, if any; raises if the close failed."""
+        by CLOSE_WAIT_S, longer with noise reduction). Returns the cancellation, if any;
+        raises if the close failed."""
         task = asyncio.ensure_future(self._close(run))
+        bound = CLOSE_WAIT_S + (run.seconds + NR_MARGIN_S if run.nr else 0.0)
         cancel: asyncio.CancelledError | None = None
         while not task.done():
             try:
-                await asyncio.wait({task}, timeout=CLOSE_WAIT_S)
+                await asyncio.wait({task}, timeout=bound)
                 break
             except asyncio.CancelledError as e:
                 cancel = e
         if not task.done():
-            log.error("bulb close did not finish within %.0fs", CLOSE_WAIT_S)
+            log.error("bulb close did not finish within %.0fs", bound)
             raise ShutterOpen("COULD NOT CONFIRM THE SHUTTER CLOSED: check the camera.")
         task.result()
         return cancel
@@ -307,7 +367,11 @@ class BulbService:
             log.exception("emergency bulb close failed")
 
     async def _collect(
-        self, ctx: JobContext, seconds: float, cancelled: bool
+        self,
+        ctx: JobContext,
+        seconds: float,
+        cancelled: bool,
+        found: list[CameraFilePath] | None = None,
     ) -> tuple[list[CameraFilePath], asyncio.CancelledError | None]:
         """Drain camera events until a FILE_ADDED has been followed by a quiet window, or the
         deadline (exposure + noise reduction) passes. After a cancel, give a frame that is
@@ -315,8 +379,8 @@ class BulbService:
         already arrived."""
         started = time.monotonic()
         deadline = started + seconds + 60.0
-        files: list[CameraFilePath] = []
-        last: float | None = None
+        files: list[CameraFilePath] = list(found or [])
+        last: float | None = started if files else None
         cancel: asyncio.CancelledError | None = None
         if cancelled or ctx.cancelled:
             deadline = min(deadline, started + CANCEL_COLLECT_GRACE_S)
@@ -378,17 +442,38 @@ class BulbService:
             "camera_files": [f"{f.folder}/{f.name}" for f in files],
         }
 
-    async def _restore(self, prior_speed: str | None) -> None:
+    async def _restore_one(self, name: str, value: str) -> bool:
+        for attempt in range(RESTORE_ATTEMPTS):
+            try:
+                await asyncio.shield(self._camera.set_setting(name, value, owner=OWNER))
+                return True
+            except Exception:
+                log.exception("could not restore %s %r (attempt %d)", name, value, attempt + 1)
+                if attempt < RESTORE_ATTEMPTS - 1:
+                    await self._sleep(RESTORE_RETRY_DELAY_S)
+        return False
+
+    async def _restore(
+        self, prior_speed: str | None, prior_mode: tuple[str, str, bool] | None = None
+    ) -> None:
+        if prior_mode is not None and not prior_mode[2]:
+            name, value, _ = prior_mode
+            try:
+                now = str((await self._camera.refresh_setting(name)).value)
+            except AppError:
+                now = value
+            if now != value and not await self._restore_one(name, value):
+                self._publish_restore_failed(name, value)
         if prior_speed is None or prior_speed == "Bulb":
             return
-        try:
-            await asyncio.shield(self._camera.set_setting("shutterspeed", prior_speed, owner=OWNER))
-        except Exception:
-            log.exception("could not restore shutterspeed %r", prior_speed)
-            self._bus.publish(
-                EventType.ERROR,
-                {
-                    "code": "BULB_RESTORE_FAILED",
-                    "message": f"Shutter speed left on Bulb; was {prior_speed!r}",
-                },
-            )
+        if not await self._restore_one("shutterspeed", prior_speed):
+            self._publish_restore_failed("shutterspeed", prior_speed)
+
+    def _publish_restore_failed(self, name: str, value: str) -> None:
+        self._bus.publish(
+            EventType.ERROR,
+            {
+                "code": "BULB_RESTORE_FAILED",
+                "message": f"{name} left changed; was {value!r}",
+            },
+        )

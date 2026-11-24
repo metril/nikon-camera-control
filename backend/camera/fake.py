@@ -277,6 +277,7 @@ def _specs() -> list[_Spec]:
             choices=("Small", "Medium", "Large"),
         ),  # fmt: skip
         _Spec("capturesettings", "bulb", "Bulb Capture", T, False),
+        _Spec("capturesettings", "longexpnr", "Long Exp. NR", R, "Off", choices=("Off", "On")),
     ]
 
 
@@ -352,6 +353,7 @@ class FakeCamera:
         slot2_mirror: bool = False,
         ram_info_fails: bool = False,
         bulb_capture_hangs: bool = False,
+        nr_busy_s: float = 0.0,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
         Default False mirrors real PTP bodies, where capture() usually consumes it.
@@ -387,6 +389,11 @@ class FakeCamera:
         self._mirror = slot2_mirror
         self._ram_info_fails = ram_info_fails
         self._bulb_hangs = bulb_capture_hangs
+        # With longexpnr On, a bulb close shuts the shutter, then every set_config raises busy
+        # and the frame is announced (FILE_ADDED) only after this many seconds (dark frame).
+        self._nr_busy_s = nr_busy_s
+        self._nr_until = 0.0
+        self._nr_held: list[CameraEvent] = []
         self._folders = {k: list(v) for k, v in _FOLDERS.items()}
         if slot2_mirror:
             self._folders["/"].append("store_00020001")
@@ -591,6 +598,8 @@ class FakeCamera:
         s = self._spec(name)
         if s.readonly:
             raise SettingNotAllowed(f"Setting {name!r} is read-only")
+        if time.monotonic() < self._nr_until:
+            raise CameraBusy(f"set_config({name}): noise reduction in progress")
         if name == "viewfinder" and self._vf_busy > 0:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
@@ -614,7 +623,16 @@ class FakeCamera:
         if name in ("movie", "bulb") and old and not new:
             self._check_space()
             if name == "bulb":
+                n_before = len(self._events)
                 self._do_capture()
+                if self._nr_busy_s > 0 and self._values["longexpnr"] == "On":
+                    with self._cond:
+                        while len(self._events) > n_before:
+                            self._nr_held.append(self._events.pop())
+                    self._nr_held.reverse()
+                    self._nr_until = time.monotonic() + self._nr_busy_s
+                    self._values[name] = new
+                    raise CameraOperationFailed("Unspecified error")
             else:
                 n = self._next_name()
                 mov = b"\x00\x00\x00\x14ftypqt  fake movie"
@@ -818,6 +836,10 @@ class FakeCamera:
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
         self._enter("wait_for_event")
+        if self._nr_held and time.monotonic() >= self._nr_until:
+            with self._cond:
+                self._events.extend(self._nr_held)
+            self._nr_held = []
         late, self._late = self._late, []
         for folder, nm, f in late:
             self._add_file(nm, f, folder)

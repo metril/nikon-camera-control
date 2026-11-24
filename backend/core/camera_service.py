@@ -660,6 +660,9 @@ class CameraService:
             )
         self._state = to
         self._bus.publish(EventType.CAMERA_STATE, {"state": to.value, "previous": prev.value})
+        if to == _S.ERROR:
+            with contextlib.suppress(RuntimeError):  # no running loop (sync callers)
+                self._ensure_recovery()  # any path into ERROR must resolve without user action
         return prev
 
     def _try_state(self, to: CameraState) -> bool:
