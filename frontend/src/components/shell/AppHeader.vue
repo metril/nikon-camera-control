@@ -65,7 +65,7 @@ const LAYOUTS = [
       </a>
     </nav>
     <div class="status">
-      <CameraChip @shortcuts="emit('shortcuts')" />
+      <CameraChip />
       <span v-if="battery" class="stat batt" title="Battery" data-test="battery">
         <UiIcon name="Battery" :size="16" label="Battery" /><span class="tabular-nums">{{
           battery
@@ -76,6 +76,16 @@ const LAYOUTS = [
           shotsLeft
         }}</span>
       </span>
+      <button
+        type="button"
+        class="iconbtn keys"
+        aria-label="Keyboard shortcuts"
+        title="Keyboard shortcuts (?)"
+        data-test="shortcuts-button"
+        @click="emit('shortcuts')"
+      >
+        <UiIcon name="Keyboard" />
+      </button>
       <button
         type="button"
         class="iconbtn"
@@ -288,6 +298,7 @@ const LAYOUTS = [
 html[data-layout='touch'] .top {
   height: 60px;
 }
+html[data-layout='touch'] .keys,
 html[data-layout='touch'] .tabs,
 html[data-layout='touch'] .shots,
 html[data-layout='touch'] .lbl {

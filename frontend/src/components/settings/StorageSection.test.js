@@ -212,8 +212,9 @@ describe('NO_TARGET handling', () => {
   it('capture is disabled with a hint when there is no target', () => {
     const { pinia } = setup([], null)
     useCameraStore().connected = true
+    useCameraStore().state = 'idle'
     const w = mnt(CaptureSide, pinia)
-    expect(w.find('[data-testid="capture-btn"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="capture-btn"]').attributes('aria-disabled')).toBe('true')
     expect(w.text()).toContain('No storage target')
   })
 

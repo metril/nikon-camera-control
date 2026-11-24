@@ -1,6 +1,7 @@
 <script setup>
 import {
   ref,
+  nextTick,
   shallowRef,
   computed,
   watch,
@@ -203,7 +204,7 @@ const state = computed(() => {
 
 const fps = computed(() => {
   const v = streamStatus.value?.fps
-  return Number.isFinite(v) ? v.toFixed(1) : null
+  return Number.isFinite(v) && v > 0 ? v.toFixed(1) : null
 })
 const dropped = computed(() => {
   const s = streamStatus.value
@@ -227,11 +228,17 @@ const showPlaceholder = computed(
     ['stopped', 'disconnected', 'unauthorized', 'forbidden'].includes(state.value.key),
 )
 
+// Keep keyboard focus on the control that replaces the one just used.
+async function refocus(id) {
+  await nextTick()
+  stageRef.value?.querySelector(`[data-testid="${id}"]`)?.focus()
+}
 async function start() {
   starting.value = true
   try {
     await liveview.start()
     wanted.value = true
+    refocus('lv-stop')
   } catch (e) {
     toasts.error(e)
   } finally {
@@ -242,6 +249,7 @@ async function stop() {
   wanted.value = false
   try {
     await liveview.stop()
+    refocus('lv-start')
   } catch (e) {
     toasts.error(e)
   }
@@ -597,44 +605,45 @@ onUnmounted(() => {
 
       <div class="lv-top">
         <LiveViewToolbar v-if="!showPlaceholder" class="min-w-0" />
-        <div
-          v-if="wanted && camera.connected"
-          class="lv-pill ml-auto"
-          role="toolbar"
-          aria-label="Live view actions"
+      </div>
+
+      <div
+        v-if="wanted && camera.connected"
+        class="lv-pill lv-actions"
+        role="toolbar"
+        aria-label="Live view actions"
+      >
+        <button
+          v-if="hasFrame"
+          type="button"
+          data-testid="lv-snapshot"
+          :disabled="snapshotting"
+          aria-label="Snapshot"
+          title="Snapshot"
+          @click="snapshot"
         >
-          <button
-            v-if="hasFrame"
-            type="button"
-            data-testid="lv-snapshot"
-            :disabled="snapshotting"
-            aria-label="Snapshot"
-            title="Snapshot"
-            @click="snapshot"
-          >
-            <UiIcon name="Download" :size="16" />
-          </button>
-          <button
-            v-if="hasFrame"
-            type="button"
-            data-testid="lv-fullscreen"
-            :aria-label="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-            :title="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-            @click="toggleFullscreen"
-          >
-            <UiIcon :name="fullscreen ? 'Minimize' : 'Maximize'" :size="16" />
-          </button>
-          <button
-            type="button"
-            class="stop"
-            data-testid="lv-stop"
-            aria-label="Stop live view"
-            title="Stop live view"
-            @click="stop"
-          >
-            <UiIcon name="Square" :size="16" />
-          </button>
-        </div>
+          <UiIcon name="Download" :size="16" />
+        </button>
+        <button
+          v-if="hasFrame"
+          type="button"
+          data-testid="lv-fullscreen"
+          :aria-label="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          :title="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          @click="toggleFullscreen"
+        >
+          <UiIcon :name="fullscreen ? 'Minimize' : 'Maximize'" :size="16" />
+        </button>
+        <button
+          type="button"
+          class="stop"
+          data-testid="lv-stop"
+          aria-label="Stop live view"
+          title="Stop live view"
+          @click="stop"
+        >
+          <UiIcon name="Square" :size="16" />
+        </button>
       </div>
 
       <div v-if="wanted && camera.connected" class="lv-badge" aria-live="polite">
@@ -691,7 +700,8 @@ onUnmounted(() => {
   position: absolute;
   top: 10px;
   left: 10px;
-  right: 10px;
+  /* leave room for the three action buttons on the right */
+  right: calc(18px + 3 * var(--ctl-sm) + 12px);
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -700,13 +710,18 @@ onUnmounted(() => {
 .lv-top > * {
   pointer-events: auto;
 }
+.lv-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
 .lv-pill {
   display: flex;
   flex: none;
   gap: 2px;
   padding: 3px;
   border-radius: 9999px;
-  background: rgba(21, 21, 21, 0.82);
+  background: theme('colors.camera.overlay');
   border: 1px solid theme('colors.camera.border');
   backdrop-filter: blur(6px);
 }
@@ -752,7 +767,7 @@ html[data-layout='touch'] .lv-pill button {
   height: 26px;
   padding: 0 10px;
   border-radius: 9999px;
-  background: rgba(21, 21, 21, 0.82);
+  background: theme('colors.camera.overlay');
   border: 1px solid theme('colors.camera.border');
   font-size: 12px;
   font-weight: 500;
@@ -771,14 +786,30 @@ html[data-layout='touch'] .lv-pill button {
   bottom: 12px;
 }
 /* Narrower frames: the focus pill moves left and lifts above the Live badge (never overlapping) */
-@container lv (max-width: 1100px) {
+@container lv (max-width: 720px) {
   .lv-focuswrap {
     left: 12px;
     transform: none;
     bottom: 50px;
   }
 }
-@container lv (max-width: 560px) {
+/* Narrow frames: the action pill drops to the bottom-right, the histogram sits above it */
+@container lv (max-width: 640px) {
+  .lv-top {
+    right: 10px;
+  }
+  .lv-actions {
+    top: auto;
+    bottom: 12px;
+  }
+  .lv-histwrap {
+    bottom: calc(12px + var(--ctl-sm) + 14px);
+  }
+}
+@container lv (max-width: 420px) {
+  .lv-focuswrap {
+    bottom: calc(12px + var(--ctl-sm) + 14px);
+  }
   .lv-histwrap {
     display: none;
   }

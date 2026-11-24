@@ -11,6 +11,8 @@ import RenderDialog from './RenderDialog.vue'
 import { useSessionsStore } from '@/stores/sessions'
 import { useVideosStore } from '@/stores/videos'
 import { useTimelapseStore } from '@/stores/timelapse'
+import { isNoTarget } from '@/api'
+import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
 import { timelapseState, videoCodec } from '@/labels'
 import { formatDate, formatDuration } from '@/components/gallery/media'
@@ -19,6 +21,7 @@ const sessions = useSessionsStore()
 const videos = useVideosStore()
 const timelapse = useTimelapseStore()
 const toasts = useToastsStore()
+const storage = useStorageStore()
 const renaming = ref(null) // {id, name}
 const confirming = ref(null) // 'session:<id>' or 'video:<id>/<name>'
 const renderFor = ref(null)
@@ -56,12 +59,16 @@ const attempt = async (fn) => {
   try {
     await fn()
   } catch (e) {
-    toasts.error(e)
+    if (!isNoTarget(e)) toasts.error(e)
   }
 }
-const load = () => attempt(() => sessions.fetch({ limit: 10 }))
+const load = () => {
+  if (!storage.targetId) return undefined // no sessions can exist yet: show the empty state
+  return attempt(() => sessions.fetch({ limit: 10 }))
+}
 onMounted(load)
 watch(() => timelapse.state, load)
+watch(() => storage.targetId, load)
 
 const tone = {
   completed: 'ok',

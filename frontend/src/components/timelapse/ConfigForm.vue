@@ -19,6 +19,7 @@ import {
   localErrors,
   draftKey,
   dirty,
+  edited,
   applyDraft,
   previewDraft,
 } from './useDraft'
@@ -137,7 +138,7 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
 <template>
   <UiCard title="Schedule">
     <template #actions>
-      <UiBadge v-if="dirty" tone="warn" aria-live="polite">Unsaved changes</UiBadge>
+      <UiBadge v-if="dirty && edited" tone="warn" aria-live="polite">Unsaved changes</UiBadge>
       <UiBadge v-else-if="result" tone="ok">Applied</UiBadge>
     </template>
     <div class="grid gap-4">
@@ -234,7 +235,7 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
       </p>
       <div>
         <UiButton
-          variant="primary"
+          variant="secondary"
           :loading="applied.busy"
           :disabled="locked || !draftKey || !dirty"
           @click="apply"

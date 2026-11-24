@@ -6,6 +6,7 @@ import { useFocusStore } from '@/stores/focus'
 import { useShootStore } from '@/stores/shoot'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import UiNumber from '@/components/ui/UiNumber.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
@@ -30,6 +31,8 @@ const travel = computed(() =>
     : 0,
 )
 
+const minus = (n) => String(n).replace('-', '\u2212')
+
 // the focus position is only readable with a connected camera
 watch(
   () => camera.connected,
@@ -48,12 +51,16 @@ watch(
       <p class="text-xs text-camera-muted" data-testid="travel">
         Total focus travel: {{ travel }} steps over {{ shoot.stack.shots }} frames
         <span v-if="focus.status?.range">
-          (the camera allows {{ focus.status.range.min }} to {{ focus.status.range.max }} per
-          move)</span
+          (the camera allows {{ minus(focus.status.range.min) }} to
+          {{ minus(focus.status.range.max) }} per move)</span
         >.
       </p>
       <details class="text-sm">
-        <summary class="cursor-pointer text-camera-muted">More options</summary>
+        <summary
+          class="flex min-h-[var(--ctl-sm)] cursor-pointer list-none items-center gap-1 text-camera-muted [&::-webkit-details-marker]:hidden"
+        >
+          <UiIcon name="ChevronRight" :size="16" class="more-chev" /> More options
+        </summary>
         <div class="mt-3 flex flex-col gap-3">
           <UiSegmented
             v-model="shoot.stack.direction"
@@ -113,3 +120,9 @@ watch(
     </div>
   </div>
 </template>
+
+<style scoped>
+details[open] .more-chev {
+  transform: rotate(90deg);
+}
+</style>

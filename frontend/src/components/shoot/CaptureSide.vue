@@ -22,6 +22,7 @@ const shoot = useShootStore()
 const { hints } = useKeyboardHints()
 
 const modes = CAPTURE_MODES.map(({ value, label }) => ({ value, label }))
+const modesLocked = computed(() => shoot.anyRunning || capture.inFlight)
 const modeTitle = computed(() => CAPTURE_MODES.find((m) => m.value === shoot.mode)?.title)
 const SETTINGS = { bracket: BracketSettings, bulb: BulbSettings, stack: StackSettings }
 const settingsView = computed(() => SETTINGS[shoot.mode] || null)
@@ -49,19 +50,23 @@ const recordingOpen = ref(false)
         :disabled="shoot.anyRunning || capture.inFlight"
         :title="modeTitle"
       />
+      <p v-if="modesLocked" class="modes-note" data-testid="modes-locked">
+        Stop the current capture to change mode.
+      </p>
       <div class="shutterwrap">
         <UiButton
           variant="shutter"
           :stop="shoot.stoppable"
           :disabled="!shoot.canPress"
           :aria-label="shoot.label"
+          aria-describedby="shutter-reason"
           data-testid="capture-btn"
           @click="shoot.press()"
         />
         <span class="slabel tabular-nums" data-testid="shutter-label">{{ shoot.label }}</span>
-        <span class="reason" aria-live="polite" data-testid="shutter-reason">
+        <span id="shutter-reason" class="reason" aria-live="polite" data-testid="shutter-reason">
           <NoTargetNotice
-            v-if="shoot.noTarget"
+            v-if="shoot.noTargetBlocks"
             compact
             class="justify-center"
             @open-settings="emit('open-settings')"
@@ -77,7 +82,11 @@ const recordingOpen = ref(false)
       </div>
     </div>
 
-    <div class="lastinfo" data-testid="last-capture">
+    <div
+      v-if="first || (capture.lastError && !shoot.noTarget)"
+      class="lastinfo"
+      data-testid="last-capture"
+    >
       <template v-if="first">
         <span class="eyebrow">Last capture</span>
         <span class="nm" :title="first.name">{{ first.name }}</span>
@@ -93,14 +102,13 @@ const recordingOpen = ref(false)
       >
         {{ capture.lastError.message }}
       </span>
-      <span v-else class="text-camera-muted">No captures yet</span>
     </div>
 
     <div class="tools">
       <UiButton variant="ghost" size="sm" class="-ml-2.5" @click="cameraSettingsOpen = true">
         <UiIcon name="SlidersHorizontal" :size="16" /> All camera settings
       </UiButton>
-      <UiButton variant="ghost" size="sm" @click="recordingOpen = true">
+      <UiButton variant="ghost" size="sm" class="-mr-2.5" @click="recordingOpen = true">
         <UiIcon name="Video" :size="16" /> Record video
       </UiButton>
     </div>
@@ -141,6 +149,11 @@ const recordingOpen = ref(false)
 }
 .slabel {
   font-weight: 600;
+}
+.modes-note {
+  margin: -8px 0 0;
+  font-size: 12px;
+  color: theme('colors.camera.muted');
 }
 .reason {
   min-height: 20px;

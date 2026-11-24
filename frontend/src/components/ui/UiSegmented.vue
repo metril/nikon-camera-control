@@ -20,8 +20,9 @@ function pick(v) {
 <template>
   <div
     role="group"
-    class="inline-flex max-w-full gap-0.5 rounded-control border border-camera-border bg-camera-bg"
-    :class="size === 'sm' ? 'h-[var(--ctl-sm)] p-0.5' : 'h-[var(--ctl)] p-[3px]'"
+    class="seg inline-flex max-w-full gap-0.5 rounded-control border border-camera-border bg-camera-bg"
+    :class="size === 'sm' ? 'seg-sm h-[var(--ctl-sm)] p-0.5' : 'h-[var(--ctl)] p-[3px]'"
+    style="overflow-x: auto"
   >
     <button
       v-for="o in options"
@@ -29,7 +30,7 @@ function pick(v) {
       type="button"
       :aria-pressed="isOn(o.value)"
       :disabled="disabled"
-      class="inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] px-3 text-[13px] font-medium transition-colors duration-[120ms] disabled:cursor-not-allowed disabled:opacity-[.45]"
+      class="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] px-3 text-[13px] font-medium transition-colors duration-[120ms] disabled:cursor-not-allowed disabled:opacity-[.45]"
       :class="
         isOn(o.value)
           ? 'bg-camera-raised text-camera-text shadow-[inset_0_0_0_1px_#3a3a3a]'
@@ -41,3 +42,10 @@ function pick(v) {
     </button>
   </div>
 </template>
+
+<style scoped>
+/* Touch: the buttons themselves must be 44px tall, so the small group grows by its padding and border */
+html[data-layout='touch'] .seg-sm {
+  height: calc(var(--ctl-sm) + 6px);
+}
+</style>

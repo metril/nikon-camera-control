@@ -32,7 +32,13 @@ const summary = computed(() => {
   if (Math.abs(d) >= 2) {
     const a = Math.abs(d)
     const txt =
-      a >= 3600 ? `${(a / 3600).toFixed(1)} h` : a >= 60 ? `${Math.round(a / 60)} min` : `${a} s`
+      a >= 86400
+        ? `${Math.round(a / 86400).toLocaleString('en-GB')} days`
+        : a >= 3600
+          ? `${(a / 3600).toFixed(1)} h`
+          : a >= 60
+            ? `${Math.round(a / 60)} min`
+            : `${a} s`
     off = `${txt} ${d > 0 ? 'ahead of' : 'behind'} this device`
   }
   return `${view.value.camera}. ${off}.`

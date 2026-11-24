@@ -286,7 +286,9 @@ class AppConfig(BaseModel):
     media: MediaConfig = Field(default_factory=MediaConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     cors_origins: list[str] = Field(
-        default_factory=list, description="Allowed CORS origins; empty = same-origin only"
+        default_factory=list,
+        title="Allowed web origins",
+        description="Other sites allowed to call the API. Leave empty to allow only this site.",
     )
     demo_camera: bool = Field(default=False, description="Use the simulated camera")
     api_key_hash: str | None = Field(default=None, description="sha256 of the API key; None = open")

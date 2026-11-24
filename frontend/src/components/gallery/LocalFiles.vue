@@ -72,6 +72,7 @@ const modeOptions = computed(() => {
 
 async function load(params = {}) {
   failedLoad.value = false
+  if (!storage.targetId) return // nothing to list yet: the empty state explains
   try {
     await files.load(params)
     files.loadCounts()

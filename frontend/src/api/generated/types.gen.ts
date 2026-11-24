@@ -1053,7 +1053,7 @@ export type ConfigPatch = {
     /**
      * Cors Origins
      *
-     * Allowed CORS origins; empty = same-origin only
+     * Other sites allowed to call the API. Leave empty to allow only this site.
      */
     cors_origins?: Array<string> | null;
     /**

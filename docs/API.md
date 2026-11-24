@@ -683,7 +683,7 @@ operation_id: `update_config`
 | `video` | VideoConfigPatch \| null | no |  |  |  |
 | `media` | MediaConfigPatch \| null | no |  |  |  |
 | `storage` | StorageConfigPatch \| null | no |  |  |  |
-| `cors_origins` | list[string] \| null | no |  |  | Allowed CORS origins; empty = same-origin only |
+| `cors_origins` | list[string] \| null | no |  |  | Other sites allowed to call the API. Leave empty to allow only this site. |
 | `demo_camera` | boolean \| null | no |  |  | Use the simulated camera |
 
 **Responses**
@@ -2362,6 +2362,6 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | storage | `backup_interval_min` | integer | `15` | `>=1`, `<=1440` | How often backups run. |
 | storage | `deep_verify` | boolean | `false` |  | Check every file already on the backup against its checksum on each run. |
 | storage | `sidecars` | boolean | `true` |  | Save a SHA-256 checksum file next to every photo. |
-| (root) | `cors_origins` | list[string] |  |  | Allowed CORS origins; empty = same-origin only |
+| (root) | `cors_origins` | list[string] |  |  | Other sites allowed to call the API. Leave empty to allow only this site. |
 | (root) | `demo_camera` | boolean | `false` |  | Use the simulated camera |
 | (root) | `api_key_hash` | string \| null | `null` |  | sha256 of the API key; None = open |

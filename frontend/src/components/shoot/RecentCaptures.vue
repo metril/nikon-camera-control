@@ -4,6 +4,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
 import { useFilesStore } from '@/stores/files'
+import { useStorageStore } from '@/stores/storage'
 import UiButton from '@/components/ui/UiButton.vue'
 
 const emit = defineEmits(['open-gallery'])
@@ -37,6 +38,11 @@ watch(
   { immediate: true },
 )
 onMounted(() => capture.loadRecent().catch(() => {}))
+const storage = useStorageStore()
+watch(
+  () => storage.targetId,
+  (id) => id && capture.loadRecent().catch(() => {}),
+)
 watch(
   () => camera.connected,
   (on) => on && capture.loadRecent().catch(() => {}),
@@ -50,7 +56,7 @@ const newest = (i) =>
     <div class="flex items-center justify-between gap-2">
       <span class="eyebrow">Recent captures</span>
       <UiButton variant="ghost" size="sm" class="-mr-2.5" @click="emit('open-gallery')">
-        Open Gallery
+        Open gallery
       </UiButton>
     </div>
     <div v-if="capture.recent.length" class="filmrow">

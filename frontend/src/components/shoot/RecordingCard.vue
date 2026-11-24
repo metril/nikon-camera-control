@@ -108,7 +108,13 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
 
 <template>
   <div class="flex flex-col gap-4">
-    <p v-if="reason" class="text-sm text-camera-warn" role="status" data-testid="busy">
+    <p
+      v-if="reason"
+      id="rec-reason"
+      class="text-sm text-camera-warn"
+      role="status"
+      data-testid="busy"
+    >
       {{ reason }}
     </p>
     <div v-if="!active" class="flex flex-col gap-4">
@@ -132,10 +138,14 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
         :loading="starting"
         :disabled="disabled || !maxOk"
         :title="reason"
+        :aria-describedby="reason ? 'rec-reason' : maxOk ? undefined : 'rec-max'"
         @click="start"
       >
         Start recording
       </UiButton>
+      <p v-if="!maxOk" id="rec-max" class="-mt-2 text-xs text-camera-warn">
+        Enter a whole number of seconds from 1 to 1799.
+      </p>
     </div>
     <div v-else class="flex flex-col gap-4" aria-live="polite">
       <p class="flex items-center gap-2 text-3xl font-mono tabular-nums">

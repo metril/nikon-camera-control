@@ -42,6 +42,20 @@ provide('activeTab', readonly(activeTab))
 // Cross-tab navigation for views: inject('navigate')('gallery'). Also handled: open-gallery/open-timelapse/open-settings events.
 provide('navigate', select)
 
+// The no-key bar's height is published as --banner so full-height views can subtract it.
+let bannerObserver = null
+function measureBanner(el) {
+  bannerObserver?.disconnect()
+  bannerObserver = null
+  const set = () =>
+    document.documentElement.style.setProperty('--banner', `${el ? el.offsetHeight : 0}px`)
+  set()
+  if (el && typeof ResizeObserver !== 'undefined') {
+    bannerObserver = new ResizeObserver(set)
+    bannerObserver.observe(el)
+  }
+}
+
 const helpOpen = ref(false)
 const jobsOpen = ref(false)
 const anyModalOpen = () => !!document.querySelector('[aria-modal="true"]')
@@ -81,6 +95,7 @@ const SHORTCUTS = [
 
     <a
       v-if="auth.authEnabled === false"
+      :ref="measureBanner"
       href="#/settings"
       class="warn-bar"
       data-test="no-key-warning"

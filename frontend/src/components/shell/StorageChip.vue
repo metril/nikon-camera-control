@@ -61,6 +61,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
     <button
       type="button"
       class="inline-flex items-center rounded-full"
+      :class="{ 'min-h-[var(--ctl-sm)]': !storage.target }"
       aria-haspopup="menu"
       :aria-expanded="open"
       aria-label="Storage location"

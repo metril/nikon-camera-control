@@ -109,6 +109,13 @@ onBeforeUnmount(unlisten)
     min-height: 0;
   }
 }
+/* Desktop: the live view never grows taller than what is left under the header, banner and strip,
+   so the Shoot page needs no scrolling. 99px = header 56 + stripe 3 + top 16 + bottom 24. */
+@media (min-width: 900px) {
+  html[data-layout='desktop'] .lvwrap {
+    max-width: max(360px, calc((100dvh - 99px - var(--banner, 0px) - 65px - 16px - 2px) * 1.5));
+  }
+}
 /* Desktop, narrow: one column, the strip wraps to two rows */
 @media (max-width: 860px) {
   html[data-layout='desktop'] .shoot {
@@ -164,13 +171,19 @@ html[data-layout='touch'] .strip-area :deep(.cell .v) {
 /* Touch, landscape (kiosk screens): live view and controls side by side with no scrolling */
 @media (min-width: 900px) and (orientation: landscape) {
   html[data-layout='touch'] .shoot {
-    --lvw: min(100%, calc((100dvh - 60px - var(--nav) - 64px - 64px) * 1.5));
+    --lvw: min(
+      100%,
+      calc((100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 64px - 64px - 40px) * 1.5)
+    );
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas:
       'strip side'
-      'lv side'
-      'film film';
+      'lv side';
     align-items: start;
+  }
+  /* no room for the recent captures here: they live in the Gallery */
+  html[data-layout='touch'] .film-area {
+    display: none;
   }
   html[data-layout='touch'] .strip-area {
     display: flex;
@@ -202,7 +215,7 @@ html[data-layout='touch'] .strip-area :deep(.cell .v) {
   html[data-layout='touch'] .side-area {
     position: sticky;
     top: 76px;
-    max-height: calc(100dvh - 60px - var(--nav) - 32px);
+    max-height: calc(100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 32px);
     overflow-y: auto;
   }
 }

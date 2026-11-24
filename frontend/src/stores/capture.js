@@ -32,7 +32,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
   /** Newest saved files (Shoot's recent captures). */
   async function loadRecent() {
-    if (useStorageStore().noTarget) return recent.value // nothing is saved without a target
+    if (!useStorageStore().targetId) return recent.value // nothing is saved without a target
     const page = await api.listFiles({
       query: { folder: '', page: 1, limit: RECENT_LIMIT, kind: 'image', sort: 'newest' },
     })

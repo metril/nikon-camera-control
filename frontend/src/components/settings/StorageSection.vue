@@ -65,6 +65,12 @@ function toggleBackup(id, on) {
   return run('backups', () => storage.setBackups([...ids]))
 }
 const backupNow = () => run('backup', () => storage.runBackup(), 'Backup started')
+const actionHint = computed(() => {
+  if (!storage.targetId) return 'Choose a storage location first to back up or verify.'
+  if (!storage.backupIds.length) return 'Choose a backup location to back up now.'
+  if (storage.mounted.length < 2) return 'Offload needs two mounted locations.'
+  return ''
+})
 const verify = () => run('verify', () => storage.verify({}), 'Verify started. Progress is in Jobs.')
 
 async function test() {
@@ -233,14 +239,14 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
             placeholder="//nas/photos"
             class="sm:col-span-2"
           />
-          <UiText v-model="form.name" label="Name" :maxlength="64" placeholder="optional" />
-          <UiText v-model="form.domain" label="Domain" placeholder="optional" />
+          <UiText v-model="form.name" label="Name" :maxlength="64" placeholder="Optional" />
+          <UiText v-model="form.domain" label="Domain" placeholder="Optional" />
           <UiText v-model="form.username" label="User" />
           <UiText
             v-model="form.password"
             label="Password"
             type="password"
-            placeholder="write-only"
+            placeholder="Saved but never shown"
           />
           <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
             <UiButton
@@ -257,6 +263,9 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
               :loading="adding"
               data-test="smb-add"
               >Add share</UiButton
+            >
+            <span v-if="!form.unc.trim()" class="text-xs text-camera-muted" data-test="smb-hint"
+              >Enter a share path to test or add it.</span
             >
             <span
               v-if="testResult"
@@ -339,6 +348,9 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
             >Offload…</UiButton
           >
         </div>
+        <p v-if="actionHint" class="text-xs text-camera-muted" data-test="action-hint">
+          {{ actionHint }}
+        </p>
         <p v-if="backup" class="text-xs text-camera-muted" data-test="backup-status">
           <template v-if="backup.running"
             >Backing up{{ backup.current ? `: ${backup.current}` : '' }}.

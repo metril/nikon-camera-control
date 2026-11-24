@@ -181,6 +181,9 @@ onBeforeUnmount(() => {
 .opt:focus-visible {
   background: theme('colors.camera.raised');
 }
+.opt:focus-visible {
+  outline-offset: -2px;
+}
 .opt:active:not(:disabled) {
   background: theme('colors.camera.hover');
 }
@@ -238,6 +241,13 @@ html[data-layout='touch'] .picker.sheet {
   max-height: 62vh !important;
   border-radius: 16px 16px 0 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (min-width: 900px) {
+  html[data-layout='touch'] .picker.sheet {
+    width: min(100%, 560px);
+    margin-inline: auto;
+    border-radius: 16px 16px 0 0;
+  }
 }
 html[data-layout='touch'] .picker.sheet .grab {
   display: block;

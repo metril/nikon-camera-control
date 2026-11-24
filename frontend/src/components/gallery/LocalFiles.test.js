@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import LocalFiles from './LocalFiles.vue'
 import { useFilesStore } from '@/stores/files'
+import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
 import { useCaptureStore } from '@/stores/capture'
 
@@ -25,6 +26,7 @@ function setup({ items = [item('one'), item('two'), item('three')], total } = {}
   vi.spyOn(files, 'load').mockImplementation(async (p = {}) => {
     files.query = { ...files.query, ...p }
   })
+  useStorageStore(pinia).targetId = 'loc'
   files.items = items
   files.total = total ?? items.length
   vi.spyOn(files, 'loadCounts').mockResolvedValue()

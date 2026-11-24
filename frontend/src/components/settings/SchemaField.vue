@@ -21,6 +21,13 @@ const onText = (v) => emit('update:modelValue', v === '' && props.field.nullable
 const options = computed(() =>
   (props.field.options || []).map((v) => ({ value: v, label: configEnum(props.field.name, v) })),
 )
+// Long second counts read as hours or days next to the field
+const readable = computed(() => {
+  const n = Number(props.modelValue)
+  if (props.field.unit !== 's' || !Number.isFinite(n) || n < 3600) return ''
+  if (n >= 172800) return `About ${Math.round(n / 86400)} days`
+  return `About ${Math.round((n / 3600) * 10) / 10} h`
+})
 </script>
 
 <template>
@@ -32,6 +39,7 @@ const options = computed(() =>
     :natural="field.kind === 'boolean'"
     :data-field="field.name"
   >
+    <template v-if="readable" #note>{{ readable }}</template>
     <UiToggle
       v-if="field.kind === 'boolean'"
       :model-value="!!modelValue"

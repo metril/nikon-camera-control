@@ -3,10 +3,10 @@ defineProps({ title: { type: String, default: '' }, subtitle: { type: String, de
 </script>
 
 <template>
-  <section class="rounded-lg border border-camera-border bg-camera-surface">
+  <section class="rounded-card border border-camera-border bg-camera-surface">
     <header
       v-if="title || subtitle || $slots.actions"
-      class="flex flex-wrap items-start justify-between gap-2 border-b border-camera-border px-4 py-3"
+      class="flex flex-wrap items-start justify-between gap-2 border-b border-camera-border px-4 py-4"
     >
       <div class="min-w-0">
         <h2 v-if="title" class="text-sm font-semibold">{{ title }}</h2>

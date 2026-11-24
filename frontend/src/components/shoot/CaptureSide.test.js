@@ -69,7 +69,7 @@ describe('CaptureSide', () => {
 
   it('disables the shutter with a visible reason when disconnected, busy or without a target', async () => {
     setup({ connected: false })
-    expect(shutter().attributes('disabled')).toBeDefined()
+    expect(shutter().attributes('aria-disabled')).toBe('true')
     expect(wrapper.find('[data-testid="shutter-reason"]').text()).toContain('Connect the camera')
     wrapper.unmount()
     setup({ leasedBy: 'recording' })
@@ -80,7 +80,7 @@ describe('CaptureSide', () => {
     storage.loaded = true
     storage.targetId = null
     await flushPromises()
-    expect(shutter().attributes('disabled')).toBeDefined()
+    expect(shutter().attributes('aria-disabled')).toBe('true')
     expect(wrapper.find('[data-testid="shutter-reason"]').text()).toContain('No storage target')
   })
 
@@ -109,7 +109,7 @@ describe('CaptureSide', () => {
 
   it('shows the last capture, or says there is none', async () => {
     setup()
-    expect(wrapper.find('[data-testid="last-capture"]').text()).toContain('No captures yet')
+    expect(wrapper.find('[data-testid="last-capture"]').exists()).toBe(false)
     useCaptureStore().lastCapture = {
       files: [
         { name: 'DSC_0001.JPG', kind: 'image', path: 'a/DSC_0001.JPG' },

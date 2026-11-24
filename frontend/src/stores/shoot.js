@@ -19,6 +19,7 @@ export const CAPTURE_MODES = [
   { value: 'bulb', label: 'Bulb', title: 'Bulb exposure' },
   { value: 'stack', label: 'Stack', title: 'Focus stack' },
 ]
+const NO_TARGET_REASON = 'No storage target. Choose one in Settings.'
 /** Lease name each capture mode holds on the camera while it runs. */
 const OWN_LEASE = { bracket: 'bracket', bulb: 'bulb', stack: 'focus-stack' }
 
@@ -96,11 +97,13 @@ export const useShootStore = defineStore('shoot', () => {
     if (anyRunning.value && !stoppable.value) return 'Another capture is running.'
     if (!stoppable.value && !['idle', 'liveview'].includes(camera.state)) return 'Camera busy.'
     if (capture.inFlight) return 'Capturing…'
-    if (noTarget.value) return 'No storage target. Choose one in Settings.'
+    if (noTarget.value) return NO_TARGET_REASON
     if (mode.value === 'bulb' && !bulbOk.value) return 'Exposure time must be 1 to 3600 s.'
     if (mode.value === 'stack' && stackProblem.value) return `${stackProblem.value}.`
     return ''
   })
+  /** The shutter is blocked only by the missing storage target (nothing more basic is wrong). */
+  const noTargetBlocks = computed(() => noTarget.value && blockedReason.value === NO_TARGET_REASON)
   const canPress = computed(() => stoppable.value || (!blockedReason.value && !starting.value))
 
   const stackDone = computed(() => {
@@ -226,6 +229,7 @@ export const useShootStore = defineStore('shoot', () => {
     running,
     stoppable,
     noTarget,
+    noTargetBlocks,
     stackProblem,
     bulbOk,
     blockedReason,

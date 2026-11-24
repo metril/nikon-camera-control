@@ -32,6 +32,7 @@ const emit = defineEmits(['step', 'autofocus'])
     <button
       type="button"
       class="af"
+      aria-label="Autofocus"
       :disabled="disabled || busy"
       title="Autofocus at the focus point"
       data-testid="lv-autofocus"
@@ -70,7 +71,7 @@ const emit = defineEmits(['step', 'autofocus'])
   gap: 2px;
   padding: 3px;
   border-radius: 9999px;
-  background: rgba(21, 21, 21, 0.82);
+  background: theme('colors.camera.overlay');
   border: 1px solid theme('colors.camera.border');
   backdrop-filter: blur(6px);
 }
@@ -116,7 +117,7 @@ html[data-layout='touch'] button {
   min-width: 44px;
 }
 /* The frame is a size container (see LiveViewPanel): icon-only Autofocus when narrow */
-@container lv (max-width: 1100px) {
+@container lv (max-width: 720px) {
   .lbl {
     display: none;
   }

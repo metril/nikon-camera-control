@@ -358,7 +358,7 @@ async function setLocation(id) {
 
     <div
       v-if="config.config && isDirty"
-      class="sticky bottom-[calc(12px+var(--nav,0px))] z-[15] flex flex-wrap items-center gap-3 rounded-card border border-camera-border bg-camera-raised py-2.5 pl-4 pr-3 shadow-[0_12px_30px_rgba(0,0,0,.5)] max-[420px]:gap-2"
+      class="sticky bottom-[var(--nav,0px)] z-[15] flex flex-wrap items-center gap-3 rounded-t-card border border-b-0 border-camera-border bg-camera-raised px-4 py-2 shadow-[0_-8px_24px_rgba(0,0,0,.4)] max-[420px]:gap-2"
       data-test="savebar"
     >
       <span class="whitespace-nowrap text-sm tabular-nums" aria-live="polite">

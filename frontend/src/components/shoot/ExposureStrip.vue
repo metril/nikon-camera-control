@@ -109,6 +109,7 @@ const cells = computed(() => {
       editable: on.value && editable,
       hint,
       tone,
+      explain: !!hint && on.value && !!s && key !== 'meter' && key !== 'shots',
     }
   })
 })
@@ -248,10 +249,15 @@ watch(open, async (k, was) => {
         class="cell ro"
         :class="{ off: !on }"
         :data-k="c.key"
-        role="group"
+        :role="c.explain ? 'button' : 'group'"
         tabindex="0"
+        :aria-haspopup="c.explain ? 'dialog' : undefined"
+        :aria-expanded="c.explain ? open === c.key : undefined"
         :aria-label="`${c.full}: ${c.value}${c.auto ? ', set automatically' : ''}`"
         :title="c.hint ? `${c.full}. ${c.hint}` : c.full"
+        @click="c.explain && openPicker(c)"
+        @keydown.enter.prevent="c.explain && openPicker(c)"
+        @keydown.space.prevent="c.explain && openPicker(c)"
       >
         <span class="k">{{ c.label }}</span>
         <span class="vrow">
@@ -335,6 +341,9 @@ watch(open, async (k, was) => {
 }
 .cell.ro {
   cursor: default;
+}
+.cell.ro[role='button'] {
+  cursor: help;
 }
 .cell .k {
   font:

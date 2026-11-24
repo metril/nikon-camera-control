@@ -16,7 +16,7 @@ const props = defineProps({
 
 const VARIANTS = {
   primary:
-    'bg-camera-accent border-camera-accent text-camera-accent-ink font-medium hover:bg-[#fb8a3c] active:bg-[#e8650c]',
+    'bg-camera-accent border-camera-accent text-camera-accent-ink font-medium hover:bg-camera-accent-hover active:bg-camera-accent-press',
   secondary:
     'bg-camera-raised border-camera-border text-camera-text font-medium hover:bg-camera-hover active:bg-camera-border',
   ghost:
@@ -35,7 +35,8 @@ const cls = computed(() => [
   <button
     v-if="isShutter"
     :type="type"
-    :disabled="disabled || loading"
+    :disabled="loading"
+    :aria-disabled="disabled || loading || undefined"
     :aria-busy="loading || undefined"
     class="shutter"
     :class="{ stop }"
@@ -82,17 +83,19 @@ html[data-layout='touch'] .shutter {
     background-color 120ms,
     border-radius 120ms;
 }
-.shutter:hover:not(:disabled) .shutter-core {
-  background: #fb8a3c;
+.shutter:hover:not(:disabled, [aria-disabled='true']) .shutter-core {
+  background: theme('colors.camera.accent-hover');
 }
-.shutter:active:not(:disabled) .shutter-core {
+.shutter:active:not(:disabled, [aria-disabled='true']) .shutter-core {
   transform: scale(0.9);
 }
-.shutter:disabled {
+.shutter:disabled,
+.shutter[aria-disabled='true'] {
   border-color: theme('colors.camera.border');
   cursor: not-allowed;
 }
-.shutter:disabled .shutter-core {
+.shutter:disabled .shutter-core,
+.shutter[aria-disabled='true'] .shutter-core {
   background: theme('colors.camera.border');
 }
 .shutter.stop {
@@ -103,7 +106,7 @@ html[data-layout='touch'] .shutter {
   border-radius: 10px;
   transform: scale(0.55);
 }
-.shutter.stop:active:not(:disabled) .shutter-core {
+.shutter.stop:active:not(:disabled, [aria-disabled='true']) .shutter-core {
   transform: scale(0.5);
 }
 </style>

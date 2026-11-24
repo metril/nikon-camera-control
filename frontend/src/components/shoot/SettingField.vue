@@ -5,7 +5,7 @@ import UiSegmented from '@/components/ui/UiSegmented.vue'
 import UiNumber from '@/components/ui/UiNumber.vue'
 import UiToggle from '@/components/ui/UiToggle.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
-import { SETTING_NAMES } from '@/labels'
+import { SETTING_NAMES, settingValueLabel } from '@/labels'
 
 const props = defineProps({
   setting: { type: Object, required: true },
@@ -26,8 +26,16 @@ const kind = computed(() => {
   if (t === 'toggle') return 'toggle'
   return 'readonly'
 })
-const short = computed(() => (s.value.choices?.length || 0) <= 4)
-const options = computed(() => (s.value.choices || []).map((c) => ({ value: c, label: c })))
+// Segmented only when every label fits a narrow cell; longer sets fall back to a select
+const short = computed(() => {
+  const list = s.value.choices || []
+  return (
+    list.length <= 4 && list.map((c) => settingValueLabel(s.value.name, c)).join('').length <= 22
+  )
+})
+const options = computed(() =>
+  (s.value.choices || []).map((c) => ({ value: c, label: settingValueLabel(s.value.name, c) })),
+)
 const off = computed(() => props.disabled)
 const fixedReason = computed(() =>
   editable.value ? '' : s.value.readonly ? 'Read-only on the camera' : "Can't be changed here",
@@ -91,7 +99,9 @@ const emitChange = (v) => emit('change', s.value.name, v)
       @update:model-value="emitChange"
     />
     <span v-else class="text-sm font-medium text-camera-text" data-testid="readonly-value">{{
-      s.value === null || s.value === undefined || s.value === '' ? '–' : String(s.value)
+      s.value === null || s.value === undefined || s.value === ''
+        ? '–'
+        : settingValueLabel(s.name, s.value)
     }}</span>
     <p v-if="fixedReason" class="text-xs text-camera-muted">{{ fixedReason }}</p>
     <p v-if="error" class="text-xs text-camera-danger" role="alert">{{ error }}</p>

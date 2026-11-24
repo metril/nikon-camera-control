@@ -14,11 +14,13 @@ export function useCameraStatus() {
   /** key: ready | busy | connecting | disconnected | permission; dot: ok | busy | off */
   const status = computed(() => {
     if (camera.state === 'connecting')
-      return { key: 'connecting', label: 'Connecting…', dot: 'busy' }
-    if (noPermission.value) return { key: 'permission', label: 'No permission', dot: 'off' }
-    if (!camera.connected) return { key: 'disconnected', label: 'Disconnected', dot: 'off' }
-    if (busy.value) return { key: 'busy', label: 'Busy', dot: 'busy' }
-    return { key: 'ready', label: 'Connected', dot: 'ok' }
+      return { key: 'connecting', label: 'Connecting…', short: '…', dot: 'busy' }
+    if (noPermission.value)
+      return { key: 'permission', label: 'No permission', short: 'No', dot: 'off' }
+    if (!camera.connected)
+      return { key: 'disconnected', label: 'Disconnected', short: 'Off', dot: 'off' }
+    if (busy.value) return { key: 'busy', label: 'Busy', short: 'Busy', dot: 'busy' }
+    return { key: 'ready', label: 'Connected', short: 'On', dot: 'ok' }
   })
   /** Thin stripe under the header: red when disconnected, amber when busy, hidden when ready. */
   const stripe = computed(() => ({ off: 'off', busy: 'busy', ok: '' })[status.value.dot])

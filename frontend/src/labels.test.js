@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  settingValueLabel,
   humanize,
   jobStatus,
   fileKind,
@@ -38,8 +39,16 @@ describe('label maps', () => {
     expect(cameraBackend('demo')).toBe('Demo camera')
     expect(cameraBackend('gphoto2')).toBe('USB (gphoto2)')
     expect(settingName('F-Number')).toBe('Aperture')
-    expect(settingName('Exposure Compensation')).toBe('Exposure comp.')
+    expect(settingName('Exposure Compensation')).toBe('Exposure compensation')
     expect(liveviewPauseReason('preview_failed')).toBe('preview failed')
+  })
+  it('formats camera setting values', () => {
+    expect(settingValueLabel('imagesize', '5568x3712')).toBe('5568×3712')
+    expect(settingValueLabel('exposurecompensation', '0')).toBe('±0.0')
+    expect(settingValueLabel('exposurecompensation', '-0.33')).toBe('\u22120.3')
+    expect(settingValueLabel('exposurecompensation', '1')).toBe('+1.0')
+    expect(settingValueLabel('meteringmode', 'Center Weighted')).toBe('Center weighted')
+    expect(settingValueLabel('iso', '100')).toBe('100')
   })
   it('builds select options', () => {
     expect(options(VIDEO_CODECS)[0]).toEqual({ value: 'h264', label: 'H.264' })

@@ -11,6 +11,8 @@ import UiProgress from '@/components/ui/UiProgress.vue'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useCameraStore } from '@/stores/camera'
 import { useFilesStore } from '@/stores/files'
+import { useStorageStore } from '@/stores/storage'
+import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
 import { useToastsStore } from '@/stores/toasts'
 import { draft, applied, resultNow, draftKey, dirty, applyDraft } from './useDraft'
 import { useNow } from './useCountdown'
@@ -19,6 +21,7 @@ import { formatDuration } from './bracketUtils'
 const timelapse = useTimelapseStore()
 const camera = useCameraStore()
 const files = useFilesStore()
+const storage = useStorageStore()
 const toasts = useToastsStore()
 const now = useNow()
 const busy = ref('')
@@ -48,7 +51,11 @@ const plannedFrames = computed(() =>
 )
 const doneFrames = computed(() => counters.value.sets_done ?? 0)
 const fraction = computed(() =>
-  plannedFrames.value > 0 ? Math.min(1, doneFrames.value / plannedFrames.value) : null,
+  plannedFrames.value > 0
+    ? Math.min(1, doneFrames.value / plannedFrames.value)
+    : state.value === 'running' || state.value === 'configured' || timelapse.isActive
+      ? null
+      : 0,
 )
 const tone = {
   running: 'accent',
@@ -64,6 +71,7 @@ watch(state, () => (confirmStop.value = false))
 const isActive = computed(() => timelapse.isActive)
 const startBlock = computed(() => {
   if (!camera.connected) return 'Camera not connected'
+  if (storage.noTarget) return 'No storage target'
   if (camera.leasedBy && camera.leasedBy !== 'timelapse')
     return `Busy: ${leaseOwner(camera.leasedBy)}`
   if (!draftKey.value) return 'Fix the configuration first'
@@ -278,7 +286,8 @@ const stats = computed(() => {
         >
           <UiIcon name="Play" :size="16" />Start time-lapse
         </UiButton>
-        <p v-if="startBlock" class="text-xs text-camera-warn" data-test="start-block">
+        <NoTargetNotice v-if="camera.connected && storage.noTarget" compact />
+        <p v-else-if="startBlock" class="text-xs text-camera-warn" data-test="start-block">
           {{ startBlock }}
         </p>
       </div>

@@ -203,7 +203,7 @@ export const SETTING_NAMES = {
   'F-Number': 'Aperture',
   'Fixed Aperture': 'Aperture',
   'Shutter Speed': 'Shutter speed',
-  'Exposure Compensation': 'Exposure comp.',
+  'Exposure Compensation': 'Exposure compensation',
   'Auto Exposure Mode': 'Exposure mode',
   'Focus Mode': 'Focus mode',
   'Metering Mode': 'Metering',
@@ -214,7 +214,7 @@ export const SETTING_NAMES = {
   iso: 'ISO',
   'f-number': 'Aperture',
   shutterspeed: 'Shutter speed',
-  exposurecompensation: 'Exposure comp.',
+  exposurecompensation: 'Exposure compensation',
   autoexposuremode: 'Exposure mode',
   focusmode: 'Focus mode',
   meteringmode: 'Metering',
@@ -226,3 +226,25 @@ export const SETTING_NAMES = {
   batterylevel: 'Battery',
 }
 export const settingName = labeller(SETTING_NAMES)
+
+/** Format a signed EV step with a true minus sign; zero is shown as ±0.0. */
+function signedEv(n) {
+  if (Math.abs(n) < 0.05) return '±0.0'
+  const t = Math.abs(n).toFixed(1)
+  return `${n < 0 ? '\u2212' : '+'}${t}`
+}
+
+/** A camera setting value as people read it: × in sizes, true-minus EV, sentence case words. */
+export function settingValueLabel(name, value) {
+  if (value == null || value === '') return '–'
+  const v = String(value)
+  const key = String(name || '').toLowerCase()
+  if (/^\d+\s*x\s*\d+$/i.test(v)) return v.replace(/\s*x\s*/i, ' \u00d7 ').replace(/ /g, '')
+  if (key === 'exposurecompensation' || key === 'exposure compensation') {
+    const n = Number(v)
+    if (Number.isFinite(n)) return signedEv(Math.round(n * 3) / 3)
+  }
+  // Title Case words ("Center Weighted") become sentence case; ISO/WB style acronyms stay put
+  if (/^[A-Z][a-z]+( [A-Z][a-z]+)+$/.test(v)) return v.charAt(0) + v.slice(1).toLowerCase()
+  return v
+}

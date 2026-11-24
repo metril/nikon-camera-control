@@ -1,5 +1,5 @@
 /** Pure helpers behind the exposure strip: which camera setting feeds which cell, what the mode governs. */
-import { fmtEV } from './helpers'
+import { settingValueLabel } from '@/labels'
 
 export const MODE_NAMES = {
   P: 'Program',
@@ -43,16 +43,16 @@ export function formatValue(key, raw) {
   if (raw == null || raw === '') return '–'
   const v = String(raw)
   if (key === 'aperture') return /^f\//i.test(v) ? v : `f/${v.replace(/^f/i, '')}`
-  if (key === 'comp') {
-    const n = Number(v)
-    return Number.isFinite(n) ? fmtEV(n) : v
-  }
-  return v
+  if (key === 'comp') return settingValueLabel('exposurecompensation', v)
+  if (key === 'wb') return /^automatic$/i.test(v) ? 'Auto' : settingValueLabel('whitebalance', v)
+  if (key === 'mode') return modeLetter(v) || settingValueLabel('mode', v)
+  return settingValueLabel(key, v)
 }
 
 /** A settings option as the picker shows it. */
 export function optionFor(key, choice, selected) {
-  const label = formatValue(key, choice)
-  const sub = key === 'mode' ? MODE_NAMES[modeLetter(choice)] || '' : ''
+  const letter = key === 'mode' ? modeLetter(choice) : null
+  const label = key === 'wb' ? settingValueLabel('whitebalance', choice) : formatValue(key, choice)
+  const sub = letter ? MODE_NAMES[letter] || '' : ''
   return { value: choice, label, sub, selected: String(choice) === String(selected) }
 }

@@ -1,6 +1,6 @@
 <script setup>
 /** Status chip in the header. Connected: opens the camera popover. Otherwise: connects. */
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useEventsStore } from '@/stores/events'
 import { useStorageStore } from '@/stores/storage'
@@ -8,13 +8,11 @@ import { useToastsStore } from '@/stores/toasts'
 import { leaseOwner } from '@/labels'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import StorageChip from './StorageChip.vue'
 import { isNoPermission } from './connectError'
 import { formatBytes } from './format'
 import { useCameraStatus } from './useCameraStatus'
 
-const emit = defineEmits(['shortcuts'])
 const camera = useCameraStore()
 const events = useEventsStore()
 const storage = useStorageStore()
@@ -68,6 +66,8 @@ async function disconnect() {
     toasts.error(e)
   } finally {
     working.value = false
+    await nextTick()
+    root.value?.querySelector('[data-test="chip"]')?.focus()
   }
 }
 function onChip() {
@@ -108,6 +108,7 @@ watch(
     >
       <i class="dot" :class="status.dot" aria-hidden="true" />
       <span class="txt" data-test="state">{{ status.label }}</span>
+      <span class="short" aria-hidden="true">{{ status.short }}</span>
     </button>
 
     <div v-if="open" class="pop" role="dialog" aria-label="Camera" data-test="camera-popover">
@@ -142,14 +143,6 @@ watch(
       </dl>
       <UiButton class="w-full" :loading="working" data-test="toggle" @click="disconnect">
         Disconnect
-      </UiButton>
-      <UiButton
-        variant="ghost"
-        size="sm"
-        class="shortcuts w-full"
-        @click="((open = false), emit('shortcuts'))"
-      >
-        <UiIcon name="Keyboard" :size="16" /> Keyboard shortcuts
       </UiButton>
     </div>
   </div>
@@ -218,12 +211,20 @@ watch(
   text-align: right;
   min-width: 0;
 }
-html[data-layout='touch'] .shortcuts {
+.short {
   display: none;
 }
 @media (max-width: 560px) {
   .txt {
     display: none;
+  }
+  .short {
+    display: inline;
+  }
+  .chip {
+    min-width: 44px;
+    justify-content: center;
+    padding: 0 10px;
   }
 }
 </style>

@@ -105,7 +105,7 @@ describe('RenderDialog options', () => {
     const w = dialog()
     await flushPromises()
     expect(w.find('[data-test="render-length"]').text()).toContain('240 frames')
-    expect(w.find('[data-test="render-length"]').text()).toContain('10s')
+    expect(w.find('[data-test="render-length"]').text()).toContain('10 s')
     const labels = w.findAll('label').map((l) => l.text())
     expect(labels).toEqual(
       expect.arrayContaining([
