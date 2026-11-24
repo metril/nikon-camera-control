@@ -3380,6 +3380,12 @@ export type StackRequest = {
      */
     direction?: 'near_to_far' | 'far_to_near';
     /**
+     * Filename Prefix
+     *
+     * Prefix for file names; unsafe characters become -. Defaults to the File name prefix setting
+     */
+    filename_prefix?: string | null;
+    /**
      * Name
      *
      * Folder name suffix

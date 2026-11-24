@@ -1000,6 +1000,7 @@ Capture N shots, moving focus between them; returns the job (kind ``focus-stack`
 | `settle_ms` | integer | no | `500` | `>=0.0`, `<=60000.0` | Wait after each move |
 | `return_to_start` | boolean | no | `true` |  |  |
 | `name` | string \| null | no |  | `maxLength=40` | Folder name suffix |
+| `filename_prefix` | string \| null | no |  | `maxLength=40` | Prefix for file names; unsafe characters become -. Defaults to the File name prefix setting |
 
 **Responses**
 

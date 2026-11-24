@@ -5631,6 +5631,19 @@
             "title": "Direction",
             "type": "string"
           },
+          "filename_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Prefix for file names; unsafe characters become -. Defaults to the File name prefix setting",
+            "title": "Filename Prefix"
+          },
           "name": {
             "anyOf": [
               {
