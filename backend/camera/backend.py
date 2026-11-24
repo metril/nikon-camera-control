@@ -93,7 +93,7 @@ class CameraFileInfo:
     height: int = 0
 
 
-_PROP_EVENT = re.compile(r'PTP Property ([0-9a-fA-F]+) changed(?:, "([^"]*)"(?: to "([^"]*)")?)?')
+_PROP_EVENT = re.compile(r'PTP Property ([0-9a-fA-F]+) changed(?:, "([^"]*)"(?: to "(.*)"\s*$)?)?')
 
 
 def parse_property_change(text: object) -> tuple[int, str | None, str | None] | None:

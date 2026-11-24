@@ -112,7 +112,7 @@ class PropertySync:
                 return False
             value = raw
         elif w.type == ConfigType.TEXT:
-            value = raw
+            return False  # reported text may be truncated or escaped; re-read it
         elif w.type == ConfigType.RANGE:
             try:
                 value = float(raw)

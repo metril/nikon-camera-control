@@ -491,6 +491,17 @@ class ConfigStore:
 
     @staticmethod
     def _lenient(data: dict[str, Any], default: AppConfig) -> AppConfig:
+        cam = data.get("camera")
+        if isinstance(cam, dict):  # fix the pair here; the cross-field error would drop the section
+            small, large = cam.get("focus_step_small"), cam.get("focus_step_large")
+            if (
+                isinstance(small, int)
+                and isinstance(large, int)
+                and not isinstance(small, bool)
+                and not isinstance(large, bool)
+                and small > large
+            ):
+                cam["focus_step_large"] = small
         for _ in range(50):
             try:
                 return AppConfig.model_validate(data)
@@ -522,6 +533,26 @@ class ConfigStore:
         with self._lock:
             old = self._config
             merged = _deep_merge(old.model_dump(mode="json"), patch)
+            cam = merged.get("camera")
+            if (
+                isinstance(cam, dict)
+                and isinstance(cam.get("focus_step_small"), int)
+                and isinstance(cam.get("focus_step_large"), int)
+                and cam["focus_step_small"] > cam["focus_step_large"]
+            ):
+                msg = "focus_step_small must not be larger than focus_step_large"
+                raise ConfigInvalid(
+                    "Invalid configuration",
+                    details={
+                        "errors": [
+                            {
+                                "type": "value_error",
+                                "loc": ["camera", "focus_step_small"],
+                                "msg": msg,
+                            }
+                        ]
+                    },
+                )
             try:
                 new = AppConfig.model_validate(merged)
             except ValidationError as exc:

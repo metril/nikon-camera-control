@@ -140,6 +140,10 @@ async def test_status_reports_property_events_once_seen(
         ),
         ('PTP Property 0000500a changed, "focusmode" to "AF-C"', (0x500A, "focusmode", "AF-C")),
         ("PTP Property 500f changed", (0x500F, None, None)),
+        (
+            'PTP Property 0000d406 changed, "artist" to "Joe "JD" Doe"',
+            (0xD406, "artist", 'Joe "JD" Doe'),
+        ),
     ],
 )
 def test_parse_property_change(text: str, parsed: tuple) -> None:

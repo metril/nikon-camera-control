@@ -636,7 +636,10 @@ class FakeCamera:
         if name == "manualfocusdrive" and self.focus_travel is not None:
             pos = self._focus_pos + int(new)
             if not 0 <= pos <= self.focus_travel:  # a move past the end of the lens travel
-                raise CameraOperationFailed("set_config(manualfocusdrive): Unspecified error")
+                raise CameraOperationFailed(
+                    "set_config(manualfocusdrive): Unspecified error",
+                    details={"operation": "set_config(manualfocusdrive)"},
+                )
             self._focus_pos = pos
         if name == "changeafarea":  # like ptp2: "XxY" in full-sensor pixels, live view on
             m = re.fullmatch(r"(\d+)x(\d+)", str(new))

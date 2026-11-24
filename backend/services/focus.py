@@ -361,7 +361,9 @@ class FocusService:
                 try:
                     await self._drive_tracked(_drive, steps, owner)
                 except CameraOperationFailed as e:
-                    if any(h in str(e).lower() for h in _LIMIT_HINTS):
+                    if e.details.get("operation") == "set_config(manualfocusdrive)" and any(
+                        h in str(e).lower() for h in _LIMIT_HINTS
+                    ):
                         end = "closest" if steps < 0 else "farthest"
                         raise FocusLimit(
                             f"The lens is at its {end} focus", details={"steps": steps}

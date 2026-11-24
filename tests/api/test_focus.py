@@ -604,3 +604,11 @@ async def test_drive_switches_manual_focus_liveview_af_and_restores(
     r = await connected_client.post(f"{F}/mf", json={"steps": 50})
     assert r.status_code == 200
     await _until(lambda: fake_camera._values["liveviewaffocus"] == manual)
+
+
+async def test_viewfinder_failure_is_not_focus_limit(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    fake_camera.fail_next("set_config", exc=CameraOperationFailed("Unspecified error"))
+    r = await connected_client.post(f"{F}/mf", json={"steps": 30})
+    assert r.status_code == 502 and r.json()["error"]["code"] == "CAMERA_OPERATION_FAILED"

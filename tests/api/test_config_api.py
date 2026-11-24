@@ -130,6 +130,17 @@ async def test_focus_steps_default_and_order(client: httpx.AsyncClient) -> None:
     assert (cam["focus_step_small"], cam["focus_step_large"]) == (150, 1000)
     r = await client.patch(U, json={"camera": {"focus_step_small": 2000}})
     assert r.status_code == 422 and r.json()["error"]["code"] == "CONFIG_INVALID"
+    assert r.json()["error"]["details"]["errors"][0]["loc"] == ["camera", "focus_step_small"]
     r = await client.patch(U, json={"camera": {"focus_step_small": 40, "focus_step_large": 400}})
     assert r.status_code == 200
     assert r.json()["config"]["camera"]["focus_step_large"] == 400
+
+
+def test_stored_inverted_focus_steps_only_clamp_the_pair(tmp_path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"camera": {"focus_step_small": 2000, "focus_step_large": 500, "filename_prefix": "x"}}'
+    )
+    cam = ConfigStore(path).config.camera
+    assert (cam.focus_step_small, cam.focus_step_large) == (2000, 2000)
+    assert cam.filename_prefix == "x"
