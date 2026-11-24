@@ -531,6 +531,16 @@ class CameraService:
     def capture_timeout_s(self) -> float:
         return float(self._config.config.camera.capture_timeout_s)
 
+    def exposure_hint_s(self) -> float:
+        """Exposure time from the cached shutter speed (0 when unknown or not numeric)."""
+        w = self._settings_map.get("shutterspeed")
+        txt = str(w.value).strip().lower().rstrip("s").strip() if w is not None else ""
+        try:
+            num, _, den = txt.partition("/")
+            return max(0.0, float(num) / float(den) if den else float(num))
+        except (ValueError, ZeroDivisionError):
+            return 0.0
+
     # lifecycle ---------------------------------------------------------------
     async def start(self) -> None:
         """Bind the bus to the running loop and start the worker thread.

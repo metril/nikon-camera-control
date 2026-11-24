@@ -16,14 +16,21 @@ from pathlib import Path
 from backend.api.schemas.common import EventType
 from backend.camera.backend import CameraBackend, CameraFilePath
 from backend.camera.backend import EventType as CamEventType
-from backend.core.camera_service import CameraService, Priority, dedupe_slot_copies
+from backend.core.camera_service import (
+    CameraService,
+    Priority,
+    dedupe_slot_copies,
+    drain_pending_events,
+)
 from backend.core.errors import (
     AppError,
     CameraNotConnected,
+    CameraTimeout,
     DownloadFailed,
     InvalidState,
     NoTargetError,
 )
+from backend.core.state import CameraState
 from backend.core.storage_root import StorageRoot, as_root
 from backend.services.files import FileIndex
 from backend.services.storage import download_files
@@ -43,6 +50,9 @@ def sanitize_prefix(prefix: str | None) -> str:
 class CaptureResult:
     local: list[Path]
     camera_files: list[CameraFilePath]
+
+
+_FIRST_FILE_S = 10.0  # first-file wait beyond the exposure time
 
 
 class CaptureService:
@@ -218,14 +228,22 @@ class CaptureService:
 
         wait_s = self._camera.capture_timeout_s
         quiet = self._camera.quiet_window_s
+        first_s = min(wait_s, _FIRST_FILE_S + self._camera.exposure_hint_s())
+        loop = asyncio.get_running_loop()
 
         def _fire(b: CameraBackend) -> list[CameraFilePath]:
+            # Events already pending (a late NEF, a body-shutter shot) are not this shot's.
+            late: list[CameraFilePath] = []
+            drain_pending_events(b, keep=late)
+            if late:
+                with contextlib.suppress(RuntimeError):
+                    loop.call_soon_threadsafe(self._on_strays, late)
             b.trigger()
             seen: list[CameraFilePath] = []
             # The shot's own file events are never ours: wait for the first (exposure + write),
             # then until a quiet window passes with no further file. Chatter neither ends nor
             # counts.
-            deadline = time.monotonic() + wait_s
+            deadline = time.monotonic() + first_s
             last: float | None = None
             while True:
                 now = time.monotonic()
@@ -234,14 +252,26 @@ class CaptureService:
                     break
                 ev = b.wait_for_event(min(end - now, 0.5))
                 if ev.type == CamEventType.FILE_ADDED and ev.file is not None:
+                    if last is None:  # first file: later ones may follow for the full window
+                        deadline = time.monotonic() + wait_s
                     last = time.monotonic()
                     if ev.file not in seen:
                         seen.append(ev.file)
+                elif ev.type == CamEventType.CAPTURE_COMPLETE and last is None:
+                    break
             return seen
 
-        files = await self._camera.call(
-            _fire, priority=Priority.CAPTURE, timeout=wait_s + quiet + 5.0
-        )
+        prior = await self._camera.transition(CameraState.CAPTURING)
+        try:
+            files = await self._camera.call(
+                _fire, priority=Priority.CAPTURE, timeout=wait_s + first_s + quiet + 5.0
+            )
+        finally:
+            if self._camera.state == CameraState.CAPTURING:
+                with contextlib.suppress(AppError):
+                    await self._camera.transition(prior)
+        if not files:
+            raise CameraTimeout("The camera didn't take a photo. Check focus and the card.")
         self._triggered.extend(f for f in files if f not in self._triggered)
 
     async def _download(

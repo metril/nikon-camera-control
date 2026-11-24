@@ -151,10 +151,13 @@ class FocusService:
         if size is None:
             model = (st.model or "").upper()
             size = next((v for k, v in _MODEL_SIZES.items() if k in model), None)
+        cacheable = True  # false for the preview fallback: it can follow a transient failure
         if size is None:
+            cacheable = False
             with Image.open(io.BytesIO(await self._camera.preview_frame())) as im:
                 size = im.size
-        self._size = (key, size)
+        if cacheable:
+            self._size = (key, size)
         return size
 
     async def set_af_point(self, x: float, y: float) -> tuple[int, int]:

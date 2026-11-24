@@ -293,6 +293,12 @@ describe('LiveViewPanel', () => {
     }
     expect(focus.setPoint).toHaveBeenCalledTimes(1) // 501 remembered: not retried
     expect(focus.autofocus).toHaveBeenCalledTimes(4)
+    useCameraStore().connectedAt = '2026-01-01T00:00:00Z' // reconnect: the body is tried again
+    await nextTick()
+    await ov.trigger('pointerdown', { clientX: 0, clientY: 0 })
+    await ov.trigger('pointerup', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    expect(focus.setPoint).toHaveBeenCalledTimes(2)
     w.unmount()
   })
 

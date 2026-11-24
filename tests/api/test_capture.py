@@ -307,3 +307,39 @@ async def test_trigger_chatter_does_not_end_collection(
     assert (await connected_client.post(f"{C}/trigger")).status_code == 200
     fake_camera._chatter = False
     await _assert_claimed(app, connected_client, tmp_dirs, 1)
+
+
+async def test_trigger_does_not_claim_pending_stray(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera, tmp_dirs
+) -> None:
+    stray = fake_camera.press_shutter()  # a body-shutter shot queued before the trigger
+    assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    cs = app.state.services.get("capture", lambda: None)
+    assert not any(f in cs._triggered for f in stray) and len(cs._triggered) == 1
+    deadline = asyncio.get_running_loop().time() + 5
+    while len(list(tmp_dirs.output_dir.glob("**/*-" + stray[0].name))) != 1:
+        assert asyncio.get_running_loop().time() < deadline
+        await asyncio.sleep(0.02)
+    assert len(list(tmp_dirs.output_dir.glob("**/*.JPG"))) == 1  # the trigger's own is not
+
+
+async def test_trigger_without_file_times_out_and_restores_state(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    store = app.state.config_store
+    short = CameraConfig.model_construct(
+        **{**store.config.camera.model_dump(), "capture_timeout_s": 1.0}
+    )
+    store._config = store.config.model_copy(update={"camera": short})  # noqa: SLF001
+    fake_camera.trigger = lambda: None  # type: ignore[method-assign]  # no shot, no events
+    states: list[str] = []
+    sub = app.state.event_bus.subscribe()
+    r = await connected_client.post(f"{C}/trigger")
+    while not sub._queue.empty():
+        ev = sub._queue.get_nowait()
+        if ev is not None and ev.type.value == "camera_state":
+            states.append(str(ev.data.get("state")))
+    sub.close()
+    assert r.status_code == 504 and "didn't take a photo" in r.json()["error"]["message"]
+    assert "capturing" in states
+    assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"

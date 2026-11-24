@@ -337,3 +337,25 @@ async def test_af_point_unsupported_without_widget(
     del fake_camera._specs["changeafarea"]
     r = await c.post(f"{F}/point", json={"x": 0.5, "y": 0.5})
     assert r.status_code == 501
+
+
+async def test_full_size_not_cached_from_preview_fallback(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    c = connected_client
+    await c.post("/api/v1/liveview/start")
+    from backend.core.errors import CameraOperationFailed
+
+    fake_camera.fail_next("get_config", 1, CameraOperationFailed())  # transient failure
+    from backend.services import focus as focus_mod
+
+    orig = dict(focus_mod._MODEL_SIZES)
+    focus_mod._MODEL_SIZES.clear()
+    try:
+        first = await c.post(f"{F}/point", json={"x": 1, "y": 1})
+        assert first.status_code == 200, first.text
+        assert first.json()["x"] != 5567  # preview-sized fallback, not the sensor size
+        second = await c.post(f"{F}/point", json={"x": 1, "y": 1})
+        assert second.json()["x"] == 5567 and second.json()["y"] == 3711
+    finally:
+        focus_mod._MODEL_SIZES.update(orig)
