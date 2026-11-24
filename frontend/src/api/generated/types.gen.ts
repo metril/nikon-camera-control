@@ -59,6 +59,12 @@ export type ApplyResult = {
      */
     preset_id: string;
     /**
+     * Skipped
+     *
+     * Settings preset: read-only or unsupported settings that were left alone.
+     */
+    skipped?: Array<SkippedSetting>;
+    /**
      * Steps
      *
      * Bracket preset: steps resolved against the camera (nothing was started).
@@ -435,49 +441,55 @@ export type BulbStatus = {
 };
 
 /**
- * CameraConfig
+ * Camera
  */
 export type CameraConfig = {
     /**
-     * Capture Timeout S
-     *
      * Capture timeout
+     *
+     * How long to wait for a photo to arrive before reporting a failure.
      */
     capture_timeout_s?: number;
     /**
-     * Connect Retries
+     * Reconnect attempts
      *
-     * Reconnect attempts after a lost link
+     * How many times to try again after the link is lost.
      */
     connect_retries?: number;
     /**
-     * Connect Timeout S
+     * Connect timeout
      *
-     * Timeout for one connect attempt
+     * How long to wait for the camera before giving up.
      */
     connect_timeout_s?: number;
     /**
-     * Event Quiet Window S
+     * Event quiet period
      *
-     * After a capture, stop draining camera events after this quiet period
+     * After a capture, stop listening for camera events once none arrive for this long.
      */
     event_quiet_window_s?: number;
     /**
-     * Keepalive Enabled
+     * Keep a copy on the camera card
      *
-     * Send periodic keepalives (D500 times out at 60 s)
+     * Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.
+     */
+    keep_card_copy?: boolean;
+    /**
+     * Keep the connection alive
+     *
+     * Send a keepalive now and then. The D500 drops the USB link after 60 s idle.
      */
     keepalive_enabled?: boolean;
     /**
-     * Keepalive Interval S
-     *
      * Keepalive interval
+     *
+     * How often to send a keepalive. Keep it below 60 s.
      */
     keepalive_interval_s?: number;
     /**
-     * Reconnect Interval S
+     * Reconnect delay
      *
-     * Delay between reconnects
+     * Wait this long between reconnect attempts.
      */
     reconnect_interval_s?: number;
 };
@@ -489,43 +501,49 @@ export type CameraConfigPatch = {
     /**
      * Capture Timeout S
      *
-     * Capture timeout
+     * How long to wait for a photo to arrive before reporting a failure.
      */
     capture_timeout_s?: number | null;
     /**
      * Connect Retries
      *
-     * Reconnect attempts after a lost link
+     * How many times to try again after the link is lost.
      */
     connect_retries?: number | null;
     /**
      * Connect Timeout S
      *
-     * Timeout for one connect attempt
+     * How long to wait for the camera before giving up.
      */
     connect_timeout_s?: number | null;
     /**
      * Event Quiet Window S
      *
-     * After a capture, stop draining camera events after this quiet period
+     * After a capture, stop listening for camera events once none arrive for this long.
      */
     event_quiet_window_s?: number | null;
     /**
+     * Keep Card Copy
+     *
+     * Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.
+     */
+    keep_card_copy?: boolean | null;
+    /**
      * Keepalive Enabled
      *
-     * Send periodic keepalives (D500 times out at 60 s)
+     * Send a keepalive now and then. The D500 drops the USB link after 60 s idle.
      */
     keepalive_enabled?: boolean | null;
     /**
      * Keepalive Interval S
      *
-     * Keepalive interval
+     * How often to send a keepalive. Keep it below 60 s.
      */
     keepalive_interval_s?: number | null;
     /**
      * Reconnect Interval S
      *
-     * Delay between reconnects
+     * Wait this long between reconnect attempts.
      */
     reconnect_interval_s?: number | null;
 };
@@ -1041,7 +1059,7 @@ export type ConfigPatch = {
     /**
      * Cors Origins
      *
-     * Allowed CORS origins; empty = same-origin only
+     * Other sites allowed to call the API. Leave empty to allow only this site.
      */
     cors_origins?: Array<string> | null;
     /**
@@ -1507,6 +1525,12 @@ export type InfoOut = {
      */
     ffmpeg_available: boolean;
     /**
+     * Libgphoto2 Version
+     *
+     * libgphoto2 version in use; none for the demo camera
+     */
+    libgphoto2_version?: string | null;
+    /**
      * Output Free Bytes
      *
      * Free disk space of the output dir
@@ -1686,31 +1710,31 @@ export type LastFrame = {
 };
 
 /**
- * LiveViewConfig
+ * Live view
  */
 export type LiveViewConfig = {
     /**
-     * Jpeg Quality
+     * JPEG quality
      *
-     * Re-encode quality for streamed frames
+     * Quality used when re-encoding streamed frames.
      */
     jpeg_quality?: number;
     /**
-     * Max Width
+     * Maximum width
      *
-     * Downscale frames wider than this (px); None = off
+     * Shrink frames wider than this, in pixels. Leave empty to turn off.
      */
     max_width?: number | null;
     /**
-     * Quality
+     * Frame size
      *
-     * Frame size preset
+     * Size of the frames the camera sends.
      */
     quality?: 'small' | 'medium' | 'large';
     /**
-     * Target Fps
+     * Target frame rate
      *
-     * Target live view frame rate
+     * Higher is smoother but uses more USB bandwidth. 5-15 fps is typical.
      */
     target_fps?: number;
 };
@@ -1722,25 +1746,25 @@ export type LiveViewConfigPatch = {
     /**
      * Jpeg Quality
      *
-     * Re-encode quality for streamed frames
+     * Quality used when re-encoding streamed frames.
      */
     jpeg_quality?: number | null;
     /**
      * Max Width
      *
-     * Downscale frames wider than this (px); None = off
+     * Shrink frames wider than this, in pixels. Leave empty to turn off.
      */
     max_width?: number | null;
     /**
      * Quality
      *
-     * Frame size preset
+     * Size of the frames the camera sends.
      */
     quality?: 'small' | 'medium' | 'large' | null;
     /**
      * Target Fps
      *
-     * Target live view frame rate
+     * Higher is smoother but uses more USB bandwidth. 5-15 fps is typical.
      */
     target_fps?: number | null;
 };
@@ -2123,13 +2147,13 @@ export type LocationsOut = {
 };
 
 /**
- * MediaConfig
+ * Media
  */
 export type MediaConfig = {
     /**
-     * Thumbnail Size
+     * Thumbnail size
      *
-     * Thumbnail longest edge (px)
+     * Length of the longest thumbnail edge, in pixels.
      */
     thumbnail_size?: number;
 };
@@ -2141,7 +2165,7 @@ export type MediaConfigPatch = {
     /**
      * Thumbnail Size
      *
-     * Thumbnail longest edge (px)
+     * Length of the longest thumbnail edge, in pixels.
      */
     thumbnail_size?: number | null;
 };
@@ -3228,6 +3252,22 @@ export type SettingsPresetIn = {
 };
 
 /**
+ * SkippedSetting
+ */
+export type SkippedSetting = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Reason
+     *
+     * Why it was not applied (read-only now, or not on this body).
+     */
+    reason: string;
+};
+
+/**
  * SmbTest
  */
 export type SmbTest = {
@@ -3350,35 +3390,37 @@ export type StorageConfigPatch = {
     /**
      * Backup Ids
      *
-     * Backup locations
+     * Locations used for backups.
      */
     backup_ids?: Array<string> | null;
     /**
      * Backup Interval Min
      *
-     * Periodic backup interval (minutes)
+     * How often backups run.
      */
     backup_interval_min?: number | null;
     /**
      * Deep Verify
      *
-     * Backups re-hash existing destination files on every run
+     * Check every file already on the backup against its checksum on each run.
      */
     deep_verify?: boolean | null;
     /**
      * Locations
+     *
+     * Configured storage locations.
      */
     locations?: Array<StorageLocation> | null;
     /**
      * Sidecars
      *
-     * Write a <file>.sha256 next to every file
+     * Save a SHA-256 checksum file next to every photo.
      */
     sidecars?: boolean | null;
     /**
      * Target Id
      *
-     * Location receiving all captures
+     * Location that receives every photo.
      */
     target_id?: string | null;
 };
@@ -3477,25 +3519,25 @@ export type TimelapseCompletedEvent = {
 };
 
 /**
- * TimelapseConfig
+ * Time-lapse
  */
 export type TimelapseConfig = {
     /**
-     * Failure Budget
+     * Failed frames before stopping
      *
-     * Consecutive failed frames before abort
+     * Stop the time-lapse after this many failed frames in a row.
      */
     failure_budget?: number;
     /**
-     * Max Duration S
+     * Longest session
      *
-     * Maximum session length
+     * A time-lapse stops after this long.
      */
     max_duration_s?: number;
     /**
-     * Min Interval S
+     * Shortest interval
      *
-     * Minimum frame interval
+     * The shortest time allowed between frames.
      */
     min_interval_s?: number;
 };
@@ -3507,19 +3549,19 @@ export type TimelapseConfigPatch = {
     /**
      * Failure Budget
      *
-     * Consecutive failed frames before abort
+     * Stop the time-lapse after this many failed frames in a row.
      */
     failure_budget?: number | null;
     /**
      * Max Duration S
      *
-     * Maximum session length
+     * A time-lapse stops after this long.
      */
     max_duration_s?: number | null;
     /**
      * Min Interval S
      *
-     * Minimum frame interval
+     * The shortest time allowed between frames.
      */
     min_interval_s?: number | null;
 };
@@ -3867,43 +3909,43 @@ export type VerifyRequest = {
 };
 
 /**
- * VideoConfig
+ * Video
  */
 export type VideoConfig = {
     /**
      * Codec
      *
-     * ffmpeg codec
+     * Video codec used by ffmpeg.
      */
     codec?: 'libx264' | 'libx265' | 'libvpx-vp9';
     /**
-     * Crf
+     * CRF
      *
-     * Constant rate factor (lower is better)
+     * Constant rate factor. Lower means better quality and larger files.
      */
     crf?: number;
     /**
-     * Ffmpeg Path
+     * ffmpeg path
      *
-     * Path to the ffmpeg binary; None = autodetect
+     * Path to the ffmpeg program. Leave empty to detect it automatically.
      */
     ffmpeg_path?: string | null;
     /**
-     * Fps
+     * Frame rate
      *
-     * Output frame rate
+     * Frame rate of the video.
      */
     fps?: number;
     /**
-     * Preset
+     * Encoder preset
      *
-     * ffmpeg preset
+     * Slower presets make smaller files.
      */
     preset?: 'ultrafast' | 'superfast' | 'veryfast' | 'faster' | 'fast' | 'medium' | 'slow' | 'slower' | 'veryslow';
     /**
-     * Timeout S
+     * Encode timeout
      *
-     * Upper bound for one ffmpeg run (s)
+     * Stop an ffmpeg run that takes longer than this.
      */
     timeout_s?: number;
 };
@@ -3915,37 +3957,37 @@ export type VideoConfigPatch = {
     /**
      * Codec
      *
-     * ffmpeg codec
+     * Video codec used by ffmpeg.
      */
     codec?: 'libx264' | 'libx265' | 'libvpx-vp9' | null;
     /**
      * Crf
      *
-     * Constant rate factor (lower is better)
+     * Constant rate factor. Lower means better quality and larger files.
      */
     crf?: number | null;
     /**
      * Ffmpeg Path
      *
-     * Path to the ffmpeg binary; None = autodetect
+     * Path to the ffmpeg program. Leave empty to detect it automatically.
      */
     ffmpeg_path?: string | null;
     /**
      * Fps
      *
-     * Output frame rate
+     * Frame rate of the video.
      */
     fps?: number | null;
     /**
      * Preset
      *
-     * ffmpeg preset
+     * Slower presets make smaller files.
      */
     preset?: 'ultrafast' | 'superfast' | 'veryfast' | 'faster' | 'fast' | 'medium' | 'slow' | 'slower' | 'veryslow' | null;
     /**
      * Timeout S
      *
-     * Upper bound for one ffmpeg run (s)
+     * Stop an ffmpeg run that takes longer than this.
      */
     timeout_s?: number | null;
 };

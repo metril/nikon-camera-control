@@ -55,7 +55,9 @@ async function submit() {
         placeholder="Paste key"
         data-autofocus
       />
-      <p v-if="error" class="text-sm text-red-400" role="alert" data-test="error">{{ error }}</p>
+      <p v-if="error" class="text-sm text-camera-danger" role="alert" data-test="error">
+        {{ error }}
+      </p>
     </form>
     <template #footer>
       <UiButton

@@ -3,9 +3,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import StorageSection from './StorageSection.vue'
 import StorageChip from '@/components/shell/StorageChip.vue'
-import CaptureControls from '@/components/shoot/CaptureControls.vue'
+import CaptureSide from '@/components/shoot/CaptureSide.vue'
 import LocalFiles from '@/components/gallery/LocalFiles.vue'
 import { useStorageStore } from '@/stores/storage'
+import { useSessionsStore } from '@/stores/sessions'
 import { useToastsStore } from '@/stores/toasts'
 import { useCameraStore } from '@/stores/camera'
 import { useFilesStore } from '@/stores/files'
@@ -141,6 +142,35 @@ describe('StorageSection', () => {
   })
 })
 
+describe('offload session picker', () => {
+  it('lists sessions by name instead of asking for an id', async () => {
+    const { pinia, s } = setup(
+      [loc({ mounted: true }), loc({ id: 'usb-b', name: 'B', mounted: true })],
+      'usb-a',
+    )
+    s.offload = vi.fn(async () => ({}))
+    const sessions = useSessionsStore()
+    sessions.fetch = vi.fn(async () => {
+      sessions.items = [{ id: 's1', name: 'Moon', created: '2026-01-02T00:00:00Z' }]
+    })
+    const w = mount(StorageSection, { global: { plugins: [pinia] }, attachTo: document.body })
+    await w.find('[data-test="offload-open"]').trigger('click')
+    await flushPromises()
+    const scopes = [...document.querySelectorAll('[data-test="offload-dialog"] button')]
+    scopes.find((b) => b.textContent.trim() === 'One session').click()
+    await flushPromises()
+    const picker = document.querySelector('[data-test="session-picker"] select')
+    expect(picker.textContent).toContain('Moon')
+    expect(document.body.textContent).not.toContain('Session id')
+    document.querySelector('[data-test="offload-go"]').click()
+    await flushPromises()
+    expect(s.offload).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { kind: 'session', session_id: 's1' } }),
+    )
+    w.unmount()
+  })
+})
+
 describe('storage events and chip', () => {
   it('warns when an SMB share is mounted without encryption', () => {
     const smb = { kind: 'smb', id: 'smb-nas', name: 'NAS', mounted: true }
@@ -182,9 +212,9 @@ describe('NO_TARGET handling', () => {
   it('capture is disabled with a hint when there is no target', () => {
     const { pinia } = setup([], null)
     useCameraStore().connected = true
-    const w = mnt(CaptureControls, pinia)
-    expect(w.find('[data-testid="capture-btn"]').attributes('disabled')).toBeDefined()
-    expect(w.find('[data-testid="trigger-btn"]').attributes('disabled')).toBeDefined()
+    useCameraStore().state = 'idle'
+    const w = mnt(CaptureSide, pinia)
+    expect(w.find('[data-testid="capture-btn"]').attributes('aria-disabled')).toBe('true')
     expect(w.text()).toContain('No storage target')
   })
 

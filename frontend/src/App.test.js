@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { useCameraStore } from '@/stores/camera'
-import { useCaptureStore } from '@/stores/capture'
 import { useAuthStore } from '@/stores/auth'
+import { useEventsStore } from '@/stores/events'
+import { resetLayoutMode, useLayoutMode } from '@/composables/useLayoutMode'
 
 const { log, view } = await vi.hoisted(async () => {
   const { defineComponent, h, onActivated, onDeactivated } = await import('vue')
@@ -22,7 +23,6 @@ const { log, view } = await vi.hoisted(async () => {
 vi.mock('@/views/ShootView.vue', () => ({ default: view('shoot') }))
 vi.mock('@/views/TimelapseView.vue', () => ({ default: view('timelapse') }))
 vi.mock('@/views/GalleryView.vue', () => ({ default: view('gallery') }))
-vi.mock('@/views/AdvancedView.vue', () => ({ default: view('advanced') }))
 vi.mock('@/views/SettingsView.vue', () => ({ default: view('settings') }))
 vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {} }))
 
@@ -37,41 +37,18 @@ async function setup() {
   camera.fetchStorage = vi.fn(async () => {})
   camera.state = 'idle'
   camera.connected = true
-  const capture = useCaptureStore()
-  capture.capture = vi.fn(async () => {})
   const w = mount(App, { global: { plugins: [pinia] }, attachTo: document.body })
   await flushPromises()
-  return { w, camera, capture }
+  return { w, camera }
 }
 
 describe('App shell', () => {
   beforeEach(() => {
     location.hash = '#/shoot'
     localStorage.clear()
+    resetLayoutMode()
     log.length = 0
     document.body.innerHTML = ''
-  })
-
-  it('Space captures only on the Shoot tab and not from a focused button', async () => {
-    const { w, capture } = await setup()
-    press(' ')
-    expect(capture.capture).toHaveBeenCalledTimes(1)
-    const btn = w.find('#shoot-btn').element
-    press(' ', btn)
-    expect(capture.capture).toHaveBeenCalledTimes(1)
-    press('g')
-    await flushPromises()
-    press(' ')
-    expect(capture.capture).toHaveBeenCalledTimes(1)
-    w.unmount()
-  })
-
-  it('Space also captures while live view is running (regression)', async () => {
-    const { w, camera, capture } = await setup()
-    camera.state = 'liveview'
-    press(' ')
-    expect(capture.capture).toHaveBeenCalledTimes(1)
-    w.unmount()
   })
 
   it('g/t switch tabs, update the hash and keep views alive with activation hooks', async () => {
@@ -92,11 +69,26 @@ describe('App shell', () => {
     w.unmount()
   })
 
+  it('does not know an Advanced tab: an old link falls back to Shoot', async () => {
+    location.hash = '#/advanced'
+    const { w } = await setup()
+    expect(w.find('[data-view="shoot"]').exists()).toBe(true)
+    expect(w.findAll('header nav a').map((a) => a.text())).toEqual([
+      'Shoot',
+      'Time-lapse',
+      'Gallery',
+      'Settings',
+    ])
+    w.unmount()
+  })
+
   it('? opens the shortcuts modal and hotkeys are suspended while it is open', async () => {
     const { w } = await setup()
     press('?')
     await flushPromises()
-    expect(document.body.querySelector('[role="dialog"]').textContent).toContain('Capture')
+    const dialog = document.body.querySelector('[role="dialog"]')
+    expect(dialog.textContent).toContain('Take a photo')
+    expect(dialog.textContent).toContain('Space')
     press('g')
     await flushPromises()
     expect(location.hash).toBe('#/shoot')
@@ -114,15 +106,45 @@ describe('App shell', () => {
     w.unmount()
   })
 
-  it('scrolls the active tab into view in the horizontally scrollable tab bar', async () => {
-    const spy = vi.fn()
-    Element.prototype.scrollIntoView = spy
-    const { w } = await setup()
-    spy.mockClear()
-    press('g')
+  it('shows a red stripe when disconnected, amber when busy and none when ready', async () => {
+    const { w, camera } = await setup()
+    const stripe = () => w.find('[data-test="stripe"]').classes()
+    expect(stripe()).not.toContain('off')
+    expect(stripe()).not.toContain('busy')
+    camera.leasedBy = 'bulb'
     await flushPromises()
-    expect(spy).toHaveBeenCalledWith({ inline: 'center', block: 'nearest' })
-    expect(spy.mock.contexts.at(-1).textContent).toContain('Gallery')
+    expect(stripe()).toContain('busy')
+    camera.leasedBy = null
+    camera.reset()
+    await flushPromises()
+    expect(stripe()).toContain('off')
+    w.unmount()
+  })
+
+  it('touch layout swaps the header tabs for a bottom tab bar with icons and labels', async () => {
+    const { w } = await setup()
+    expect(w.find('[data-test="bottomnav"]').exists()).toBe(false)
+    useLayoutMode().setPref('touch')
+    await flushPromises()
+    expect(document.documentElement.dataset.layout).toBe('touch')
+    const nav = w.find('[data-test="bottomnav"]')
+    expect(nav.findAll('a').map((a) => a.text())).toEqual([
+      'Shoot',
+      'Time-lapse',
+      'Gallery',
+      'Settings',
+    ])
+    expect(nav.find('svg').exists()).toBe(true)
+    await nav.findAll('a')[2].trigger('click')
+    expect(location.hash).toBe('#/gallery')
+    w.unmount()
+  })
+
+  it('explains a rejected origin and points to Settings', async () => {
+    const { w } = await setup()
+    useEventsStore().status = 'forbidden'
+    await flushPromises()
+    expect(w.find('[data-test="origin-blocked"]').text()).toContain('Allowed origins')
     w.unmount()
   })
 })

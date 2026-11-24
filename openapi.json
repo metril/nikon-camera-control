@@ -88,6 +88,14 @@
             "title": "Preset Id",
             "type": "string"
           },
+          "skipped": {
+            "description": "Settings preset: read-only or unsupported settings that were left alone.",
+            "items": {
+              "$ref": "#/components/schemas/SkippedSetting"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
           "steps": {
             "description": "Bracket preset: steps resolved against the camera (nothing was started).",
             "items": {
@@ -736,60 +744,66 @@
         "properties": {
           "capture_timeout_s": {
             "default": 30.0,
-            "description": "Capture timeout",
+            "description": "How long to wait for a photo to arrive before reporting a failure.",
             "maximum": 300.0,
             "minimum": 1.0,
-            "title": "Capture Timeout S",
+            "title": "Capture timeout",
             "type": "number"
           },
           "connect_retries": {
             "default": 5,
-            "description": "Reconnect attempts after a lost link",
+            "description": "How many times to try again after the link is lost.",
             "maximum": 50.0,
             "minimum": 0.0,
-            "title": "Connect Retries",
+            "title": "Reconnect attempts",
             "type": "integer"
           },
           "connect_timeout_s": {
             "default": 10.0,
-            "description": "Timeout for one connect attempt",
+            "description": "How long to wait for the camera before giving up.",
             "maximum": 120.0,
             "minimum": 1.0,
-            "title": "Connect Timeout S",
+            "title": "Connect timeout",
             "type": "number"
           },
           "event_quiet_window_s": {
             "default": 1.0,
-            "description": "After a capture, stop draining camera events after this quiet period",
+            "description": "After a capture, stop listening for camera events once none arrive for this long.",
             "maximum": 10.0,
             "minimum": 0.0,
-            "title": "Event Quiet Window S",
+            "title": "Event quiet period",
             "type": "number"
+          },
+          "keep_card_copy": {
+            "default": true,
+            "description": "Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.",
+            "title": "Keep a copy on the camera card",
+            "type": "boolean"
           },
           "keepalive_enabled": {
             "default": true,
-            "description": "Send periodic keepalives (D500 times out at 60 s)",
-            "title": "Keepalive Enabled",
+            "description": "Send a keepalive now and then. The D500 drops the USB link after 60 s idle.",
+            "title": "Keep the connection alive",
             "type": "boolean"
           },
           "keepalive_interval_s": {
             "default": 30.0,
-            "description": "Keepalive interval",
+            "description": "How often to send a keepalive. Keep it below 60 s.",
             "maximum": 55.0,
             "minimum": 5.0,
-            "title": "Keepalive Interval S",
+            "title": "Keepalive interval",
             "type": "number"
           },
           "reconnect_interval_s": {
             "default": 2.0,
-            "description": "Delay between reconnects",
+            "description": "Wait this long between reconnect attempts.",
             "maximum": 60.0,
             "minimum": 0.5,
-            "title": "Reconnect Interval S",
+            "title": "Reconnect delay",
             "type": "number"
           }
         },
-        "title": "CameraConfig",
+        "title": "Camera",
         "type": "object"
       },
       "CameraConfigPatch": {
@@ -804,7 +818,7 @@
                 "type": "null"
               }
             ],
-            "description": "Capture timeout",
+            "description": "How long to wait for a photo to arrive before reporting a failure.",
             "title": "Capture Timeout S"
           },
           "connect_retries": {
@@ -816,7 +830,7 @@
                 "type": "null"
               }
             ],
-            "description": "Reconnect attempts after a lost link",
+            "description": "How many times to try again after the link is lost.",
             "title": "Connect Retries"
           },
           "connect_timeout_s": {
@@ -828,7 +842,7 @@
                 "type": "null"
               }
             ],
-            "description": "Timeout for one connect attempt",
+            "description": "How long to wait for the camera before giving up.",
             "title": "Connect Timeout S"
           },
           "event_quiet_window_s": {
@@ -840,8 +854,20 @@
                 "type": "null"
               }
             ],
-            "description": "After a capture, stop draining camera events after this quiet period",
+            "description": "After a capture, stop listening for camera events once none arrive for this long.",
             "title": "Event Quiet Window S"
+          },
+          "keep_card_copy": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.",
+            "title": "Keep Card Copy"
           },
           "keepalive_enabled": {
             "anyOf": [
@@ -852,7 +878,7 @@
                 "type": "null"
               }
             ],
-            "description": "Send periodic keepalives (D500 times out at 60 s)",
+            "description": "Send a keepalive now and then. The D500 drops the USB link after 60 s idle.",
             "title": "Keepalive Enabled"
           },
           "keepalive_interval_s": {
@@ -864,7 +890,7 @@
                 "type": "null"
               }
             ],
-            "description": "Keepalive interval",
+            "description": "How often to send a keepalive. Keep it below 60 s.",
             "title": "Keepalive Interval S"
           },
           "reconnect_interval_s": {
@@ -876,7 +902,7 @@
                 "type": "null"
               }
             ],
-            "description": "Delay between reconnects",
+            "description": "Wait this long between reconnect attempts.",
             "title": "Reconnect Interval S"
           }
         },
@@ -1703,7 +1729,7 @@
                 "type": "null"
               }
             ],
-            "description": "Allowed CORS origins; empty = same-origin only",
+            "description": "Other sites allowed to call the API. Leave empty to allow only this site.",
             "title": "Cors Origins"
           },
           "demo_camera": {
@@ -2419,6 +2445,18 @@
             "title": "Ffmpeg Available",
             "type": "boolean"
           },
+          "libgphoto2_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "libgphoto2 version in use; none for the demo camera",
+            "title": "Libgphoto2 Version"
+          },
           "output_free_bytes": {
             "anyOf": [
               {
@@ -2728,10 +2766,10 @@
         "properties": {
           "jpeg_quality": {
             "default": 75,
-            "description": "Re-encode quality for streamed frames",
+            "description": "Quality used when re-encoding streamed frames.",
             "maximum": 100.0,
             "minimum": 10.0,
-            "title": "Jpeg Quality",
+            "title": "JPEG quality",
             "type": "integer"
           },
           "max_width": {
@@ -2745,30 +2783,30 @@
                 "type": "null"
               }
             ],
-            "description": "Downscale frames wider than this (px); None = off",
-            "title": "Max Width"
+            "description": "Shrink frames wider than this, in pixels. Leave empty to turn off.",
+            "title": "Maximum width"
           },
           "quality": {
             "default": "medium",
-            "description": "Frame size preset",
+            "description": "Size of the frames the camera sends.",
             "enum": [
               "small",
               "medium",
               "large"
             ],
-            "title": "Quality",
+            "title": "Frame size",
             "type": "string"
           },
           "target_fps": {
             "default": 8,
-            "description": "Target live view frame rate",
+            "description": "Higher is smoother but uses more USB bandwidth. 5-15 fps is typical.",
             "maximum": 30.0,
             "minimum": 1.0,
-            "title": "Target Fps",
+            "title": "Target frame rate",
             "type": "integer"
           }
         },
-        "title": "LiveViewConfig",
+        "title": "Live view",
         "type": "object"
       },
       "LiveViewConfigPatch": {
@@ -2783,7 +2821,7 @@
                 "type": "null"
               }
             ],
-            "description": "Re-encode quality for streamed frames",
+            "description": "Quality used when re-encoding streamed frames.",
             "title": "Jpeg Quality"
           },
           "max_width": {
@@ -2795,7 +2833,7 @@
                 "type": "null"
               }
             ],
-            "description": "Downscale frames wider than this (px); None = off",
+            "description": "Shrink frames wider than this, in pixels. Leave empty to turn off.",
             "title": "Max Width"
           },
           "quality": {
@@ -2812,7 +2850,7 @@
                 "type": "null"
               }
             ],
-            "description": "Frame size preset",
+            "description": "Size of the frames the camera sends.",
             "title": "Quality"
           },
           "target_fps": {
@@ -2824,7 +2862,7 @@
                 "type": "null"
               }
             ],
-            "description": "Target live view frame rate",
+            "description": "Higher is smoother but uses more USB bandwidth. 5-15 fps is typical.",
             "title": "Target Fps"
           }
         },
@@ -3498,14 +3536,14 @@
         "properties": {
           "thumbnail_size": {
             "default": 200,
-            "description": "Thumbnail longest edge (px)",
+            "description": "Length of the longest thumbnail edge, in pixels.",
             "maximum": 1024.0,
             "minimum": 32.0,
-            "title": "Thumbnail Size",
+            "title": "Thumbnail size",
             "type": "integer"
           }
         },
-        "title": "MediaConfig",
+        "title": "Media",
         "type": "object"
       },
       "MediaConfigPatch": {
@@ -3520,7 +3558,7 @@
                 "type": "null"
               }
             ],
-            "description": "Thumbnail longest edge (px)",
+            "description": "Length of the longest thumbnail edge, in pixels.",
             "title": "Thumbnail Size"
           }
         },
@@ -5397,6 +5435,25 @@
         "title": "SettingsPresetIn",
         "type": "object"
       },
+      "SkippedSetting": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it was not applied (read-only now, or not on this body).",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "reason"
+        ],
+        "title": "SkippedSetting",
+        "type": "object"
+      },
       "SmbTest": {
         "properties": {
           "domain": {
@@ -5603,7 +5660,7 @@
                 "type": "null"
               }
             ],
-            "description": "Backup locations",
+            "description": "Locations used for backups.",
             "title": "Backup Ids"
           },
           "backup_interval_min": {
@@ -5615,7 +5672,7 @@
                 "type": "null"
               }
             ],
-            "description": "Periodic backup interval (minutes)",
+            "description": "How often backups run.",
             "title": "Backup Interval Min"
           },
           "deep_verify": {
@@ -5627,7 +5684,7 @@
                 "type": "null"
               }
             ],
-            "description": "Backups re-hash existing destination files on every run",
+            "description": "Check every file already on the backup against its checksum on each run.",
             "title": "Deep Verify"
           },
           "locations": {
@@ -5642,6 +5699,7 @@
                 "type": "null"
               }
             ],
+            "description": "Configured storage locations.",
             "title": "Locations"
           },
           "sidecars": {
@@ -5653,7 +5711,7 @@
                 "type": "null"
               }
             ],
-            "description": "Write a <file>.sha256 next to every file",
+            "description": "Save a SHA-256 checksum file next to every photo.",
             "title": "Sidecars"
           },
           "target_id": {
@@ -5665,7 +5723,7 @@
                 "type": "null"
               }
             ],
-            "description": "Location receiving all captures",
+            "description": "Location that receives every photo.",
             "title": "Target Id"
           }
         },
@@ -5839,30 +5897,30 @@
         "properties": {
           "failure_budget": {
             "default": 5,
-            "description": "Consecutive failed frames before abort",
+            "description": "Stop the time-lapse after this many failed frames in a row.",
             "maximum": 100.0,
             "minimum": 1.0,
-            "title": "Failure Budget",
+            "title": "Failed frames before stopping",
             "type": "integer"
           },
           "max_duration_s": {
             "default": 86400,
-            "description": "Maximum session length",
+            "description": "A time-lapse stops after this long.",
             "maximum": 2592000.0,
             "minimum": 60.0,
-            "title": "Max Duration S",
+            "title": "Longest session",
             "type": "integer"
           },
           "min_interval_s": {
             "default": 1.0,
-            "description": "Minimum frame interval",
+            "description": "The shortest time allowed between frames.",
             "maximum": 3600.0,
             "minimum": 0.1,
-            "title": "Min Interval S",
+            "title": "Shortest interval",
             "type": "number"
           }
         },
-        "title": "TimelapseConfig",
+        "title": "Time-lapse",
         "type": "object"
       },
       "TimelapseConfigPatch": {
@@ -5877,7 +5935,7 @@
                 "type": "null"
               }
             ],
-            "description": "Consecutive failed frames before abort",
+            "description": "Stop the time-lapse after this many failed frames in a row.",
             "title": "Failure Budget"
           },
           "max_duration_s": {
@@ -5889,7 +5947,7 @@
                 "type": "null"
               }
             ],
-            "description": "Maximum session length",
+            "description": "A time-lapse stops after this long.",
             "title": "Max Duration S"
           },
           "min_interval_s": {
@@ -5901,7 +5959,7 @@
                 "type": "null"
               }
             ],
-            "description": "Minimum frame interval",
+            "description": "The shortest time allowed between frames.",
             "title": "Min Interval S"
           }
         },
@@ -6524,7 +6582,7 @@
         "properties": {
           "codec": {
             "default": "libx264",
-            "description": "ffmpeg codec",
+            "description": "Video codec used by ffmpeg.",
             "enum": [
               "libx264",
               "libx265",
@@ -6535,10 +6593,10 @@
           },
           "crf": {
             "default": 23,
-            "description": "Constant rate factor (lower is better)",
+            "description": "Constant rate factor. Lower means better quality and larger files.",
             "maximum": 51.0,
             "minimum": 0.0,
-            "title": "Crf",
+            "title": "CRF",
             "type": "integer"
           },
           "ffmpeg_path": {
@@ -6550,20 +6608,20 @@
                 "type": "null"
               }
             ],
-            "description": "Path to the ffmpeg binary; None = autodetect",
-            "title": "Ffmpeg Path"
+            "description": "Path to the ffmpeg program. Leave empty to detect it automatically.",
+            "title": "ffmpeg path"
           },
           "fps": {
             "default": 24,
-            "description": "Output frame rate",
+            "description": "Frame rate of the video.",
             "maximum": 120.0,
             "minimum": 1.0,
-            "title": "Fps",
+            "title": "Frame rate",
             "type": "integer"
           },
           "preset": {
             "default": "medium",
-            "description": "ffmpeg preset",
+            "description": "Slower presets make smaller files.",
             "enum": [
               "ultrafast",
               "superfast",
@@ -6575,19 +6633,19 @@
               "slower",
               "veryslow"
             ],
-            "title": "Preset",
+            "title": "Encoder preset",
             "type": "string"
           },
           "timeout_s": {
             "default": 3600,
-            "description": "Upper bound for one ffmpeg run (s)",
+            "description": "Stop an ffmpeg run that takes longer than this.",
             "maximum": 86400.0,
             "minimum": 10.0,
-            "title": "Timeout S",
+            "title": "Encode timeout",
             "type": "integer"
           }
         },
-        "title": "VideoConfig",
+        "title": "Video",
         "type": "object"
       },
       "VideoConfigPatch": {
@@ -6607,7 +6665,7 @@
                 "type": "null"
               }
             ],
-            "description": "ffmpeg codec",
+            "description": "Video codec used by ffmpeg.",
             "title": "Codec"
           },
           "crf": {
@@ -6619,7 +6677,7 @@
                 "type": "null"
               }
             ],
-            "description": "Constant rate factor (lower is better)",
+            "description": "Constant rate factor. Lower means better quality and larger files.",
             "title": "Crf"
           },
           "ffmpeg_path": {
@@ -6631,7 +6689,7 @@
                 "type": "null"
               }
             ],
-            "description": "Path to the ffmpeg binary; None = autodetect",
+            "description": "Path to the ffmpeg program. Leave empty to detect it automatically.",
             "title": "Ffmpeg Path"
           },
           "fps": {
@@ -6643,7 +6701,7 @@
                 "type": "null"
               }
             ],
-            "description": "Output frame rate",
+            "description": "Frame rate of the video.",
             "title": "Fps"
           },
           "preset": {
@@ -6666,7 +6724,7 @@
                 "type": "null"
               }
             ],
-            "description": "ffmpeg preset",
+            "description": "Slower presets make smaller files.",
             "title": "Preset"
           },
           "timeout_s": {
@@ -6678,7 +6736,7 @@
                 "type": "null"
               }
             ],
-            "description": "Upper bound for one ffmpeg run (s)",
+            "description": "Stop an ffmpeg run that takes longer than this.",
             "title": "Timeout S"
           }
         },
@@ -6767,7 +6825,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {

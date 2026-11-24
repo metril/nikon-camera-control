@@ -26,7 +26,13 @@ router = APIRouter(
 
 def build_capture_service(s: State) -> CaptureService:
     files = s.services.get("files", lambda: build_file_service(s))
-    return CaptureService(s.camera_service, s.storage, files.index)
+    cfg = s.config_store
+    return CaptureService(
+        s.camera_service,
+        s.storage,
+        files.index,
+        keep_card_copy=lambda: cfg.config.camera.keep_card_copy,
+    )
 
 
 get_capture = service_dep("capture", build_capture_service)

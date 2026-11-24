@@ -31,66 +31,137 @@ class _Section(BaseModel):
 
 
 class CameraConfig(_Section):
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Camera")
+
     keepalive_enabled: bool = Field(
-        default=True, description="Send periodic keepalives (D500 times out at 60 s)"
+        default=True,
+        title="Keep the connection alive",
+        description="Send a keepalive now and then. The D500 drops the USB link after 60 s idle.",
     )
     keepalive_interval_s: float = Field(
-        default=30.0, ge=5.0, le=55.0, description="Keepalive interval"
+        default=30.0,
+        ge=5.0,
+        le=55.0,
+        title="Keepalive interval",
+        description="How often to send a keepalive. Keep it below 60 s.",
     )
     connect_timeout_s: float = Field(
-        default=10.0, ge=1.0, le=120.0, description="Timeout for one connect attempt"
+        default=10.0,
+        ge=1.0,
+        le=120.0,
+        title="Connect timeout",
+        description="How long to wait for the camera before giving up.",
     )
     connect_retries: int = Field(
-        default=5, ge=0, le=50, description="Reconnect attempts after a lost link"
+        default=5,
+        ge=0,
+        le=50,
+        title="Reconnect attempts",
+        description="How many times to try again after the link is lost.",
     )
     reconnect_interval_s: float = Field(
-        default=2.0, ge=0.5, le=60.0, description="Delay between reconnects"
+        default=2.0,
+        ge=0.5,
+        le=60.0,
+        title="Reconnect delay",
+        description="Wait this long between reconnect attempts.",
     )
-    capture_timeout_s: float = Field(default=30.0, ge=1.0, le=300.0, description="Capture timeout")
+    capture_timeout_s: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        title="Capture timeout",
+        description="How long to wait for a photo to arrive before reporting a failure.",
+    )
     event_quiet_window_s: float = Field(
         default=1.0,
         ge=0.0,
         le=10.0,
-        description="After a capture, stop draining camera events after this quiet period",
+        title="Event quiet period",
+        description="After a capture, stop listening for camera events once none arrive "
+        "for this long.",
+    )
+    keep_card_copy: bool = Field(
+        default=True,
+        title="Keep a copy on the camera card",
+        description="Turn off to delete the card copy once the download is verified. "
+        "Only applies when the camera saves to the memory card.",
     )
 
 
 class LiveViewConfig(_Section):
-    target_fps: int = Field(default=8, ge=1, le=30, description="Target live view frame rate")
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Live view")
+
+    target_fps: int = Field(
+        default=8,
+        ge=1,
+        le=30,
+        title="Target frame rate",
+        description="Higher is smoother but uses more USB bandwidth. 5-15 fps is typical.",
+    )
     quality: Literal["small", "medium", "large"] = Field(
-        default="medium", description="Frame size preset"
+        default="medium", title="Frame size", description="Size of the frames the camera sends."
     )
     jpeg_quality: int = Field(
-        default=75, ge=10, le=100, description="Re-encode quality for streamed frames"
+        default=75,
+        ge=10,
+        le=100,
+        title="JPEG quality",
+        description="Quality used when re-encoding streamed frames.",
     )
     max_width: int | None = Field(
         default=None,
         ge=64,
         le=8192,
-        description="Downscale frames wider than this (px); None = off",
+        title="Maximum width",
+        description="Shrink frames wider than this, in pixels. Leave empty to turn off.",
     )
 
 
 class TimelapseConfig(_Section):
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Time-lapse")
+
     min_interval_s: float = Field(
-        default=1.0, ge=0.1, le=3600.0, description="Minimum frame interval"
+        default=1.0,
+        ge=0.1,
+        le=3600.0,
+        title="Shortest interval",
+        description="The shortest time allowed between frames.",
     )
     max_duration_s: int = Field(
-        default=86400, ge=60, le=30 * 86400, description="Maximum session length"
+        default=86400,
+        ge=60,
+        le=30 * 86400,
+        title="Longest session",
+        description="A time-lapse stops after this long.",
     )
     failure_budget: int = Field(
-        default=5, ge=1, le=100, description="Consecutive failed frames before abort"
+        default=5,
+        ge=1,
+        le=100,
+        title="Failed frames before stopping",
+        description="Stop the time-lapse after this many failed frames in a row.",
     )
 
 
 class VideoConfig(_Section):
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Video")
+
     ffmpeg_path: str | None = Field(
-        default=None, description="Path to the ffmpeg binary; None = autodetect"
+        default=None,
+        title="ffmpeg path",
+        description="Path to the ffmpeg program. Leave empty to detect it automatically.",
     )
     codec: Literal["libx264", "libx265", "libvpx-vp9"] = Field(
-        default="libx264", description="ffmpeg codec"
+        default="libx264", title="Codec", description="Video codec used by ffmpeg."
     )
-    crf: int = Field(default=23, ge=0, le=51, description="Constant rate factor (lower is better)")
+    crf: int = Field(
+        default=23,
+        ge=0,
+        le=51,
+        title="CRF",
+        description="Constant rate factor. Lower means better quality and larger files.",
+    )
     preset: Literal[
         "ultrafast",
         "superfast",
@@ -101,16 +172,32 @@ class VideoConfig(_Section):
         "slow",
         "slower",
         "veryslow",
-    ] = Field(default="medium", description="ffmpeg preset")
-    fps: int = Field(default=24, ge=1, le=120, description="Output frame rate")
+    ] = Field(
+        default="medium",
+        title="Encoder preset",
+        description="Slower presets make smaller files.",
+    )
+    fps: int = Field(
+        default=24, ge=1, le=120, title="Frame rate", description="Frame rate of the video."
+    )
     timeout_s: int = Field(
-        default=3600, ge=10, le=86400, description="Upper bound for one ffmpeg run (s)"
+        default=3600,
+        ge=10,
+        le=86400,
+        title="Encode timeout",
+        description="Stop an ffmpeg run that takes longer than this.",
     )
 
 
 class MediaConfig(_Section):
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Media")
+
     thumbnail_size: int = Field(
-        default=200, ge=32, le=1024, description="Thumbnail longest edge (px)"
+        default=200,
+        ge=32,
+        le=1024,
+        title="Thumbnail size",
+        description="Length of the longest thumbnail edge, in pixels.",
     )
 
 
@@ -141,16 +228,34 @@ class StorageLocation(_Section):
 
 
 class StorageConfig(_Section):
-    locations: list[StorageLocation] = Field(default_factory=list)
-    target_id: str | None = Field(default=None, description="Location receiving all captures")
-    backup_ids: list[str] = Field(default_factory=list, description="Backup locations")
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Backups")
+
+    locations: list[StorageLocation] = Field(
+        default_factory=list, title="Locations", description="Configured storage locations."
+    )
+    target_id: str | None = Field(
+        default=None, title="Copy photos to", description="Location that receives every photo."
+    )
+    backup_ids: list[str] = Field(
+        default_factory=list, title="Backup locations", description="Locations used for backups."
+    )
     backup_interval_min: int = Field(
-        default=15, ge=1, le=1440, description="Periodic backup interval (minutes)"
+        default=15,
+        ge=1,
+        le=1440,
+        title="Backup interval",
+        description="How often backups run.",
     )
     deep_verify: bool = Field(
-        default=False, description="Backups re-hash existing destination files on every run"
+        default=False,
+        title="Verify existing backup files",
+        description="Check every file already on the backup against its checksum on each run.",
     )
-    sidecars: bool = Field(default=True, description="Write a <file>.sha256 next to every file")
+    sidecars: bool = Field(
+        default=True,
+        title="Write checksum files",
+        description="Save a SHA-256 checksum file next to every photo.",
+    )
 
     @model_validator(mode="after")
     def _consistent(self) -> StorageConfig:
@@ -181,7 +286,9 @@ class AppConfig(BaseModel):
     media: MediaConfig = Field(default_factory=MediaConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     cors_origins: list[str] = Field(
-        default_factory=list, description="Allowed CORS origins; empty = same-origin only"
+        default_factory=list,
+        title="Allowed web origins",
+        description="Other sites allowed to call the API. Leave empty to allow only this site.",
     )
     demo_camera: bool = Field(default=False, description="Use the simulated camera")
     api_key_hash: str | None = Field(default=None, description="sha256 of the API key; None = open")
@@ -199,7 +306,7 @@ class AppConfig(BaseModel):
         schema.get("properties", {}).pop("api_key_hash", None)
         schema.setdefault("properties", {})["api_key_set"] = {
             "type": "boolean",
-            "title": "Api Key Set",
+            "title": "API key set",
             "description": "Whether an API key is configured (read-only)",
             "readOnly": True,
         }

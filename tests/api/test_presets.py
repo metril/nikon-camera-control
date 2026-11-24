@@ -202,3 +202,26 @@ async def test_corrupt_file_tolerated_via_api(
     assert r.status_code == 200 and r.json()["warning"]
     await make(client)
     assert json.loads((tmp_dirs.data_dir / FILE_NAME).read_text())["presets"]
+
+
+async def test_from_camera_skips_read_only_and_apply_reports_skipped(
+    connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    import dataclasses
+
+    spec = fake_camera._specs["focusmode"]
+    fake_camera._specs["focusmode"] = dataclasses.replace(spec, readonly=True)
+    r = await connected_client.post(f"{P}/from-camera", json={"name": "Now"})
+    assert r.status_code == 201, r.text
+    assert "focusmode" not in r.json()["values"] and "iso" in r.json()["values"]
+    # a preset that names a (now) read-only setting applies the rest and reports it skipped
+    p = await make(
+        connected_client,
+        {"kind": "settings", "name": "Mixed", "values": {"iso": 800, "focusmode": "AF-C"}},
+    )
+    r = await connected_client.post(f"{P}/{p['id']}/apply")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [a["name"] for a in body["applied"]] == ["iso"]
+    assert [s["name"] for s in body["skipped"]] == ["focusmode"]
+    assert fake_camera.get_config("iso").value == "800"

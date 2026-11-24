@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { uid } from '@/components/ui/uid'
+import UiIcon from '@/components/ui/UiIcon.vue'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
@@ -32,24 +33,24 @@ const remove = (v) =>
 
 <template>
   <div class="flex flex-col gap-1">
-    <label v-if="label" :for="id" class="text-xs text-camera-muted">{{ label }}</label>
+    <label v-if="label" :for="id" class="text-xs font-medium text-camera-muted">{{ label }}</label>
     <div
-      class="flex flex-wrap items-center gap-1 rounded-md border border-camera-border bg-camera-bg p-1.5"
+      class="flex min-h-[var(--ctl)] flex-wrap items-center gap-1 rounded-control border border-camera-border bg-camera-bg p-1.5"
     >
       <span
         v-for="v in modelValue"
         :key="v"
-        class="inline-flex items-center gap-1 rounded bg-camera-border px-2 py-0.5 text-xs"
+        class="inline-flex items-center gap-1 rounded bg-camera-raised px-2 py-0.5 text-xs"
       >
         {{ v }}
         <button
           type="button"
           :aria-label="`Remove ${v}`"
           :disabled="disabled"
-          class="text-camera-muted hover:text-camera-text"
+          class="inline-flex text-camera-muted hover:text-camera-text"
           @click="remove(v)"
         >
-          &times;
+          <UiIcon name="X" :size="12" />
         </button>
       </span>
       <input

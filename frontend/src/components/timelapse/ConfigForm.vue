@@ -6,6 +6,7 @@ import UiNumber from '@/components/ui/UiNumber.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
+import StatGrid from './StatGrid.vue'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useCameraStore } from '@/stores/camera'
 import { useToastsStore } from '@/stores/toasts'
@@ -18,6 +19,7 @@ import {
   localErrors,
   draftKey,
   dirty,
+  edited,
   applyDraft,
   previewDraft,
 } from './useDraft'
@@ -29,7 +31,7 @@ const camera = useCameraStore()
 const toasts = useToastsStore()
 
 const limitOptions = [
-  { value: 'frames', label: 'Number of frames' },
+  { value: 'frames', label: 'Frames' },
   { value: 'duration', label: 'Duration' },
 ]
 const locked = computed(() => timelapse.isActive)
@@ -69,6 +71,36 @@ const videoLength = computed(() => {
   return s != null && Number.isFinite(draft.fps) && draft.fps > 0 ? s / draft.fps : null
 })
 const show = (v, f = String) => (v == null || !Number.isFinite(Number(v)) ? '-' : f(v))
+const tooShort = computed(
+  () =>
+    Number.isFinite(draft.intervalS) && draft.intervalS > 0 && draft.intervalS < minInterval.value,
+)
+const stats = computed(() => [
+  {
+    key: 'shots',
+    label: 'Total shots',
+    value: show(estimate.value.total_shots),
+    testid: 'total-shots',
+  },
+  {
+    key: 'time',
+    label: 'Shooting time',
+    value: show(estimate.value.duration_s, formatDuration),
+    testid: 'shoot-time',
+  },
+  {
+    key: 'video',
+    label: 'Video length',
+    value: show(videoLength.value, formatDuration),
+    testid: 'video-length',
+  },
+  {
+    key: 'disk',
+    label: 'Disk space',
+    value: show(estimate.value.disk_bytes, formatBytes),
+    testid: 'disk',
+  },
+])
 
 let timer = null
 const clear = () => clearTimeout(timer)
@@ -106,105 +138,111 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
 <template>
   <UiCard title="Schedule">
     <template #actions>
-      <UiBadge v-if="dirty" tone="warn" aria-live="polite">Unsaved changes</UiBadge>
+      <UiBadge v-if="dirty && edited" tone="warn" aria-live="polite">Unsaved changes</UiBadge>
       <UiBadge v-else-if="result" tone="ok">Applied</UiBadge>
     </template>
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div class="sm:col-span-2">
+    <div class="grid gap-4">
+      <div>
         <UiText v-model="draft.name" label="Session name" :maxlength="200" :disabled="locked" />
-        <p v-if="errors.name" class="mt-1 text-xs text-red-400" role="alert">{{ errors.name }}</p>
-      </div>
-      <div>
-        <UiNumber
-          :model-value="Number.isFinite(draft.intervalS) ? draft.intervalS : null"
-          label="Interval"
-          unit="s"
-          :min="minInterval"
-          :step="0.5"
-          :disabled="locked"
-          @update:model-value="(v) => setNum('intervalS', v)"
-        />
-        <p v-if="errors.interval_s" class="mt-1 text-xs text-red-400" role="alert">
-          {{ errors.interval_s }}
-        </p>
-        <p v-else class="mt-1 text-xs text-slate-400">Minimum {{ minInterval }} s</p>
-      </div>
-      <div class="space-y-2">
-        <UiSegmented v-model="draft.limit" :options="limitOptions" :disabled="locked" />
-        <UiNumber
-          v-if="draft.limit === 'frames'"
-          :model-value="Number.isFinite(draft.totalFrames) ? draft.totalFrames : null"
-          label="Frames"
-          :min="1"
-          :max="100000"
-          :step="1"
-          :disabled="locked"
-          @update:model-value="(v) => (draft.totalFrames = v == null ? NaN : Math.round(v))"
-        />
-        <UiNumber
-          v-else
-          :model-value="Number.isFinite(draft.durationMin) ? draft.durationMin : null"
-          label="Duration"
-          unit="min"
-          :min="0.1"
-          :step="1"
-          :disabled="locked"
-          @update:model-value="(v) => setNum('durationMin', v)"
-        />
-        <p
-          v-if="errors.total_frames || errors.duration_s"
-          class="text-xs text-red-400"
-          role="alert"
-        >
-          {{ errors.total_frames || errors.duration_s }}
+        <p v-if="errors.name" class="mt-2 text-xs text-camera-danger" role="alert">
+          {{ errors.name }}
         </p>
       </div>
-    </div>
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">
+        <div class="grid content-start gap-2">
+          <UiNumber
+            :model-value="Number.isFinite(draft.intervalS) ? draft.intervalS : null"
+            label="Interval"
+            unit="s"
+            :min="minInterval"
+            :step="0.5"
+            :disabled="locked"
+            @update:model-value="(v) => setNum('intervalS', v)"
+          />
+          <p v-if="errors.interval_s" class="text-xs text-camera-danger" role="alert">
+            {{ errors.interval_s }}
+          </p>
+          <p v-else-if="tooShort" class="text-xs text-camera-danger" data-test="too-short">
+            Too short. One frame takes at least {{ minInterval }} s with {{ shotsPerSet }}
+            {{ shotsPerSet === 1 ? 'shot' : 'shots' }}.
+          </p>
+          <p v-else class="text-xs text-camera-muted">
+            Minimum {{ minInterval }} s<template v-if="shotsPerSet > 1">
+              with {{ shotsPerSet }} shots per frame</template
+            >
+          </p>
+        </div>
+        <div class="grid content-start gap-2">
+          <span class="text-xs font-medium text-camera-muted">Stop after</span>
+          <UiSegmented
+            v-model="draft.limit"
+            class="w-full"
+            aria-label="Stop after"
+            :options="limitOptions"
+            :disabled="locked"
+          />
+          <UiNumber
+            v-if="draft.limit === 'frames'"
+            :model-value="Number.isFinite(draft.totalFrames) ? draft.totalFrames : null"
+            :min="1"
+            :max="100000"
+            :step="1"
+            :disabled="locked"
+            @update:model-value="(v) => (draft.totalFrames = v == null ? NaN : Math.round(v))"
+          />
+          <UiNumber
+            v-else
+            :model-value="Number.isFinite(draft.durationMin) ? draft.durationMin : null"
+            unit="min"
+            :min="0.1"
+            :step="1"
+            :disabled="locked"
+            @update:model-value="(v) => setNum('durationMin', v)"
+          />
+          <p
+            v-if="errors.total_frames || errors.duration_s"
+            class="text-xs text-camera-danger"
+            role="alert"
+          >
+            {{ errors.total_frames || errors.duration_s }}
+          </p>
+        </div>
+        <div class="grid content-start gap-2">
+          <UiNumber
+            :model-value="Number.isFinite(draft.fps) ? draft.fps : null"
+            label="Video frame rate"
+            unit="fps"
+            :min="1"
+            :max="120"
+            :disabled="locked"
+            @update:model-value="(v) => setNum('fps', v)"
+          />
+          <p class="text-xs text-camera-muted">Used for the video length estimate.</p>
+        </div>
+      </div>
 
-    <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4" aria-live="polite">
+      <StatGrid :items="stats" :cols="4" :compact-cols="2" aria-live="polite" />
+
+      <p v-if="errors._" class="text-sm text-camera-danger" role="alert">{{ errors._ }}</p>
+      <p v-if="errors.bracketing" class="text-xs text-camera-danger" role="alert">
+        {{ errors.bracketing }}
+      </p>
+      <p v-if="!camera.connected" class="text-xs text-camera-muted">
+        Camera not connected: the configuration will be validated on start.
+      </p>
+      <p v-if="locked" class="text-xs text-camera-muted">
+        The schedule is locked while a time-lapse is running.
+      </p>
       <div>
-        <dt class="text-xs text-slate-400">Total shots</dt>
-        <dd data-test="total-shots">{{ show(estimate.total_shots) }}</dd>
+        <UiButton
+          variant="secondary"
+          :loading="applied.busy"
+          :disabled="locked || !draftKey || !dirty"
+          @click="apply"
+        >
+          Apply configuration
+        </UiButton>
       </div>
-      <div>
-        <dt class="text-xs text-slate-400">Shooting time</dt>
-        <dd data-test="shoot-time">{{ show(estimate.duration_s, formatDuration) }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-slate-400">Video length</dt>
-        <dd data-test="video-length">{{ show(videoLength, formatDuration) }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-slate-400">Disk estimate</dt>
-        <dd data-test="disk">{{ show(estimate.disk_bytes, formatBytes) }}</dd>
-      </div>
-    </dl>
-    <div class="mt-3 max-w-[10rem]">
-      <UiNumber
-        :model-value="Number.isFinite(draft.fps) ? draft.fps : null"
-        label="Video fps"
-        :min="1"
-        :max="120"
-        :disabled="locked"
-        @update:model-value="(v) => setNum('fps', v)"
-      />
-    </div>
-    <p v-if="errors._" class="mt-3 text-sm text-red-400" role="alert">{{ errors._ }}</p>
-    <p v-if="errors.bracketing" class="mt-1 text-xs text-red-400" role="alert">
-      {{ errors.bracketing }}
-    </p>
-    <p v-if="!camera.connected" class="mt-3 text-xs text-slate-400">
-      Camera not connected: the configuration will be validated on start.
-    </p>
-    <div class="mt-4">
-      <UiButton
-        variant="primary"
-        :loading="applied.busy"
-        :disabled="locked || !draftKey || !dirty"
-        @click="apply"
-      >
-        Apply configuration
-      </UiButton>
     </div>
   </UiCard>
 </template>

@@ -2,7 +2,7 @@
 # Everything is configured in the web UI (Settings); there is no environment configuration.
 services:
   nikon-camera-control:
-    image: ghcr.io/metril/nikon-camera-control:0.3.0
+    image: ghcr.io/metril/nikon-camera-control:0.4.0
     container_name: nikon-camera-control
     ports:
       - "8000:8000"
@@ -56,3 +56,30 @@ services:
       # Config only (config.json, api_key.json, presets). No captures are stored on the host:
       # they go to USB drives or SMB shares mounted from the web UI.
       - ./data:/app/data
+
+  # Touchscreen kiosk on the host's HDMI output (no desktop needed on the host).
+  # Enable with:  docker compose --profile kiosk up -d
+  kiosk:
+    profiles: [kiosk]
+    image: ghcr.io/metril/nikon-camera-control-kiosk:0.4.0
+    container_name: nikon-camera-control-kiosk
+    restart: unless-stopped
+    depends_on:
+      nikon-camera-control:
+        condition: service_healthy
+    # Starts as root only for seatd, then drops to an unprivileged user for cage + Chromium.
+    # No --privileged and no cap_add: seatd uses its "noop" backend (no VT switching), so it
+    # needs no SYS_TTY_CONFIG/SYS_ADMIN.
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+    # NUMERIC host gids (names would resolve inside the container). Find yours with:
+    #   stat -c %g /dev/dri/card0 /dev/dri/renderD128 /dev/input/event0
+    group_add:
+      - "44"   # video : /dev/dri/card0
+      - "992"  # render: /dev/dri/renderD128
+      - "996"  # input : /dev/input/event*
+    volumes:
+      - /run/udev:/run/udev:ro  # libinput device discovery and hotplug
+    tmpfs:
+      - /tmp

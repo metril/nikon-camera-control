@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.3.0
+# Nikon Camera Control API 0.4.0
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -23,6 +23,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `INTERNAL_ERROR` | 500 | `AppError` | Internal error |
 | `CAMERA_NOT_CONNECTED` | 503 | `CameraNotConnected` | Camera is not connected |
 | `CAMERA_NOT_FOUND` | 404 | `CameraNotFound` | No camera detected. Check the USB connection. |
+| `CAMERA_PERMISSION_DENIED` | 503 | `CameraPermissionDenied` | Camera found, but the app can't open it. |
 | `CAMERA_BUSY` | 409 | `CameraBusy` | Camera is busy with another operation |
 | `CAMERA_TIMEOUT` | 504 | `CameraTimeout` | Camera operation timed out |
 | `CAMERA_IO_ERROR` | 502 | `CameraIOError` | Camera I/O error |
@@ -682,7 +683,7 @@ operation_id: `update_config`
 | `video` | VideoConfigPatch \| null | no |  |  |  |
 | `media` | MediaConfigPatch \| null | no |  |  |  |
 | `storage` | StorageConfigPatch \| null | no |  |  |  |
-| `cors_origins` | list[string] \| null | no |  |  | Allowed CORS origins; empty = same-origin only |
+| `cors_origins` | list[string] \| null | no |  |  | Other sites allowed to call the API. Leave empty to allow only this site. |
 | `demo_camera` | boolean \| null | no |  |  | Use the simulated camera |
 
 **Responses**
@@ -2333,33 +2334,34 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 
 | Section | Field | Type | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| camera | `keepalive_enabled` | boolean | `true` |  | Send periodic keepalives (D500 times out at 60 s) |
-| camera | `keepalive_interval_s` | number | `30.0` | `>=5.0`, `<=55.0` | Keepalive interval |
-| camera | `connect_timeout_s` | number | `10.0` | `>=1.0`, `<=120.0` | Timeout for one connect attempt |
-| camera | `connect_retries` | integer | `5` | `>=0`, `<=50` | Reconnect attempts after a lost link |
-| camera | `reconnect_interval_s` | number | `2.0` | `>=0.5`, `<=60.0` | Delay between reconnects |
-| camera | `capture_timeout_s` | number | `30.0` | `>=1.0`, `<=300.0` | Capture timeout |
-| camera | `event_quiet_window_s` | number | `1.0` | `>=0.0`, `<=10.0` | After a capture, stop draining camera events after this quiet period |
-| liveview | `target_fps` | integer | `8` | `>=1`, `<=30` | Target live view frame rate |
-| liveview | `quality` | enum("small", "medium", "large") | `"medium"` |  | Frame size preset |
-| liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Re-encode quality for streamed frames |
-| liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Downscale frames wider than this (px); None = off |
-| timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | Minimum frame interval |
-| timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | Maximum session length |
-| timelapse | `failure_budget` | integer | `5` | `>=1`, `<=100` | Consecutive failed frames before abort |
-| video | `ffmpeg_path` | string \| null | `null` |  | Path to the ffmpeg binary; None = autodetect |
-| video | `codec` | enum("libx264", "libx265", "libvpx-vp9") | `"libx264"` |  | ffmpeg codec |
-| video | `crf` | integer | `23` | `>=0`, `<=51` | Constant rate factor (lower is better) |
-| video | `preset` | enum("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow") | `"medium"` |  | ffmpeg preset |
-| video | `fps` | integer | `24` | `>=1`, `<=120` | Output frame rate |
-| video | `timeout_s` | integer | `3600` | `>=10`, `<=86400` | Upper bound for one ffmpeg run (s) |
-| media | `thumbnail_size` | integer | `200` | `>=32`, `<=1024` | Thumbnail longest edge (px) |
-| storage | `locations` | list[StorageLocation] |  |  |  |
-| storage | `target_id` | string \| null | `null` |  | Location receiving all captures |
-| storage | `backup_ids` | list[string] |  |  | Backup locations |
-| storage | `backup_interval_min` | integer | `15` | `>=1`, `<=1440` | Periodic backup interval (minutes) |
-| storage | `deep_verify` | boolean | `false` |  | Backups re-hash existing destination files on every run |
-| storage | `sidecars` | boolean | `true` |  | Write a <file>.sha256 next to every file |
-| (root) | `cors_origins` | list[string] |  |  | Allowed CORS origins; empty = same-origin only |
+| camera | `keepalive_enabled` | boolean | `true` |  | Send a keepalive now and then. The D500 drops the USB link after 60 s idle. |
+| camera | `keepalive_interval_s` | number | `30.0` | `>=5.0`, `<=55.0` | How often to send a keepalive. Keep it below 60 s. |
+| camera | `connect_timeout_s` | number | `10.0` | `>=1.0`, `<=120.0` | How long to wait for the camera before giving up. |
+| camera | `connect_retries` | integer | `5` | `>=0`, `<=50` | How many times to try again after the link is lost. |
+| camera | `reconnect_interval_s` | number | `2.0` | `>=0.5`, `<=60.0` | Wait this long between reconnect attempts. |
+| camera | `capture_timeout_s` | number | `30.0` | `>=1.0`, `<=300.0` | How long to wait for a photo to arrive before reporting a failure. |
+| camera | `event_quiet_window_s` | number | `1.0` | `>=0.0`, `<=10.0` | After a capture, stop listening for camera events once none arrive for this long. |
+| camera | `keep_card_copy` | boolean | `true` |  | Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card. |
+| liveview | `target_fps` | integer | `8` | `>=1`, `<=30` | Higher is smoother but uses more USB bandwidth. 5-15 fps is typical. |
+| liveview | `quality` | enum("small", "medium", "large") | `"medium"` |  | Size of the frames the camera sends. |
+| liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Quality used when re-encoding streamed frames. |
+| liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Shrink frames wider than this, in pixels. Leave empty to turn off. |
+| timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | The shortest time allowed between frames. |
+| timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | A time-lapse stops after this long. |
+| timelapse | `failure_budget` | integer | `5` | `>=1`, `<=100` | Stop the time-lapse after this many failed frames in a row. |
+| video | `ffmpeg_path` | string \| null | `null` |  | Path to the ffmpeg program. Leave empty to detect it automatically. |
+| video | `codec` | enum("libx264", "libx265", "libvpx-vp9") | `"libx264"` |  | Video codec used by ffmpeg. |
+| video | `crf` | integer | `23` | `>=0`, `<=51` | Constant rate factor. Lower means better quality and larger files. |
+| video | `preset` | enum("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow") | `"medium"` |  | Slower presets make smaller files. |
+| video | `fps` | integer | `24` | `>=1`, `<=120` | Frame rate of the video. |
+| video | `timeout_s` | integer | `3600` | `>=10`, `<=86400` | Stop an ffmpeg run that takes longer than this. |
+| media | `thumbnail_size` | integer | `200` | `>=32`, `<=1024` | Length of the longest thumbnail edge, in pixels. |
+| storage | `locations` | list[StorageLocation] |  |  | Configured storage locations. |
+| storage | `target_id` | string \| null | `null` |  | Location that receives every photo. |
+| storage | `backup_ids` | list[string] |  |  | Locations used for backups. |
+| storage | `backup_interval_min` | integer | `15` | `>=1`, `<=1440` | How often backups run. |
+| storage | `deep_verify` | boolean | `false` |  | Check every file already on the backup against its checksum on each run. |
+| storage | `sidecars` | boolean | `true` |  | Save a SHA-256 checksum file next to every photo. |
+| (root) | `cors_origins` | list[string] |  |  | Other sites allowed to call the API. Leave empty to allow only this site. |
 | (root) | `demo_camera` | boolean | `false` |  | Use the simulated camera |
 | (root) | `api_key_hash` | string \| null | `null` |  | sha256 of the API key; None = open |

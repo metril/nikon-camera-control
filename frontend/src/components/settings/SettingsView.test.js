@@ -46,6 +46,7 @@ async function setup() {
         version: '1.2.3',
         backend: 'demo',
         ffmpeg_available: true,
+        libgphoto2_version: '2.5.31',
         output_free_bytes: 2048,
         auth_enabled: false,
       }),
@@ -64,7 +65,9 @@ describe('SettingsView', () => {
     expect(w.find('[data-field="codec"]').exists()).toBe(true)
     expect(w.find('[data-field="cors_origins"]').exists()).toBe(true)
     expect(w.find('[data-test="version"]').text()).toBe('1.2.3')
-    expect(w.find('[data-test="backend"]').text()).toBe('demo')
+    expect(w.find('[data-test="backend"]').text()).toBe('Demo camera')
+    expect(w.find('[data-test="ffmpeg"]').text()).toBe('Available')
+    expect(w.find('[data-test="libgphoto2"]').text()).toBe('2.5.31')
     expect(w.find('[data-test="key-status"]').text()).toBe('Not set')
   })
 
@@ -72,7 +75,7 @@ describe('SettingsView', () => {
     const { w, config } = await setup()
     config.config = { ...cfg(), video: { crf: 18, codec: 'b' } }
     await flushPromises()
-    expect(w.find('[data-test="save"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="savebar"]').exists()).toBe(false)
     expect(w.find('[data-field="crf"] input').element.value).toBe('18')
   })
 
@@ -87,10 +90,12 @@ describe('SettingsView', () => {
   it('saves only changed fields', async () => {
     const { w, config } = await setup()
     config.patch = vi.fn(async () => (config.config = { ...cfg(), video: { crf: 20, codec: 'a' } }))
-    expect(w.find('[data-test="save"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="savebar"]').exists()).toBe(false)
     const input = w.find('[data-field="crf"] input')
     await input.setValue('20')
     expect(w.find('[data-field="crf"]').attributes('data-dirty')).toBeDefined()
+    expect(w.find('[data-field="crf"] [aria-label="Unsaved change"]').exists()).toBe(true)
+    expect(w.find('[data-test="savebar"]').text()).toContain('1 unsaved change')
     await w.find('[data-test="save"]').trigger('click')
     await flushPromises()
     expect(config.patch).toHaveBeenCalledWith({ video: { crf: 20 } })
@@ -115,12 +120,13 @@ describe('SettingsView', () => {
 
   it('lists restart-required fields and toasts non-validation errors', async () => {
     const { w, config } = await setup()
-    config.restartRequired = ['liveview.target_fps']
+    config.restartRequired = ['video.crf']
     config.patch = vi.fn(async () => {
       throw new ApiError({ code: 'X', status: 500, message: 'boom' })
     })
     await w.vm.$nextTick()
-    expect(w.find('[data-test="restart"]').text()).toContain('liveview.target_fps')
+    expect(w.find('[data-test="restart"]').text()).toContain('Video › Crf')
+    expect(w.find('[data-test="restart"]').text()).not.toContain('video.crf')
     await w.find('[data-field="codec"] select').setValue('b')
     await w.find('[data-test="save"]').trigger('click')
     await flushPromises()
@@ -138,16 +144,28 @@ describe('SettingsView', () => {
 
   it('keeps the restart banner across later config changes, dismissable; shows reset changes and the demo warning', async () => {
     const { w, config } = await setup()
-    config.onChanged({ config: cfg(), restart_required: ['liveview.target_fps'] })
+    config.onChanged({ config: cfg(), restart_required: ['video.crf'] })
     config.onChanged({ config: cfg(), restart_required: [] })
     await w.vm.$nextTick()
-    expect(w.find('[data-test="restart"]').text()).toContain('liveview.target_fps')
+    expect(w.find('[data-test="restart"]').text()).toContain('Video › Crf')
     await w.find('[data-test="dismiss-restart"]').trigger('click')
     expect(w.find('[data-test="restart"]').exists()).toBe(false)
     config.resetChanged = ['video.crf']
     await w.vm.$nextTick()
-    expect(w.find('[data-test="reset-changed"]').text()).toContain('video.crf')
+    expect(w.find('[data-test="reset-changed"]').text()).toContain('Video › Crf')
+    expect(w.find('[data-test="reset-changed"]').text()).not.toContain('video.crf')
     expect(w.text()).toContain('demo camera')
+  })
+
+  it('shows the Display and Capture sections and the camera clock row', async () => {
+    const { w } = await setup()
+    expect(w.find('[data-section="display"]').text()).toContain('Layout')
+    await w.find('[data-test="layout"] button:last-child').trigger('click')
+    expect(localStorage.getItem('layout')).toBe('touch')
+    expect(document.documentElement.dataset.layout).toBe('touch')
+    expect(w.find('[data-section="capture"]').text()).toContain('Camera saves to')
+    expect(w.find('[data-test="target-reason"]').text()).toContain('Connect the camera')
+    expect(w.find('[data-field="camera-clock"]').exists()).toBe(false) // no camera section in this schema
   })
 
   it('shows a generated key once and requires confirmation', async () => {

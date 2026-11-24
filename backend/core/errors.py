@@ -16,6 +16,7 @@ class ErrorCode(StrEnum):
     INTERNAL_ERROR = "INTERNAL_ERROR"
     CAMERA_NOT_CONNECTED = "CAMERA_NOT_CONNECTED"
     CAMERA_NOT_FOUND = "CAMERA_NOT_FOUND"
+    CAMERA_PERMISSION_DENIED = "CAMERA_PERMISSION_DENIED"
     CAMERA_BUSY = "CAMERA_BUSY"
     CAMERA_TIMEOUT = "CAMERA_TIMEOUT"
     CAMERA_IO_ERROR = "CAMERA_IO_ERROR"
@@ -88,6 +89,14 @@ class CameraNotFound(AppError):
     default_message = "No camera detected. Check the USB connection."
 
 
+class CameraPermissionDenied(AppError):
+    """A Nikon camera is plugged in, but its USB device node is not readable and writable."""
+
+    code = ErrorCode.CAMERA_PERMISSION_DENIED
+    http_status = 503
+    default_message = "Camera found, but the app can't open it."
+
+
 class CameraBusy(AppError):
     code = ErrorCode.CAMERA_BUSY
     http_status = 409
@@ -113,6 +122,13 @@ class CameraOperationFailed(AppError):
     http_status = 502
     recoverable = True
     default_message = "Camera operation failed"
+
+
+class DownloadFailed(CameraOperationFailed):
+    """A photo was taken but could not be copied off the camera. The technical cause is in
+    ``details`` (``cause``, ``cause_code``, ``camera_files``), never in the message."""
+
+    default_message = "The photo was taken, but it couldn't be copied from the camera."
 
 
 class ShutterOpen(CameraOperationFailed):

@@ -5,37 +5,35 @@
  *   - onActivated()/onDeactivated() (Vue lifecycle hooks, fire on first mount too), and/or
  *   - inject('activeTab') - a readonly ref with the current tab id ('shoot' | 'timelapse' | ...).
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, readonly, ref, watch } from 'vue'
-import { useCameraStore } from '@/stores/camera'
-import { useCaptureStore } from '@/stores/capture'
-import { useToastsStore } from '@/stores/toasts'
+import { computed, provide, readonly, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { useJobsStore } from '@/stores/jobs'
+import { useEventsStore } from '@/stores/events'
 import { useHotkeys } from '@/composables'
+import { useLayoutMode } from '@/composables/useLayoutMode'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModal from '@/components/ui/UiModal.vue'
-import UiBadge from '@/components/ui/UiBadge.vue'
-import StatusBar from '@/components/shell/StatusBar.vue'
-import ToastHost from '@/components/shell/ToastHost.vue'
+import AppHeader from '@/components/shell/AppHeader.vue'
 import ApiKeyPrompt from '@/components/shell/ApiKeyPrompt.vue'
 import JobsPanel from '@/components/shell/JobsPanel.vue'
+import ToastHost from '@/components/shell/ToastHost.vue'
 import { TABS, useTabs } from '@/components/shell/useTabs'
+import { useCameraStatus } from '@/components/shell/useCameraStatus'
 import ShootView from '@/views/ShootView.vue'
 import TimelapseView from '@/views/TimelapseView.vue'
 import GalleryView from '@/views/GalleryView.vue'
-import AdvancedView from '@/views/AdvancedView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 
-const camera = useCameraStore()
-const capture = useCaptureStore()
-const toasts = useToastsStore()
 const auth = useAuthStore()
-const jobs = useJobsStore()
+const events = useEventsStore()
+const { isTouch } = useLayoutMode()
+const { stripe } = useCameraStatus()
 
 const VIEWS = {
   shoot: ShootView,
   timelapse: TimelapseView,
   gallery: GalleryView,
-  advanced: AdvancedView,
   settings: SettingsView,
 }
 const { activeTab, select } = useTabs()
@@ -44,31 +42,19 @@ provide('activeTab', readonly(activeTab))
 // Cross-tab navigation for views: inject('navigate')('gallery'). Also handled: open-gallery/open-timelapse/open-settings events.
 provide('navigate', select)
 
-// The tab bar scrolls horizontally on narrow screens: keep the active tab visible and show
-// fade edges while more tabs lie off-screen.
-const navRef = ref(null)
-const moreLeft = ref(false)
-const moreRight = ref(false)
-function updateEdges() {
-  const el = navRef.value
-  if (!el) return
-  moreLeft.value = el.scrollLeft > 4
-  moreRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+// The no-key bar's height is published as --banner so full-height views can subtract it.
+let bannerObserver = null
+function measureBanner(el) {
+  bannerObserver?.disconnect()
+  bannerObserver = null
+  const set = () =>
+    document.documentElement.style.setProperty('--banner', `${el ? el.offsetHeight : 0}px`)
+  set()
+  if (el && typeof ResizeObserver !== 'undefined') {
+    bannerObserver = new ResizeObserver(set)
+    bannerObserver.observe(el)
+  }
 }
-function revealActive() {
-  nextTick(() => {
-    navRef.value
-      ?.querySelector('[aria-current="page"]')
-      ?.scrollIntoView?.({ inline: 'center', block: 'nearest' })
-    updateEdges()
-  })
-}
-watch(activeTab, revealActive)
-onMounted(() => {
-  revealActive()
-  window.addEventListener('resize', updateEdges)
-})
-onBeforeUnmount(() => window.removeEventListener('resize', updateEdges))
 
 const helpOpen = ref(false)
 const jobsOpen = ref(false)
@@ -79,130 +65,58 @@ function shortcut(fn) {
     if (!anyModalOpen()) fn()
   }
 }
-// useHotkeys ignores keys typed in inputs/buttons, so Space on a focused button only clicks it.
+// useHotkeys ignores keys typed in inputs/buttons. Space and A, S, I, E belong to the Shoot view.
 useHotkeys({
-  ' ': shortcut(() => {
-    if (activeTab.value !== 'shoot') return
-    if (camera.leasedBy) return toasts.info(`Busy: ${camera.leasedBy}`)
-    // same gate as the Capture button: live view does not block shooting
-    if (camera.connected && ['idle', 'liveview'].includes(camera.state) && !capture.inFlight)
-      capture.capture().catch((e) => toasts.error(e))
-  }),
   g: shortcut(() => select('gallery')),
   t: shortcut(() => select('timelapse')),
   '?': shortcut(() => (helpOpen.value = true)),
 })
 
 const SHORTCUTS = [
-  ['Space', 'Capture (Shoot tab)'],
-  ['g', 'Open Gallery'],
-  ['t', 'Open Time-lapse'],
-  ['?', 'Show this help'],
-  ['Esc', 'Close dialogs'],
+  [['Space'], 'Take a photo (Shoot)'],
+  [['A', 'S', 'I', 'E'], 'Aperture, shutter speed, ISO, exposure compensation (Shoot)'],
+  [['[', ']'], 'Previous and next value (Shoot)'],
+  [['G'], 'Open Gallery'],
+  [['T'], 'Open Time-lapse'],
+  [['?'], 'Show this help'],
+  [['Esc'], 'Close dialogs'],
 ]
 </script>
 
 <template>
   <div class="flex min-h-screen flex-col bg-camera-bg">
-    <header class="border-b border-camera-border bg-camera-surface px-4 py-3">
-      <div class="flex flex-wrap items-center gap-3">
-        <svg
-          class="h-7 w-7 shrink-0 text-camera-accent"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-          />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-        </svg>
-        <h1 class="min-w-0 text-lg font-semibold">Nikon Camera Control</h1>
-        <a
-          v-if="auth.authEnabled === false"
-          href="#/settings"
-          class="rounded-full focus-visible:outline-offset-2"
-          data-test="no-key-warning"
-          title="No API key set — anyone on the network can control the camera"
-        >
-          <UiBadge tone="warn"
-            >No API key set<span class="hidden sm:inline">
-              — anyone on the network can control the camera</span
-            ></UiBadge
-          >
-        </a>
-        <button
-          type="button"
-          class="ml-auto inline-flex items-center gap-2 rounded-md border border-camera-border px-3 py-1.5 text-sm hover:bg-camera-border"
-          data-test="jobs-button"
-          @click="jobsOpen = true"
-        >
-          Jobs
-          <UiBadge v-if="jobs.active.length" tone="info" data-test="jobs-count">
-            {{ jobs.active.length }}
-          </UiBadge>
-        </button>
-        <button
-          type="button"
-          class="rounded-md border border-camera-border px-2.5 py-1.5 text-sm hover:bg-camera-border"
-          aria-label="Keyboard shortcuts"
-          @click="helpOpen = true"
-        >
-          ?
-        </button>
-      </div>
-      <div class="relative -mb-3 mt-3">
-        <span
-          v-if="moreLeft"
-          class="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-camera-surface to-transparent"
-          aria-hidden="true"
-          data-test="tabs-more-left"
-        />
-        <span
-          v-if="moreRight"
-          class="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-camera-surface to-transparent"
-          aria-hidden="true"
-          data-test="tabs-more-right"
-        />
-        <nav
-          ref="navRef"
-          aria-label="Primary"
-          class="flex gap-1 overflow-x-auto"
-          @scroll.passive="updateEdges"
-        >
-          <a
-            v-for="t in TABS"
-            :key="t.id"
-            :href="`#/${t.id}`"
-            :aria-current="activeTab === t.id ? 'page' : undefined"
-            class="whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors"
-            :class="
-              activeTab === t.id
-                ? 'border-camera-accent text-camera-text'
-                : 'border-transparent text-camera-muted hover:text-camera-text'
-            "
-            @click.prevent="select(t.id)"
-          >
-            {{ t.label }}
-          </a>
-        </nav>
-      </div>
-    </header>
+    <AppHeader
+      :active-tab="activeTab"
+      @select="select"
+      @jobs="jobsOpen = true"
+      @shortcuts="helpOpen = true"
+    />
+    <div class="stripe" :class="stripe" data-test="stripe" aria-hidden="true" />
 
-    <div class="border-b border-camera-border bg-camera-bg px-4 py-2">
-      <StatusBar />
-    </div>
+    <a
+      v-if="auth.authEnabled === false"
+      :ref="measureBanner"
+      href="#/settings"
+      class="warn-bar"
+      data-test="no-key-warning"
+    >
+      <UiIcon name="TriangleAlert" :size="16" />
+      No API key set. Anyone on the network can control the camera. Set one in Settings.
+    </a>
+    <UiAlert
+      v-if="events.status === 'forbidden'"
+      tone="danger"
+      class="mx-4 mt-4"
+      title="This page's address is not allowed"
+      data-test="origin-blocked"
+    >
+      The server rejected this page's address. Add it to Allowed origins in Settings, then reload.
+      <template #action>
+        <UiButton size="sm" @click="select('settings')">Open Settings</UiButton>
+      </template>
+    </UiAlert>
 
-    <main class="flex-1 p-4">
+    <main class="main">
       <KeepAlive>
         <component
           :is="current"
@@ -213,15 +127,28 @@ const SHORTCUTS = [
       </KeepAlive>
     </main>
 
+    <nav v-if="isTouch" class="bottomnav" aria-label="Sections" data-test="bottomnav">
+      <a
+        v-for="t in TABS"
+        :key="t.id"
+        :href="`#/${t.id}`"
+        :aria-current="activeTab === t.id ? 'page' : undefined"
+        @click.prevent="select(t.id)"
+      >
+        <UiIcon :name="t.icon" :size="22" />
+        <span>{{ t.label }}</span>
+      </a>
+    </nav>
+
     <JobsPanel :open="jobsOpen" @close="jobsOpen = false" />
     <ApiKeyPrompt />
     <ToastHost />
 
     <UiModal :open="helpOpen" title="Keyboard shortcuts" @close="helpOpen = false">
-      <dl class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
-        <template v-for="[k, d] in SHORTCUTS" :key="k">
-          <dt>
-            <kbd class="rounded bg-camera-border px-1.5 py-0.5">{{ k }}</kbd>
+      <dl class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-sm">
+        <template v-for="[keys, d] in SHORTCUTS" :key="d">
+          <dt class="flex gap-1">
+            <kbd v-for="k in keys" :key="k">{{ k }}</kbd>
           </dt>
           <dd>{{ d }}</dd>
         </template>
@@ -229,3 +156,90 @@ const SHORTCUTS = [
     </UiModal>
   </div>
 </template>
+
+<style>
+:root {
+  --nav: 0px;
+}
+html[data-layout='touch'] {
+  --nav: 69px;
+}
+</style>
+
+<style scoped>
+.stripe {
+  height: 3px;
+  background: transparent;
+  transition: background-color 200ms;
+}
+.stripe.off {
+  background: theme('colors.camera.danger');
+}
+.stripe.busy {
+  background: theme('colors.camera.warn');
+}
+.warn-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: theme('colors.camera.raised');
+  border-bottom: 1px solid theme('colors.camera.subtle');
+  color: theme('colors.camera.warn');
+  font-size: 13px;
+  text-align: center;
+}
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(24px + var(--nav))
+    max(16px, env(safe-area-inset-left, 0px));
+}
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid theme('colors.camera.border');
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: theme('colors.camera.raised');
+  font:
+    500 11px/16px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+.bottomnav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: theme('colors.camera.surface');
+  border-top: 1px solid theme('colors.camera.subtle');
+  padding: 6px max(8px, env(safe-area-inset-left, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
+    max(8px, env(safe-area-inset-right, 0px));
+}
+.bottomnav a {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-height: 56px;
+  padding: 6px 0;
+  border-radius: theme('borderRadius.inner');
+  color: theme('colors.camera.muted');
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.bottomnav a:active {
+  background: theme('colors.camera.raised');
+}
+.bottomnav a[aria-current='page'] {
+  color: theme('colors.camera.accent');
+}
+</style>

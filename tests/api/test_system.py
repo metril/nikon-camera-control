@@ -51,3 +51,7 @@ async def test_openapi_metadata(client: httpx.AsyncClient) -> None:
         ids
     )
     assert (await client.get("/docs")).status_code == 200
+
+
+async def test_info_has_no_gphoto_version_for_demo_camera(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/api/v1/info")).json()["libgphoto2_version"] is None

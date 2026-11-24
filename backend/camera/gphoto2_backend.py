@@ -6,6 +6,8 @@ Every ``gphoto2.GPhoto2Error`` is translated to a domain exception (gphoto2 code
 
 from __future__ import annotations
 
+import posixpath
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,13 @@ from backend.camera.backend import (
     FileKind,
     StorageInfo,
 )
+from backend.camera.usb_access import (
+    DEFAULT_DEV_ROOT,
+    DEFAULT_SYSFS_ROOT,
+    find_unopenable_nikon,
+    parse_usb_port,
+    reset_nikon_usb,
+)
 from backend.core.errors import (
     AppError,
     CameraBusy,
@@ -30,6 +39,7 @@ from backend.core.errors import (
     CameraNotConnected,
     CameraNotFound,
     CameraOperationFailed,
+    CameraPermissionDenied,
     CameraTimeout,
     FeatureUnsupported,
     FileNotFoundError_,
@@ -42,6 +52,7 @@ from backend.core.errors import (
 log = structlog.get_logger(__name__)
 
 _CHUNK = 1024 * 1024
+_VIEWFINDER_RETRY_S = (0.1, 0.25, 0.5, 1.0)
 
 _IO_CODES = {
     gp.GP_ERROR_IO,
@@ -219,14 +230,33 @@ def coerce_config_value(w: ConfigWidget, value: object) -> str | int | float:
 # ------------------------------------------------------------------------- backend
 
 
+def _port_of(info: Any) -> tuple[int, int] | None:
+    """(bus, device) from a GPPortInfo: python-gphoto2 exposes ``get_path()``; older shims a
+    ``path`` attribute."""
+    getter = getattr(info, "get_path", None)
+    path = getter() if callable(getter) else info.path
+    return parse_usb_port(str(path))
+
+
 class Gphoto2Backend:
     """CameraBackend over python-gphoto2."""
 
-    def __init__(self) -> None:
+    # (bus, device) of the camera we last opened, shared by every instance so a USB reset can
+    # target just that node even from a fresh, never-opened backend.
+    _last_port: tuple[int, int] | None = None
+
+    def __init__(
+        self,
+        sysfs_root: Path = DEFAULT_SYSFS_ROOT,
+        dev_root: Path = DEFAULT_DEV_ROOT,
+    ) -> None:
+        self._sysfs_root = sysfs_root
+        self._dev_root = dev_root
         self._camera: Any = None
         self._ctx: Any = None
         self._model = ""
         self._viewfinder_on = False
+        self._sleep = time.sleep
 
     # -- lifecycle
 
@@ -244,8 +274,17 @@ class Gphoto2Backend:
             model = camera.get_abilities().model
         except gp.GPhoto2Error as e:
             self._exit_quietly(camera, ctx)
-            raise translate_error(e, "open") from e
+            err = translate_error(e, "open")
+            if isinstance(err, CameraNotFound | CameraIOError | CameraOperationFailed):
+                problem = find_unopenable_nikon(self._sysfs_root, self._dev_root)
+                if problem is not None:
+                    raise CameraPermissionDenied(details=problem.details()) from e
+            raise err from e
         self._camera, self._ctx, self._model = camera, ctx, str(model)
+        try:
+            Gphoto2Backend._last_port = _port_of(camera.get_port_info())
+        except Exception as e:  # noqa: BLE001 - only used to narrow a best-effort reset
+            log.debug("port_info_unavailable", error=str(e))
         self._viewfinder_on = False
 
     def close(self) -> None:
@@ -261,6 +300,17 @@ class Gphoto2Backend:
             camera.exit(ctx)
         except Exception as e:  # noqa: BLE001 - close must never raise (e.g. after USB loss)
             log.warning("gphoto2_exit_failed", error=str(e), code=gp_code(e))
+        # Drop our references right away so the Camera/Context (and its libusb handle) are freed
+        # now, not whenever the garbage collector gets to them.
+        del camera, ctx
+
+    def reset_device(self) -> None:
+        """Best-effort USB port reset of the Nikon device (works while closed)."""
+        try:
+            if reset_nikon_usb(self._sysfs_root, self._dev_root, Gphoto2Backend._last_port):
+                log.info("usb_device_reset")
+        except Exception as e:  # noqa: BLE001 - best effort
+            log.warning("usb_reset_failed", error=str(e))
 
     def _cam(self) -> Any:
         if self._camera is None:
@@ -380,7 +430,11 @@ class Gphoto2Backend:
             f = cam.capture_preview()  # binding returns a new CameraFile; no context arg
             return bytes(f.get_data_and_size())
         except gp.GPhoto2Error as e:
+            self._viewfinder_on = False  # re-enable (with retry) on the next frame
             raise translate_error(e, "capture_preview") from e
+        except AppError:
+            self._viewfinder_on = False
+            raise
 
     def end_preview(self) -> None:
         """Viewfinder off (best effort) and forget the flag. Always attempts the write: after
@@ -397,7 +451,7 @@ class Gphoto2Backend:
             FeatureUnsupported,
             CameraOperationFailed,
         ) as e:
-            log.info("viewfinder_not_cleared", reason=e.message)
+            log.info("viewfinder_not_cleared", reason=str(e))
         finally:
             self._viewfinder_on = False
 
@@ -405,11 +459,23 @@ class Gphoto2Backend:
         self._viewfinder_on = False
 
     def _enable_viewfinder(self) -> None:
-        # Best effort: not every body exposes "viewfinder"; preview may still work without it.
-        try:
-            self.set_config("viewfinder", 1)
-        except (SettingNotFound, SettingNotAllowed, SettingInvalid, FeatureUnsupported) as e:
-            log.info("viewfinder_not_set", reason=e.message)
+        """Best effort: not every body exposes "viewfinder"; preview may still work without it.
+
+        The D500 answers -110 (camera busy) while it is still finishing a capture or is already
+        in live view, so that is retried with a short backoff. If it stays busy we assume live
+        view is already up and let the preview call decide (it clears the flag on failure)."""
+        for delay in (*_VIEWFINDER_RETRY_S, None):
+            try:
+                self.set_config("viewfinder", 1)
+                break
+            except (SettingNotFound, SettingNotAllowed, SettingInvalid, FeatureUnsupported) as e:
+                log.info("viewfinder_not_set", reason=str(e))
+                break
+            except CameraBusy as e:
+                if delay is None:
+                    log.info("viewfinder_busy_assuming_on", reason=str(e))
+                    break
+                self._sleep(delay)
         self._viewfinder_on = True
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
@@ -441,26 +507,31 @@ class Gphoto2Backend:
         except gp.GPhoto2Error as e:
             raise translate_error(e, f"list_folders({folder})") from e
 
-    def list_files(self, folder: str) -> list[CameraFileInfo]:
+    def list_file_names(self, folder: str) -> list[str]:
         cam = self._cam()
-        out: list[CameraFileInfo] = []
         try:
-            for name, _ in cam.folder_list_files(folder, self._ctx):
-                f = cam.file_get_info(folder, name, self._ctx).file
-                out.append(
-                    CameraFileInfo(
-                        folder=folder,
-                        name=str(name),
-                        size=int(f.size),
-                        mtime=float(f.mtime),
-                        mime_type=str(f.type),
-                        width=int(f.width),
-                        height=int(f.height),
-                    )
-                )
+            return [str(n) for n, _ in cam.folder_list_files(folder, self._ctx)]
         except gp.GPhoto2Error as e:
             raise translate_error(e, f"list_files({folder})") from e
-        return out
+
+    def file_info(self, folder: str, name: str) -> CameraFileInfo:
+        cam = self._cam()
+        try:
+            f = cam.file_get_info(folder, name, self._ctx).file
+        except gp.GPhoto2Error as e:
+            raise translate_error(e, f"file_info({posixpath.join(folder, name)})") from e
+        return CameraFileInfo(
+            folder=folder,
+            name=name,
+            size=int(f.size),
+            mtime=float(f.mtime),
+            mime_type=str(f.type),
+            width=int(f.width),
+            height=int(f.height),
+        )
+
+    def list_files(self, folder: str) -> list[CameraFileInfo]:
+        return [self.file_info(folder, n) for n in self.list_file_names(folder)]
 
     def read_file(self, folder: str, name: str, kind: FileKind, dest: Path) -> None:
         cam = self._cam()
@@ -468,13 +539,26 @@ class Gphoto2Backend:
         tmp = dest.with_name(dest.name + ".part")
         try:
             if kind is FileKind.NORMAL:
-                self._read_chunked(cam, folder, name, ftype, tmp)
+                try:
+                    self._read_chunked(cam, folder, name, ftype, tmp)
+                except gp.GPhoto2Error as e:
+                    # Partial reads fail on some targets (D500 "Internal RAM" files); the whole-file
+                    # call works there.
+                    log.info("partial_read_unsupported", folder=folder, name=name, reason=str(e))
+                    tmp.unlink(missing_ok=True)
+                    try:
+                        cam.file_get(folder, name, ftype).save(str(tmp))
+                    except gp.GPhoto2Error as e2:
+                        err = translate_error(e2, f"read_file({posixpath.join(folder, name)})")
+                        err.details["partial_read_cause"] = str(e)
+                        err.details["whole_file_cause"] = str(e2)
+                        raise err from e2
             else:  # previews/EXIF are small; let libgphoto2 build them
                 cam.file_get(folder, name, ftype).save(str(tmp))
             tmp.replace(dest)
-        except gp.GPhoto2Error as e:
+        except gp.GPhoto2Error as e:  # not reached by the fallback's own failure (AppError)
             tmp.unlink(missing_ok=True)
-            raise translate_error(e, f"read_file({folder}/{name})") from e
+            raise translate_error(e, f"read_file({posixpath.join(folder, name)})") from e
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
@@ -501,7 +585,7 @@ class Gphoto2Backend:
         try:
             cam.file_delete(folder, name, self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"delete_file({folder}/{name})") from e
+            raise translate_error(e, f"delete_file({posixpath.join(folder, name)})") from e
 
     def storage_info(self) -> list[StorageInfo]:
         cam = self._cam()
@@ -532,4 +616,18 @@ class Gphoto2Backend:
         return out
 
 
-__all__ = ["Gphoto2Backend", "coerce_config_value", "translate_error", "widget_to_config"]
+def library_version() -> str:
+    """Version of the libgphoto2 the bindings are linked against (e.g. "2.5.34")."""
+    try:
+        return str(gp.gp_library_version(gp.GP_VERSION_SHORT)[0])
+    except Exception:
+        return "unknown"
+
+
+__all__ = [
+    "Gphoto2Backend",
+    "library_version",
+    "coerce_config_value",
+    "translate_error",
+    "widget_to_config",
+]

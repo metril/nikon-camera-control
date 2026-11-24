@@ -1,7 +1,7 @@
 /** Pure helpers for bracketing: types, ordering, counting, step ids. */
 
 export const bracketTypes = [
-  { key: 'exposure', label: 'Exposure compensation (EV)', setting: 'exposurecompensation' },
+  { key: 'exposure', label: 'Exposure comp.', setting: 'exposurecompensation' },
   { key: 'iso', label: 'ISO', setting: 'iso' },
   { key: 'aperture', label: 'Aperture', setting: 'aperture' },
   { key: 'shutter', label: 'Shutter speed', setting: 'shutterspeed' },
@@ -97,5 +97,5 @@ export function formatDuration(s) {
   const h = Math.floor(t / 3600)
   const m = Math.floor((t % 3600) / 60)
   const sec = t % 60
-  return h ? `${h}h ${m}m` : m ? `${m}m ${sec}s` : `${sec}s`
+  return h ? `${h} h ${m} min` : m ? `${m} min ${sec} s` : `${sec} s`
 }

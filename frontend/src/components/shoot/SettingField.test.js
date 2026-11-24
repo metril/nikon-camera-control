@@ -32,7 +32,7 @@ describe('SettingField', () => {
 
   it('renders each label once, associated with its control', () => {
     const w = mount(SettingField, { props: { setting: range } })
-    expect(w.text().match(/ISO Speed/g)).toHaveLength(1)
+    expect(w.text().match(/ISO/g)).toHaveLength(1)
     expect(w.find('label').attributes('for')).toBe(w.find('input').attributes('id'))
   })
 })

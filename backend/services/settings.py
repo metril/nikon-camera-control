@@ -10,7 +10,7 @@ from __future__ import annotations
 import difflib
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -74,6 +74,38 @@ WRITABLE: tuple[str, ...] = (
 )
 _ORDER: dict[str, int] = {n: i for i, n in enumerate(WRITABLE)}
 
+# Logical setting -> the gphoto2 widget names bodies use for it, tried in order. The first one the
+# connected body has wins and is remembered for the connection (CameraService.resolve_setting).
+# The D500 has no ``autoexposuremode``/``meteringmode``/``drivemode``/``isoauto``; it uses
+# ``expprogram``/``exposuremetermode``/``capturemode``/``autoiso``.
+SETTING_NAMES: dict[str, tuple[str, ...]] = {
+    "autoexposuremode": ("autoexposuremode", "expprogram"),
+    "meteringmode": ("meteringmode", "exposuremetermode"),
+    "drivemode": ("drivemode", "capturemode"),
+    "isoauto": ("isoauto", "autoiso"),
+    "exposurecompensation2": ("exposurecompensation2", "exposurecompensation"),
+}
+# Every alternative name -> its logical (WRITABLE) setting; these are writable too.
+_LOGICAL_OF: dict[str, str] = {
+    alt: logical for logical, names in SETTING_NAMES.items() for alt in names
+}
+
+
+def logical_name(name: str) -> str:
+    """Alias or any body's widget name -> the logical setting name (``exposuremetermode`` ->
+    ``meteringmode``); other names are returned resolved but unchanged."""
+    w = resolve_name(name)
+    return _LOGICAL_OF.get(w, w)
+
+
+def _rank(name: str) -> int:
+    """Write order of a widget name (logical or an alternative name)."""
+    return _ORDER.get(name, _ORDER.get(_LOGICAL_OF.get(name, ""), len(_ORDER)))
+
+
+def _is_writable_name(name: str) -> bool:
+    return name in _ORDER or name in _LOGICAL_OF
+
 
 @dataclass(frozen=True, slots=True)
 class SettingView:
@@ -90,8 +122,15 @@ class SettingView:
 
 
 @dataclass(frozen=True, slots=True)
+class SkippedSetting:
+    name: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class SetManyResult:
     applied: list[SettingView]
+    skipped: list[SkippedSetting] = field(default_factory=list)
 
 
 def resolve_name(name: str) -> str:
@@ -239,10 +278,12 @@ class SettingsService:
 
     # views ----------------------------------------------------------------------------
     @staticmethod
-    def _view(w: ConfigWidget) -> SettingView:
+    def _view(w: ConfigWidget, name: str | None = None) -> SettingView:
+        """``name`` overrides the widget name (the logical name the caller asked for)."""
+        shown = name or w.name
         return SettingView(
-            name=w.name,
-            alias=_ALIAS_OF.get(w.name),
+            name=shown,
+            alias=_ALIAS_OF.get(shown),
             label=w.label,
             path=w.path,
             type=w.type,
@@ -250,7 +291,7 @@ class SettingsService:
             readonly=w.readonly,
             choices=w.choices,
             range=w.range,
-            writable=w.name in _ORDER and not w.readonly and w.type != ConfigType.UNKNOWN,
+            writable=_is_writable_name(w.name) and not w.readonly and w.type != ConfigType.UNKNOWN,
         )
 
     @staticmethod
@@ -268,15 +309,35 @@ class SettingsService:
     def resolve_name(name: str) -> str:
         return resolve_name(name)
 
+    @staticmethod
+    def _common(leaves: list[ConfigWidget]) -> list[SettingView]:
+        """COMMON settings under their logical names, each backed by this body's own widget."""
+        by_name = {w.name: w for w in leaves}
+        out: list[SettingView] = []
+        for n in COMMON:
+            w = next((by_name[c] for c in SETTING_NAMES.get(n, (n,)) if c in by_name), None)
+            if w is not None:
+                out.append(SettingsService._view(w, n))
+        return out
+
+    async def _actual(self, name: str) -> str:
+        """The widget name for ``name`` on the connected body (aliases resolved and cached)."""
+        logical = resolve_name(name)
+        names = SETTING_NAMES.get(logical)
+        if names is None:
+            return logical
+        return await self._cam.resolve_setting(logical, names)
+
     async def list_settings(self, group: Literal["common", "all"] = "common") -> list[SettingView]:
         leaves = self._leaves(await self._cam.list_settings())
         if group == "all":
             return [self._view(w) for w in leaves]
-        by_name = {w.name: w for w in leaves}
-        return [self._view(by_name[n]) for n in COMMON if n in by_name]
+        return self._common(leaves)
 
     async def get(self, name: str) -> SettingView:
-        return self._view(await self._cam.get_setting(resolve_name(name)))
+        logical = resolve_name(name)
+        w = await self._cam.get_setting(await self._actual(name))
+        return self._view(w, logical if logical in SETTING_NAMES else None)
 
     async def refresh(self, group: Literal["common", "all"] = "common") -> list[SettingView]:
         """Drop the settings cache and re-read the full config tree from the camera."""
@@ -284,16 +345,15 @@ class SettingsService:
         leaves = self._leaves(await self._cam.list_settings(refresh=True))
         if group == "all":
             return [self._view(w) for w in leaves]
-        by_name = {w.name: w for w in leaves}
-        return [self._view(by_name[n]) for n in COMMON if n in by_name]
+        return self._common(leaves)
 
     # writes ---------------------------------------------------------------------------
     async def prepare(self, name: str, value: object) -> tuple[str, SettingValue]:
-        wname = resolve_name(name)
+        wname = await self._actual(name)
         widget = await self._cam.get_setting(wname)
         if widget.readonly:
             raise SettingNotAllowed(f"Setting {wname!r} is read-only", details={"name": wname})
-        if wname not in _ORDER:
+        if not _is_writable_name(wname):
             raise SettingNotAllowed(
                 f"Setting {wname!r} cannot be changed through the generic settings API",
                 details={"name": wname},
@@ -302,7 +362,9 @@ class SettingsService:
 
     async def set(self, name: str, value: object, *, owner: str | None = None) -> SettingView:
         wname, v = await self.prepare(name, value)
-        return self._view(await self._cam.set_setting(wname, v, owner=owner))
+        logical = resolve_name(name)
+        shown = logical if logical in SETTING_NAMES else None
+        return self._view(await self._cam.set_setting(wname, v, owner=owner), shown)
 
     async def set_many(
         self,
@@ -310,13 +372,21 @@ class SettingsService:
         *,
         owner: str | None = None,
         continue_on_error: bool = False,
+        skip_unusable: bool = False,
     ) -> SetManyResult:
         """Validate all first, then apply in WRITABLE order. If the camera fails mid-way the
         raised error's ``details`` carry ``applied`` (names) and ``failed`` (name); with
         ``continue_on_error`` every setting is attempted and the first error raised at the end."""
         prepared: dict[str, SettingValue] = {}
+        skipped: list[SkippedSetting] = []
         for name, value in values.items():
-            wname, v = await self.prepare(name, value)
+            try:
+                wname, v = await self.prepare(name, value)
+            except (SettingNotAllowed, SettingNotFound) as e:
+                if not skip_unusable:
+                    raise
+                skipped.append(SkippedSetting(name=name, reason=e.message))
+                continue
             if wname in prepared:
                 raise SettingInvalid(
                     f"Setting {wname!r} given more than once", details={"name": wname}
@@ -324,7 +394,7 @@ class SettingsService:
             prepared[wname] = v
         applied: list[SettingView] = []
         first_err: AppError | None = None
-        for wname in sorted(prepared, key=lambda n: _ORDER[n]):
+        for wname in sorted(prepared, key=_rank):
             try:
                 widget = await self._cam.set_setting(wname, prepared[wname], owner=owner)
             except AppError as e:
@@ -344,14 +414,19 @@ class SettingsService:
             applied.append(self._view(widget))
         if first_err is not None:
             raise first_err
-        return SetManyResult(applied)
+        return SetManyResult(applied, skipped)
 
     # snapshot / restore ----------------------------------------------------------------
-    async def snapshot(self, names: list[str] | tuple[str, ...]) -> dict[str, SettingValue]:
-        """The camera's CURRENT values (fresh read, not the cache), keyed by widget name."""
+    async def snapshot(
+        self, names: list[str] | tuple[str, ...], *, skip_readonly: bool = False
+    ) -> dict[str, SettingValue]:
+        """The camera's CURRENT values (fresh read, not the cache), keyed by widget name.
+        ``skip_readonly`` leaves out widgets the body currently reports read-only."""
         out: dict[str, SettingValue] = {}
         for n in names:  # one get_config per widget; never the whole tree
-            w = await self._cam.refresh_setting(resolve_name(n))
+            w = await self._cam.refresh_setting(await self._actual(n))
+            if skip_readonly and w.readonly:
+                continue
             if w.value is None:
                 raise SettingNotFound(f"Setting {w.name!r} has no value", details={"name": w.name})
             out[w.name] = w.value

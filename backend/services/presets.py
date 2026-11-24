@@ -40,6 +40,7 @@ from backend.api.schemas.presets import (
     PresetIn,
     SettingsPreset,
     SettingsPresetIn,
+    SkippedSetting,
 )
 from backend.api.schemas.timelapse import (
     BracketStep,
@@ -58,7 +59,7 @@ from backend.core.errors import (
     SettingNotFound,
 )
 from backend.core.events import EventBus
-from backend.services.settings import COMMON, WRITABLE, SettingsService, resolve_name
+from backend.services.settings import COMMON, WRITABLE, SettingsService, logical_name
 from backend.services.timelapse.brackets import (
     PRESETS,
     generate_quick,
@@ -105,7 +106,7 @@ def bracket_steps(b: StepsBracketing | QuickBracketing | PresetBracketing) -> li
 def _check_settings_names(values: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for k, v in values.items():
-        w = resolve_name(k)
+        w = logical_name(k)  # camera-resolved names are stored under their logical name
         if w not in _WRITABLE:
             raise SettingNotAllowed(
                 f"Setting {k!r} cannot be stored in a preset", details={"name": k}
@@ -333,11 +334,12 @@ class PresetService:
     async def apply(self, preset_id: str) -> ApplyResult:
         p = await self.get(preset_id)
         if isinstance(p, SettingsPreset):
-            res = await self._settings.set_many(dict(p.values))
+            res = await self._settings.set_many(dict(p.values), skip_unusable=True)
             return ApplyResult(
                 kind="settings",
                 preset_id=p.id,
                 applied=[AppliedSetting(name=v.name, value=v.value) for v in res.applied],
+                skipped=[SkippedSetting(name=x.name, reason=x.reason) for x in res.skipped],
             )
         steps = await validate_steps(bracket_steps(p.bracketing), self._settings)
         return ApplyResult(
@@ -354,7 +356,7 @@ class PresetService:
         if body.names is None:
             for n in DEFAULT_FROM_CAMERA:
                 try:
-                    values.update(await self._settings.snapshot([n]))
+                    values.update(await self._settings.snapshot([n], skip_readonly=True))
                 except SettingNotFound:
                     continue  # this body does not have the widget
         else:

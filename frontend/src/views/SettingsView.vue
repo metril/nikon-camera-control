@@ -2,11 +2,23 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
-import UiCard from '@/components/ui/UiCard.vue'
+import { useStorageStore } from '@/stores/storage'
+import { useCameraStore } from '@/stores/camera'
+import { useCameraAdminStore } from '@/stores/cameraAdmin'
+import { useLayoutMode } from '@/composables/useLayoutMode'
+import { useKeyboardHints } from '@/composables/useKeyboardHints'
+import { captureTarget } from '@/labels'
+import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
+import UiSegmented from '@/components/ui/UiSegmented.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiToggle from '@/components/ui/UiToggle.vue'
 import SchemaField from '@/components/settings/SchemaField.vue'
+import SettingRow from '@/components/settings/SettingRow.vue'
+import SettingsSection from '@/components/settings/SettingsSection.vue'
+import CameraClockRow from '@/components/settings/CameraClockRow.vue'
 import ApiKeySection from '@/components/settings/ApiKeySection.vue'
 import DemoCameraSection from '@/components/settings/DemoCameraSection.vue'
 import StorageSection from '@/components/settings/StorageSection.vue'
@@ -18,10 +30,17 @@ import {
   fieldErrors,
   getPath,
   setPath,
+  pathTitles,
+  titleForPath,
 } from '@/components/settings/schemaForm'
 
 const config = useConfigStore()
 const toasts = useToastsStore()
+const storage = useStorageStore()
+const camera = useCameraStore()
+const admin = useCameraAdminStore()
+const { pref: layoutPref, setPref: setLayoutPref } = useLayoutMode()
+const { hints, setHints } = useKeyboardHints()
 
 const draft = ref({})
 let base = {} // server config the draft was last synced to
@@ -32,6 +51,8 @@ const loadError = ref('')
 
 // Storage locations/target/backups are managed by StorageSection, not the generic form.
 const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
+// Shown in the Capture section instead of their own section.
+const CAPTURE_OWNED = ['camera.keep_card_copy']
 const sections = computed(() =>
   buildSections(config.schema).map((s) =>
     s.key === 'storage'
@@ -39,6 +60,17 @@ const sections = computed(() =>
       : s,
   ),
 )
+const shownSections = computed(() =>
+  sections.value
+    .map((s) => ({ ...s, fields: s.fields.filter((f) => !CAPTURE_OWNED.includes(s.path(f))) }))
+    .filter((s) => s.fields.length || s.key === 'camera'),
+)
+const keepCardField = computed(() =>
+  sections.value.find((s) => s.key === 'camera')?.fields.find((f) => f.name === 'keep_card_copy'),
+)
+const titles = computed(() => pathTitles(sections.value))
+const titled = (paths) => paths.map((p) => titleForPath(titles.value, p)).join(', ')
+
 const dirty = computed(() =>
   config.config ? dirtyPaths(sections.value, config.config, draft.value, ['demo_camera']) : [],
 )
@@ -68,7 +100,10 @@ async function load() {
     loadError.value = e?.message || 'Could not load settings'
   }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  if (!storage.loaded) storage.fetch().catch(() => {})
+})
 
 const value = (s, f) => getPath(draft.value, s.path(f))
 const setValue = (s, f, v) => {
@@ -111,116 +146,245 @@ async function resetDefaults() {
     resetting.value = false
   }
 }
+
+// Display
+const LAYOUTS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'desktop', label: 'Desktop' },
+  { value: 'touch', label: 'Touch' },
+]
+
+// Capture: where the camera saves (applied at once, like the camera settings)
+const savingTarget = ref(false)
+const targetOptions = computed(() =>
+  (admin.target?.choices || []).map((c) => ({ value: c, label: captureTarget(c) })),
+)
+const targetReason = computed(() => {
+  if (!camera.connected) return 'Connect the camera to change this.'
+  if (camera.state === 'recording' || camera.leasedBy) return 'Not while the camera is busy.'
+  return ''
+})
+watch(
+  () => camera.connected,
+  (on) => {
+    if (on && !admin.target) admin.fetchTarget().catch(() => {})
+  },
+  { immediate: true },
+)
+async function setCameraTarget(v) {
+  if (!v || v === admin.target?.value) return
+  savingTarget.value = true
+  try {
+    await admin.setTarget(v)
+  } catch (e) {
+    toasts.error(e)
+    admin.fetchTarget().catch(() => {})
+  } finally {
+    savingTarget.value = false
+  }
+}
+
+// Capture: where every photo is copied
+const savingLocation = ref(false)
+const locationOptions = computed(() =>
+  storage.mounted
+    .filter((l) => l.configured)
+    .map((l) => ({ value: l.id, label: l.name || l.label || l.id })),
+)
+async function setLocation(id) {
+  if (!id || id === storage.targetId) return
+  savingLocation.value = true
+  try {
+    await storage.setTarget(id)
+  } catch (e) {
+    toasts.error(e)
+  } finally {
+    savingLocation.value = false
+  }
+}
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-3xl flex-col gap-4">
+  <div class="mx-auto flex max-w-[760px] flex-col gap-4">
     <h2 class="text-xl font-semibold">Settings</h2>
 
-    <div
+    <UiAlert
       v-if="config.restartRequired.length"
-      role="status"
-      class="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 text-sm"
+      tone="warn"
+      title="Restart required"
       data-test="restart"
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <span>
-          Restart required for: <strong>{{ config.restartRequired.join(', ') }}</strong>
-        </span>
-        <UiButton
-          class="ml-auto"
-          size="sm"
-          variant="ghost"
-          data-test="dismiss-restart"
-          @click="config.dismissRestart()"
-        >
+      Changes to {{ titled(config.restartRequired) }} take effect after the app restarts.
+      <template #action>
+        <UiButton size="sm" data-test="dismiss-restart" @click="config.dismissRestart()">
           Dismiss
         </UiButton>
-      </div>
-    </div>
+      </template>
+    </UiAlert>
 
     <UiEmpty v-if="loadError" title="Settings could not be loaded" :hint="loadError">
       <template #actions><UiButton variant="primary" @click="load">Retry</UiButton></template>
     </UiEmpty>
 
     <template v-else-if="config.config && sections.length">
-      <ApiKeySection />
+      <SettingsSection title="Display" data-section="display">
+        <SettingRow
+          title="Layout"
+          description="Auto picks the touch layout on touch screens. Saved in this browser only."
+        >
+          <UiSegmented
+            :model-value="layoutPref"
+            :options="LAYOUTS"
+            aria-label="Layout"
+            data-test="layout"
+            @update:model-value="setLayoutPref"
+          />
+        </SettingRow>
+        <SettingRow
+          title="Keyboard hints"
+          description="Show shortcut hints such as Space to capture."
+          natural
+        >
+          <UiToggle
+            :model-value="hints"
+            aria-label="Keyboard hints"
+            data-test="hints"
+            @update:model-value="setHints"
+          />
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection title="Capture" data-section="capture">
+        <SettingRow
+          title="Camera saves to"
+          description="Memory card is the safest. Camera memory is faster but keeps no copy on the card."
+        >
+          <UiSelect
+            :model-value="admin.target?.value"
+            :options="targetOptions"
+            label="Camera saves to"
+            :disabled="!!targetReason || savingTarget || !targetOptions.length"
+            data-test="camera-target"
+            @update:model-value="setCameraTarget"
+          />
+          <template #note>
+            <span v-if="targetReason" data-test="target-reason">{{ targetReason }}</span>
+          </template>
+        </SettingRow>
+        <SettingRow
+          title="Copy each photo to"
+          description="Every photo is copied here, whichever option the camera uses."
+        >
+          <UiSelect
+            :model-value="storage.targetId"
+            :options="locationOptions"
+            label="Copy each photo to"
+            :disabled="savingLocation || !locationOptions.length"
+            data-test="photo-location"
+            @update:model-value="setLocation"
+          />
+          <template #note>
+            <span v-if="!locationOptions.length" data-test="location-reason">
+              Mount a drive or share below to choose it.
+            </span>
+          </template>
+        </SettingRow>
+        <SchemaField
+          v-if="keepCardField"
+          :field="keepCardField"
+          :model-value="getPath(draft, 'camera.keep_card_copy')"
+          :dirty="isFieldDirty('camera.keep_card_copy')"
+          :error="errors['camera.keep_card_copy'] || ''"
+          @update:model-value="setPath(draft, 'camera.keep_card_copy', $event)"
+        />
+      </SettingsSection>
+
       <StorageSection />
-      <DemoCameraSection
-        :model-value="!!draft.demo_camera"
-        :dirty="isFieldDirty('demo_camera')"
-        @update:model-value="draft.demo_camera = $event"
-      />
-      <UiCard
-        v-for="s in sections"
+
+      <SettingsSection
+        v-for="s in shownSections"
         :key="s.key"
         :title="s.title"
         :subtitle="s.description"
         :data-section="s.key"
       >
-        <div class="grid gap-4 sm:grid-cols-2">
-          <SchemaField
-            v-for="f in s.fields"
-            :key="s.path(f)"
-            :field="f"
-            :model-value="value(s, f)"
-            :dirty="isFieldDirty(s.path(f))"
-            :error="errors[s.path(f)] || ''"
-            :class="f.kind === 'strings' ? 'sm:col-span-2' : ''"
-            @update:model-value="setValue(s, f, $event)"
-          />
-        </div>
-      </UiCard>
+        <SchemaField
+          v-for="f in s.fields"
+          :key="s.path(f)"
+          :field="f"
+          :model-value="value(s, f)"
+          :dirty="isFieldDirty(s.path(f))"
+          :error="errors[s.path(f)] || ''"
+          @update:model-value="setValue(s, f, $event)"
+        />
+        <CameraClockRow v-if="s.key === 'camera'" />
+      </SettingsSection>
 
-      <p
+      <DemoCameraSection
+        :model-value="!!draft.demo_camera"
+        :dirty="isFieldDirty('demo_camera')"
+        @update:model-value="draft.demo_camera = $event"
+      />
+      <ApiKeySection />
+
+      <UiAlert
         v-if="config.resetChanged?.length"
-        role="status"
-        class="rounded-lg border border-camera-border bg-camera-surface p-3 text-sm"
+        tone="info"
+        title="Reset changed"
         data-test="reset-changed"
       >
-        Reset changed: <strong>{{ config.resetChanged.join(', ') }}</strong>
-      </p>
+        {{ titled(config.resetChanged) }}
+      </UiAlert>
 
-      <div
-        class="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-lg border border-camera-border bg-camera-surface p-3"
-      >
-        <UiButton
-          variant="primary"
-          :loading="saving"
-          :disabled="!isDirty"
-          data-test="save"
-          @click="save"
-        >
-          Save changes
-        </UiButton>
-        <UiButton
-          variant="ghost"
-          :disabled="!isDirty || saving"
-          data-test="discard"
-          @click="discard"
-        >
-          Discard
-        </UiButton>
-        <span v-if="isDirty" class="text-xs text-camera-muted" aria-live="polite">
-          {{ dirty.length }} unsaved change{{ dirty.length === 1 ? '' : 's' }}
-        </span>
+      <div class="flex flex-wrap items-center gap-3">
         <UiConfirmButton
-          class="ml-auto"
           variant="danger"
-          confirm-text="Reset all, incl. demo camera?"
+          size="sm"
+          confirm-text="Reset everything?"
           :loading="resetting"
           data-test="reset"
           @confirm="resetDefaults"
         >
           Reset to defaults
         </UiConfirmButton>
-        <p class="basis-full text-xs text-camera-muted">
-          Reset restores every setting, including the demo camera switch.
+        <p class="min-w-0 flex-1 text-xs text-camera-muted">
+          Restores every setting, including the demo camera switch.
         </p>
       </div>
     </template>
-    <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings...</p>
+    <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings…</p>
 
     <AboutSection />
+
+    <div
+      v-if="config.config && isDirty"
+      class="sticky bottom-[var(--nav,0px)] z-[15] flex flex-wrap items-center gap-3 rounded-t-card border border-b-0 border-camera-border bg-camera-raised px-4 py-2 shadow-[0_-8px_24px_rgba(0,0,0,.4)] max-[420px]:gap-2"
+      data-test="savebar"
+    >
+      <span class="whitespace-nowrap text-sm tabular-nums" aria-live="polite">
+        {{ dirty.length }} unsaved change{{ dirty.length === 1 ? '' : 's' }}
+      </span>
+      <span class="flex-1 max-[420px]:hidden" />
+      <UiButton
+        variant="ghost"
+        size="sm"
+        :disabled="saving"
+        class="max-[420px]:flex-1"
+        data-test="discard"
+        @click="discard"
+      >
+        Discard
+      </UiButton>
+      <UiButton
+        variant="primary"
+        size="sm"
+        :loading="saving"
+        class="max-[420px]:flex-1"
+        data-test="save"
+        @click="save"
+      >
+        Save changes
+      </UiButton>
+    </div>
   </div>
 </template>

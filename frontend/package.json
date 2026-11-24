@@ -1,6 +1,6 @@
 {
   "name": "nikon-camera-control-frontend",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,8 +14,9 @@
     "gen:api:check": "node scripts/check-api.js"
   },
   "dependencies": {
-    "vue": "^3.4.0",
-    "pinia": "^2.1.0"
+    "lucide-vue-next": "^1.0.0",
+    "pinia": "^2.1.0",
+    "vue": "^3.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -65,6 +65,12 @@ function toggleBackup(id, on) {
   return run('backups', () => storage.setBackups([...ids]))
 }
 const backupNow = () => run('backup', () => storage.runBackup(), 'Backup started')
+const actionHint = computed(() => {
+  if (!storage.targetId) return 'Choose a storage location first to back up or verify.'
+  if (!storage.backupIds.length) return 'Choose a backup location to back up now.'
+  if (storage.mounted.length < 2) return 'Offload needs two mounted locations.'
+  return ''
+})
 const verify = () => run('verify', () => storage.verify({}), 'Verify started. Progress is in Jobs.')
 
 async function test() {
@@ -106,7 +112,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
     data-section="storage-locations"
   >
     <div class="flex flex-col gap-5">
-      <p v-if="storage.noTarget" class="text-sm text-camera-warning" data-test="no-target-hint">
+      <p v-if="storage.noTarget" class="text-sm text-camera-warn" data-test="no-target-hint">
         No storage target. Mount a drive and choose it below.
       </p>
 
@@ -117,7 +123,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
         ]"
         :key="grp[2]"
       >
-        <h3 class="mb-2 text-xs font-semibold uppercase text-camera-muted">{{ grp[0] }}</h3>
+        <h3 class="eyebrow mb-2">{{ grp[0] }}</h3>
         <p v-if="!grp[1].length" class="text-sm text-camera-muted" :data-test="`none-${grp[2]}`">
           {{ grp[2] === 'usb' ? 'No drives detected.' : 'No shares configured.' }}
         </p>
@@ -125,7 +131,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
           <li
             v-for="l in grp[1]"
             :key="l.id"
-            class="rounded border border-camera-border p-3"
+            class="rounded-inner border border-camera-border p-3"
             :data-test="`loc-${l.id}`"
           >
             <div class="flex flex-wrap items-center gap-2">
@@ -133,8 +139,8 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
               <UiBadge :tone="l.mounted ? 'ok' : 'neutral'">{{
                 l.mounted ? 'Mounted' : 'Not mounted'
               }}</UiBadge>
-              <UiBadge v-if="l.is_target" tone="info">Target</UiBadge>
-              <UiBadge v-if="l.is_backup" tone="info">Backup</UiBadge>
+              <UiBadge v-if="l.is_target" tone="accent">Photo location</UiBadge>
+              <UiBadge v-if="l.is_backup" tone="accent">Backup</UiBadge>
               <UiBadge v-if="!l.supported" tone="warn" data-test="unsupported">Unsupported</UiBadge>
               <UiBadge
                 v-if="l.kind === 'smb' && l.mounted && l.encrypted === false"
@@ -153,10 +159,10 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
                 · {{ formatBytes(l.free) }} free</template
               >
             </p>
-            <p v-if="l.reason" class="mt-1 text-xs text-camera-warning">{{ l.reason }}</p>
+            <p v-if="l.reason" class="mt-1 text-xs text-camera-warn">{{ l.reason }}</p>
             <p
               v-if="l.error"
-              class="mt-1 break-words text-xs text-camera-error"
+              class="mt-1 break-words text-xs text-camera-danger"
               data-test="loc-error"
             >
               {{ l.error }}
@@ -217,7 +223,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
             </div>
             <pre
               v-if="fsck[l.id]"
-              class="mt-2 max-h-40 overflow-auto rounded bg-camera-bg p-2 text-xs"
+              class="mt-2 max-h-40 overflow-auto rounded-inner bg-camera-bg p-2 text-xs"
               data-test="fsck-out"
               >{{ fsck[l.id].output || `exit ${fsck[l.id].returncode}` }}</pre>
           </li>
@@ -225,7 +231,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
       </section>
 
       <section>
-        <h3 class="mb-2 text-xs font-semibold uppercase text-camera-muted">Add SMB share</h3>
+        <h3 class="eyebrow mb-2">Add SMB share</h3>
         <form class="grid gap-3 sm:grid-cols-2" @submit.prevent="addSmb">
           <UiText
             v-model="form.unc"
@@ -233,14 +239,14 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
             placeholder="//nas/photos"
             class="sm:col-span-2"
           />
-          <UiText v-model="form.name" label="Name" :maxlength="64" placeholder="optional" />
-          <UiText v-model="form.domain" label="Domain" placeholder="optional" />
+          <UiText v-model="form.name" label="Name" :maxlength="64" placeholder="Optional" />
+          <UiText v-model="form.domain" label="Domain" placeholder="Optional" />
           <UiText v-model="form.username" label="User" />
           <UiText
             v-model="form.password"
             label="Password"
             type="password"
-            placeholder="write-only"
+            placeholder="Saved but never shown"
           />
           <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
             <UiButton
@@ -258,10 +264,13 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
               data-test="smb-add"
               >Add share</UiButton
             >
+            <span v-if="!form.unc.trim()" class="text-xs text-camera-muted" data-test="smb-hint"
+              >Enter a share path to test or add it.</span
+            >
             <span
               v-if="testResult"
               class="text-sm"
-              :class="testResult.ok ? 'text-camera-success' : 'text-camera-error'"
+              :class="testResult.ok ? 'text-camera-ok' : 'text-camera-danger'"
               data-test="smb-result"
               >{{ testResult.message }}</span
             >
@@ -270,9 +279,9 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
       </section>
 
       <section v-if="configured.length">
-        <h3 class="mb-2 text-xs font-semibold uppercase text-camera-muted">Roles</h3>
+        <h3 class="eyebrow mb-2">Roles</h3>
         <fieldset class="mb-3" data-test="target-group">
-          <legend class="mb-1 text-sm font-medium">Capture target</legend>
+          <legend class="mb-1 text-sm font-medium">Copy each photo to</legend>
           <label
             v-for="l in storage.mounted.filter((x) => x.configured)"
             :key="l.id"
@@ -330,7 +339,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
             :loading="isBusy('verify')"
             data-test="verify"
             @click="verify"
-            >Verify target</UiButton
+            >Verify photo location</UiButton
           >
           <UiButton
             :disabled="storage.mounted.length < 2"
@@ -339,6 +348,9 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
             >Offload…</UiButton
           >
         </div>
+        <p v-if="actionHint" class="text-xs text-camera-muted" data-test="action-hint">
+          {{ actionHint }}
+        </p>
         <p v-if="backup" class="text-xs text-camera-muted" data-test="backup-status">
           <template v-if="backup.running"
             >Backing up{{ backup.current ? `: ${backup.current}` : '' }}.
