@@ -21,6 +21,7 @@ from backend.camera.gphoto2_backend import (
     widget_to_config,
 )
 from backend.core.errors import (
+    AppError,
     CameraBusy,
     CameraIOError,
     CameraNotConnected,
@@ -626,3 +627,61 @@ def test_context_text_does_not_leak_into_next_call() -> None:
     b._on_context_text(None, "stale", None)
     b.get_config("iso")
     assert b._take_msgs() == []
+
+
+def test_context_callbacks_retained_until_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    sentinels = [object(), object()]
+
+    class Ctx:
+        def set_error_func(self, f: Any, d: Any) -> object:
+            return sentinels[0]
+
+        def set_message_func(self, f: Any, d: Any) -> object:
+            return sentinels[1]
+
+    class Cam:
+        def init(self, ctx: Any) -> None: ...
+
+        def get_abilities(self) -> Any:
+            return type("A", (), {"model": "Nikon DSC D500"})()
+
+        def get_port_info(self) -> Any:
+            return type("P", (), {"get_path": lambda s: "usb:001,002"})()
+
+        def exit(self, ctx: Any) -> None: ...
+
+    monkeypatch.setattr(gp, "Context", Ctx)
+    monkeypatch.setattr(gp, "Camera", Cam)
+    b = Gphoto2Backend()
+    b.open()
+    assert b._ctx_cbs == tuple(sentinels)
+    b.close()
+    assert b._ctx_cbs is None
+
+
+def test_prohibit_not_read_for_io_errors() -> None:
+    class IoCamera(_RefusingCamera):
+        def set_single_config(self, name: str, w: StubWidget, ctx: Any) -> None:
+            raise gp.GPhoto2Error(gp.GP_ERROR_IO)
+
+    b = Gphoto2Backend()
+    b._camera = IoCamera(_refusal_root("Live View prohibit conditions: Card error"), b, "")
+    with pytest.raises(AppError) as ei:
+        b.set_config("viewfinder", 1)
+    assert not isinstance(ei.value, CameraOperationFailed)
+    assert "prohibit" not in ei.value.details
+
+
+def test_movie_selector_reason_cites_manual() -> None:
+    b = Gphoto2Backend()
+    b._camera = _RefusingCamera(
+        _refusal_root("Live View prohibit conditions: Set live view selector is enabled"),
+        b,
+        "x",
+    )
+    with pytest.raises(CameraOperationFailed) as ei:
+        b.set_config("viewfinder", 1)
+    assert ei.value.message == (
+        "The camera refused live view. Camera reports: Set live view selector is enabled"
+    )
+    assert "p.58" in ei.value.details["nikon_manual"]

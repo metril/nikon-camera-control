@@ -232,7 +232,7 @@ class BulbService:
                     hint = " Bulb usually needs exposure program M." if warnings else ""
                     raise CameraOperationFailed(
                         f"Could not open the shutter: {e.message.rstrip('.')}.{hint}",
-                        details={"cause": e.message, "warnings": warnings},
+                        details={**e.details, "cause": e.message, "warnings": warnings},
                     ) from e
                 if cancel is None:
                     cancel = await self._wait_exposure(ctx, run)

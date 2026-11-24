@@ -25,6 +25,13 @@ from backend.camera.camera_text import (
         ("Pending unretrieved SDRAM image", "Pending unretrieved SDRAM image"),
         ("TTL error", "TTL error"),
         ("In Mirror-up operation", "In mirror-up operation"),
+        (
+            "Nikon enable liveview failed: Set liveview selector is enabled",
+            "Nikon enable live view failed: Set live view selector is enabled",
+        ),
+        ("nikon enable LiveView failed: D500", "Nikon enable live view failed: D500"),
+        ("Set Live View selector is enabled", "Set live view selector is enabled"),
+        ("D500 in Nikon mode", "D500 in Nikon mode"),
     ],
 )
 def test_sentence_case(raw: str, expected: str) -> None:
@@ -44,7 +51,7 @@ def test_split_keeps_comma_inside_known_reason() -> None:
 
 
 def test_split_unknown_reasons_on_commas() -> None:
-    assert split_reasons("Some new reason, Another One") == ["Some new reason", "Another one"]
+    assert split_reasons("Some new reason, Another One") == ["Some new reason", "Another One"]
 
 
 def test_prohibit_reasons() -> None:

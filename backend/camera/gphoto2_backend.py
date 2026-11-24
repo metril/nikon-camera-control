@@ -280,6 +280,7 @@ class Gphoto2Backend:
         self._sleep = time.sleep
         self._msgs: list[str] = []
         self._msg_lock = threading.Lock()
+        self._ctx_cbs: tuple[Any, Any] | None = None  # keep gphoto2 callbacks alive
 
     # -- lifecycle
 
@@ -308,13 +309,17 @@ class Gphoto2Backend:
         self._take_msgs()
         camera = gp.Camera()
         ctx = gp.Context()
-        ctx.set_error_func(self._on_context_text, None)
-        ctx.set_message_func(self._on_context_text, None)
+        # python-gphoto2 cancels a callback when the returned object is deleted: keep them.
+        cbs = (
+            ctx.set_error_func(self._on_context_text, None),
+            ctx.set_message_func(self._on_context_text, None),
+        )
         try:
             camera.init(ctx)
             model = camera.get_abilities().model
         except gp.GPhoto2Error as e:
             self._exit_quietly(camera, ctx)
+            del cbs
             err = self._translate(e, "open")
             if isinstance(err, CameraNotFound | CameraIOError | CameraOperationFailed):
                 problem = find_unopenable_nikon(self._sysfs_root, self._dev_root)
@@ -322,6 +327,7 @@ class Gphoto2Backend:
                     raise CameraPermissionDenied(details=problem.details()) from e
             raise err from e
         self._camera, self._ctx, self._model = camera, ctx, str(model)
+        self._ctx_cbs = cbs
         try:
             Gphoto2Backend._last_port = _port_of(camera.get_port_info())
         except Exception as e:  # noqa: BLE001 - only used to narrow a best-effort reset
@@ -334,6 +340,7 @@ class Gphoto2Backend:
         self._viewfinder_on = False
         if camera is not None:
             self._exit_quietly(camera, ctx)
+        self._ctx_cbs = None
 
     @staticmethod
     def _exit_quietly(camera: Any, ctx: Any) -> None:
@@ -446,7 +453,7 @@ class Gphoto2Backend:
                 cam.set_config(root, self._ctx)
         except gp.GPhoto2Error as e:
             err = self._translate(e, f"set_config({name})")
-            if name in _REFUSALS and coerced and not isinstance(err, CameraBusy):
+            if name in _REFUSALS and coerced and type(err) is CameraOperationFailed:
                 self._explain_refusal(err, name)
             raise err from e
 

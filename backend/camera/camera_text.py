@@ -30,7 +30,9 @@ KNOWN_REASONS: tuple[str, ...] = (
     "Pending unretrieved SDRAM image",
     "Fully pressed button",
     "Set liveview selector is enabled",
+    "Set live view selector is enabled",
     "In enlarged liveview",
+    "In enlarged live view",
     "Images / movies not yet record in buffer",
 )
 
@@ -40,9 +42,14 @@ NIKON_MANUAL: dict[str, str] = {
         "D500 manual p.35 (Battery Level): shutter release is disabled when the battery "
         "is exhausted."
     ),
+    "set live view selector is enabled": (
+        "D500 manual p.58 (Recording Movies): rotate the live view selector to 1 (movie live "
+        "view) to record movies."
+    ),
 }
 
 _LIVE_VIEW = re.compile(r"\blive\s?view\b", re.IGNORECASE)
+_KNOWN_LOWER = frozenset(r.lower() for r in KNOWN_REASONS)
 _WORD = re.compile(r"[^\s]+")
 _NEUTRAL = ("liveview should not be prohibited", "no movie prohibit conditions")
 _PREFIXES = ("live view prohibit conditions:", "movie prohibit conditions:")
@@ -53,12 +60,23 @@ def _word(w: str) -> str:
     return w if any(c.isupper() for c in w[1:]) else w.lower()
 
 
+def _live_view(text: str) -> str:
+    """Canonical "live view" spelling, capitalised only at the start or after ": "."""
+
+    def fix(m: re.Match[str]) -> str:
+        head = m.start() == 0 or text[: m.start()].endswith(": ")
+        return "Live view" if head else "live view"
+
+    return _LIVE_VIEW.sub(fix, text)
+
+
 def sentence_case(text: str) -> str:
-    """Sentence case without changing wording; "Live view" spelling; acronyms kept."""
-    t = _LIVE_VIEW.sub("live view", text.strip())
-    t = _WORD.sub(lambda m: _word(m.group()), t)
-    t = re.sub(r"(^|:\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
-    return t
+    """Display text: first letter capitalised and "live view" spelled out; other words keep their
+    case (D500, Nikon). Reasons matching KNOWN_REASONS are put in sentence case (acronyms kept)."""
+    t = _live_view(text.strip())
+    if t.lower() in _KNOWN_LOWER:
+        t = _WORD.sub(lambda m: _word(m.group()), t)
+    return t[:1].upper() + t[1:]
 
 
 def split_reasons(text: str) -> list[str]:
@@ -97,7 +115,7 @@ def prohibit_reasons(value: object) -> tuple[str, list[str]]:
 def manual_note(texts: list[str]) -> str | None:
     """Documented manual note for camera-reported ``texts`` (raw or normalised), if any."""
     for key, note in NIKON_MANUAL.items():
-        if any(key in t.lower() for t in texts):
+        if any(key in _LIVE_VIEW.sub("live view", t.lower()) for t in texts):
             return note
     return None
 
