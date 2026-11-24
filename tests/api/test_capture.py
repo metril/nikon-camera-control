@@ -219,3 +219,24 @@ async def test_download_photos_and_prefix_config_defaults_and_limit(
         "/api/v1/config", json={"camera": {"filename_prefix": "x" * 41}}
     )
     assert r.status_code == 422
+
+
+async def test_trigger_file_is_never_downloaded_or_deleted(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera, tmp_dirs
+) -> None:
+    assert (await connected_client.post(f"{C}/trigger")).status_code == 200
+    r = await connected_client.post(C, json={})
+    assert len(r.json()["files"]) == 1
+    await asyncio.sleep(0.3)  # any background stray task would have run by now
+    assert len(list(tmp_dirs.output_dir.glob("**/*.JPG"))) == 1
+    assert fake_camera.calls.get("delete_file", 0) == 0
+    assert (await connected_client.get("/api/v1/camera/files?recursive=true")).json()["total"] == 2
+
+
+async def test_trigger_refused_with_bulb_shutter(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    await app.state.camera_service.set_setting("shutterspeed", "Bulb")
+    r = await connected_client.post(f"{C}/trigger")
+    assert r.status_code >= 400
+    assert fake_camera.calls.get("trigger", 0) == 0

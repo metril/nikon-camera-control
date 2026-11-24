@@ -109,6 +109,19 @@ describe('CaptureSide', () => {
     expect(wrapper.find('[data-testid="shutter-reason"]').text()).toContain('No storage target')
   })
 
+  it('trigger-only Single stays enabled without a storage target', async () => {
+    setup()
+    const storage = useStorageStore()
+    storage.loaded = true
+    storage.targetId = null
+    useConfigStore().config = { camera: { download_photos: false } }
+    await flushPromises()
+    expect(shutter().attributes('aria-disabled')).not.toBe('true')
+    useConfigStore().config = { camera: { download_photos: true } }
+    await flushPromises()
+    expect(shutter().attributes('aria-disabled')).toBe('true')
+  })
+
   it('shows the Space hint, and hides it when keyboard hints are off', async () => {
     setup()
     expect(wrapper.find('.kbdonly').text()).toBe('Space')

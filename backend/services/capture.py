@@ -12,7 +12,8 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.api.schemas.common import EventType
-from backend.camera.backend import CameraFilePath
+from backend.camera.backend import CameraBackend, CameraFilePath
+from backend.camera.backend import EventType as CamEventType
 from backend.core.camera_service import CameraService, Priority, dedupe_slot_copies
 from backend.core.errors import (
     AppError,
@@ -54,7 +55,10 @@ class CaptureService:
         *,
         keep_card_copy: Callable[[], bool] = lambda: True,
         default_prefix: Callable[[], str | None] = lambda: None,
+        downloads_enabled: Callable[[], bool] = lambda: True,
     ) -> None:
+        self._downloads_enabled = downloads_enabled
+        self._triggered: set[CameraFilePath] = set()
         self._default_prefix = default_prefix
         self._keep_card_copy = keep_card_copy
         self._camera = camera
@@ -166,13 +170,15 @@ class CaptureService:
         task.add_done_callback(self._bg.discard)
 
     async def _download_strays(self, files: list[CameraFilePath]) -> None:
+        files = [f for f in files if f not in self._triggered]
+        if not files or not self._downloads_enabled():
+            return  # trigger-only shots and downloads-off: files stay on the card
         try:
             root = self._store.root()
         except NoTargetError:
             log.warning("late camera files left on the card: no storage location")
             return
         try:
-            card = await self._target_is_card(None)
             files = await self._camera.call(
                 lambda b: dedupe_slot_copies(b, files), priority=Priority.KEEPALIVE
             )
@@ -181,7 +187,7 @@ class CaptureService:
                 root,
                 owner=None,
                 name_prefix="",
-                delete_from_camera=card is True and not self._keep_card_copy(),
+                delete_from_camera=False,  # a stray is never removed from the card
             )
         except AppError as e:
             log.warning("late camera files not downloaded: %s", e.message)
@@ -206,7 +212,20 @@ class CaptureService:
                 "The camera saves to its internal memory, so the photo would be lost. "
                 "Set the camera to save to the memory card first."
             )
-        await self._camera.call(lambda b: b.trigger(), priority=Priority.CAPTURE)
+        await self._camera.refuse_bulb_shutter()
+
+        def _fire(b: CameraBackend) -> list[CameraFilePath]:
+            b.trigger()
+            seen: list[CameraFilePath] = []
+            for _ in range(20):  # collect the shot's own file events; they are never ours
+                ev = b.wait_for_event(0.2)
+                if ev.type == CamEventType.TIMEOUT:
+                    break
+                if ev.type == CamEventType.FILE_ADDED and ev.file is not None:
+                    seen.append(ev.file)
+            return seen
+
+        self._triggered.update(await self._camera.call(_fire, priority=Priority.CAPTURE))
 
     async def _download(
         self,

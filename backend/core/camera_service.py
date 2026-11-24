@@ -1192,6 +1192,10 @@ class CameraService:
         )
         return files
 
+    async def refuse_bulb_shutter(self) -> None:
+        """Public guard for callers that fire the shutter outside capture() (trigger)."""
+        await self._refuse_bulb_shutter()
+
     async def _refuse_bulb_shutter(self) -> None:
         """A normal shot with the shutter on Bulb/Time never ends on its own (the body waits
         for a close that never comes). Refuse before firing. Best effort: an unreadable

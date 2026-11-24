@@ -258,7 +258,14 @@ class SessionStore:
                 )
             else:
                 out.append(self.summarize(m, corrupt=corrupt))
-        out.sort(key=lambda s: s.id, reverse=True)
+
+        def _key(s: SessionSummary) -> tuple[datetime, str]:
+            try:
+                return _session_created(s.id), s.id
+            except ValueError:
+                return s.created, s.id
+
+        out.sort(key=_key, reverse=True)
         return out
 
     @staticmethod

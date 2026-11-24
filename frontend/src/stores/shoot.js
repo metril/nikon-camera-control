@@ -101,7 +101,7 @@ export const useShootStore = defineStore('shoot', () => {
     if (anyRunning.value && !stoppable.value) return 'Another capture is running.'
     if (!stoppable.value && !['idle', 'liveview'].includes(camera.state)) return 'Camera busy.'
     if (capture.inFlight) return 'Capturing…'
-    if (noTarget.value) return NO_TARGET_REASON
+    if (noTarget.value && (downloads.value || mode.value !== 'single')) return NO_TARGET_REASON
     if (mode.value === 'bulb' && !bulbOk.value) return 'Exposure time must be 1 to 3600 s.'
     if (mode.value === 'stack' && stackProblem.value) return `${stackProblem.value}.`
     return ''

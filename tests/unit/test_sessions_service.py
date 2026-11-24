@@ -225,3 +225,12 @@ async def test_new_and_legacy_session_dirs_listed_with_created(tmp_path: Path) -
     by = {s.id: s for s in await SessionStore(tmp_path, fsync=False).list()}
     for sid in ("2020-01-02-030405-abcd", "20200102-030405-abce"):
         assert by[sid].created == datetime(2020, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+async def test_list_sorts_by_created_across_legacy_and_dashed_ids(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path, fsync=False)
+    ids = ["20200102-030405-aaaa", "2020-01-03-000000-bbbb", "2019-12-31-235959-cccc"]
+    for i in ids:
+        (store.root / i).mkdir(parents=True)
+    got = [s.id for s in await SessionStore(tmp_path, fsync=False).list()]
+    assert got == ["2020-01-03-000000-bbbb", "20200102-030405-aaaa", "2019-12-31-235959-cccc"]
