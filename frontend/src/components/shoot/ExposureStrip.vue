@@ -14,14 +14,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import StripPicker from './StripPicker.vue'
 import PresetsManager from './PresetsManager.vue'
-import {
-  GOVERNED,
-  MODE_NAMES,
-  SETTING_FOR,
-  formatValue,
-  modeLetter,
-  optionFor,
-} from './exposure'
+import { GOVERNED, SETTING_FOR, formatValue, modeLetter, optionFor } from './exposure'
 
 const emit = defineEmits(['navigate'])
 
@@ -37,9 +30,7 @@ const saveOpen = ref(false)
 const manageOpen = ref(false)
 
 const on = computed(() => camera.connected)
-const lockReason = computed(() =>
-  camera.leasedBy ? `Busy: ${leaseOwner(camera.leasedBy)}` : '',
-)
+const lockReason = computed(() => (camera.leasedBy ? `Busy: ${leaseOwner(camera.leasedBy)}` : ''))
 
 /** The camera setting behind a cell (first name the camera knows). */
 const settingFor = (key) => {
@@ -83,7 +74,7 @@ const cells = computed(() => {
   return keys.map((key) => {
     const s = settingFor(key)
     const auto = on.value && governed.value.includes(key)
-    let value = '–'
+    let value
     let editable = false
     let hint = ''
     let tone = ''
@@ -100,7 +91,8 @@ const cells = computed(() => {
     } else {
       value = formatValue(key, s?.value)
       editable = writable(s)
-      if (!editable && s) hint = key === 'mode' ? 'Set on the camera mode dial' : 'Read-only on the camera'
+      if (!editable && s)
+        hint = key === 'mode' ? 'Set on the camera mode dial' : 'Read-only on the camera'
     }
     if (auto) {
       editable = false
@@ -127,7 +119,12 @@ const pickerTitle = computed(() => FULL[open.value] || '')
 const pickerOptions = computed(() => {
   const k = open.value
   if (k === 'preset') {
-    const none = { value: '', label: 'None', sub: 'Keep the current settings', selected: !shoot.appliedPreset }
+    const none = {
+      value: '',
+      label: 'None',
+      sub: 'Keep the current settings',
+      selected: !shoot.appliedPreset,
+    }
     const list = presets.settingsPresets.map((p) => ({
       value: p.id,
       label: p.name,

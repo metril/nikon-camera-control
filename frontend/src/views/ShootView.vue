@@ -24,7 +24,8 @@ function onKeydown(e) {
   if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
   if (document.querySelector('[aria-modal="true"]')) return
   const t = e.target
-  if (t?.closest?.('input, select, textarea, [contenteditable=""], [contenteditable="true"]')) return
+  if (t?.closest?.('input, select, textarea, [contenteditable=""], [contenteditable="true"]'))
+    return
   if (e.key === ' ') {
     if (t?.closest?.('button, a, [role="button"], summary')) return // let the focused control click
     e.preventDefault()
@@ -46,7 +47,7 @@ onBeforeUnmount(unlisten)
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-[1400px] flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <ModeWarning />
     <div class="shoot">
       <ExposureStrip ref="strip" class="strip-area" @navigate="go" />

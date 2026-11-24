@@ -46,7 +46,10 @@ function onKeydown(e) {
   const list = rows()
   if (!list.length) return
   const at = list.indexOf(document.activeElement)
-  const next = Math.max(0, Math.min(list.length - 1, (at < 0 ? 0 : at) + (e.key === 'ArrowDown' ? 1 : -1)))
+  const next = Math.max(
+    0,
+    Math.min(list.length - 1, (at < 0 ? 0 : at) + (e.key === 'ArrowDown' ? 1 : -1)),
+  )
   list[next].focus()
 }
 

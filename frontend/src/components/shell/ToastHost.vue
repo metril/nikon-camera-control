@@ -1,17 +1,19 @@
 <script setup>
 import { computed } from 'vue'
 import { useToastsStore } from '@/stores/toasts'
+import UiIcon from '@/components/ui/UiIcon.vue'
 
 const toasts = useToastsStore()
 /** The store owns lifetimes: errors are sticky, others auto-dismiss. */
 const shown = computed(() => toasts.items)
 const dismiss = (id) => toasts.dismiss(id)
 const TONES = {
-  error: 'border-camera-danger/50 bg-[#1f1313] text-camera-text',
-  warn: 'border-camera-warn/40 bg-[#1c190f] text-camera-text',
-  success: 'border-camera-ok/40 bg-[#101c14] text-camera-text',
-  info: 'border-camera-border bg-camera-raised text-camera-text',
+  error: { icon: 'CircleAlert', cls: 'text-camera-danger' },
+  warn: { icon: 'TriangleAlert', cls: 'text-camera-warn' },
+  success: { icon: 'CircleCheck', cls: 'text-camera-ok' },
+  info: { icon: 'Info', cls: 'text-camera-muted' },
 }
+const tone = (t) => TONES[t.kind] || TONES.info
 const detail = (t) =>
   [t.code && `Code: ${t.code}`, t.requestId && `Request: ${t.requestId}`]
     .filter(Boolean)
@@ -19,33 +21,86 @@ const detail = (t) =>
 </script>
 
 <template>
-  <div
-    class="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2"
-    aria-live="polite"
-    aria-atomic="false"
-  >
+  <div class="toasts" aria-live="polite" aria-atomic="false">
     <div
       v-for="t in shown"
       :key="t.id"
       :role="t.kind === 'error' ? 'alert' : 'status'"
-      class="pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg"
-      :class="TONES[t.kind] || TONES.info"
+      class="toast"
       data-test="toast"
     >
-      <div class="min-w-0 flex-1">
+      <UiIcon :name="tone(t).icon" :class="tone(t).cls" />
+      <div class="min-w-0">
         <p class="break-words">{{ t.message }}</p>
-        <p v-if="detail(t)" class="mt-0.5 break-all text-xs opacity-70" data-test="detail">
-          {{ detail(t) }}
-        </p>
+        <details v-if="detail(t)" class="mt-1 text-xs text-camera-muted">
+          <summary class="cursor-pointer">Technical details</summary>
+          <p class="break-all" data-test="detail">{{ detail(t) }}</p>
+        </details>
       </div>
-      <button
-        type="button"
-        aria-label="Dismiss notification"
-        class="rounded px-1 text-lg leading-none opacity-70 hover:opacity-100"
-        @click="dismiss(t.id)"
-      >
-        &times;
+      <button type="button" class="x" aria-label="Dismiss notification" @click="dismiss(t.id)">
+        <UiIcon name="X" :size="16" />
       </button>
     </div>
   </div>
 </template>
+
+<style scoped>
+.toasts {
+  pointer-events: none;
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + var(--nav, 0px) + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100% - 32px));
+}
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 8px 8px 8px 12px;
+  background: theme('colors.camera.raised');
+  border: 1px solid theme('colors.camera.border');
+  border-radius: theme('borderRadius.inner');
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  animation: tin 180ms ease-out;
+}
+.toast > :first-child {
+  margin-top: 7px;
+}
+.toast p {
+  margin: 0;
+  padding: 6px 0;
+}
+.x {
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: theme('borderRadius.control');
+  background: none;
+  color: theme('colors.camera.muted');
+  cursor: pointer;
+}
+.x:hover {
+  color: theme('colors.camera.text');
+  background: theme('colors.camera.hover');
+}
+@keyframes tin {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+:global(html[data-layout='touch']) .toasts {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+</style>

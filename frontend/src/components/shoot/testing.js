@@ -6,7 +6,7 @@ import { useCameraStore } from '@/stores/camera'
 /** Mount with a real-action testing pinia and a connected, idle camera (override via opts). */
 export function mountCard(
   component,
-  { connected = true, leasedBy = null, state = 'idle', setup } = {},
+  { connected = true, leasedBy = null, state = 'idle', setup, props, attachTo } = {},
 ) {
   const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
   const camera = useCameraStore()
@@ -14,7 +14,7 @@ export function mountCard(
   camera.state = connected ? state : 'disconnected'
   camera.leasedBy = leasedBy
   setup?.()
-  const wrapper = mount(component, { global: { plugins: [pinia] } })
+  const wrapper = mount(component, { props, attachTo, global: { plugins: [pinia] } })
   return { wrapper, pinia, camera }
 }
 
@@ -32,3 +32,7 @@ export function inputByLabel(wrapper, text) {
   const label = wrapper.findAll('label').find((l) => l.text().includes(text))
   return label ? wrapper.find(`#${label.attributes('for')}`) : undefined
 }
+
+/** Buttons rendered outside the wrapper (modals are teleported to <body>). */
+export const bodyButton = (text) =>
+  [...document.body.querySelectorAll('button')].find((b) => b.textContent.includes(text))

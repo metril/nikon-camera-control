@@ -37,8 +37,12 @@ watch(
   { immediate: true },
 )
 onMounted(() => capture.loadRecent().catch(() => {}))
-watch(() => camera.connected, (on) => on && capture.loadRecent().catch(() => {}))
-const newest = (i) => i === 0 && capture.lastCapture?.files?.some((f) => f.path === capture.recent[0]?.path)
+watch(
+  () => camera.connected,
+  (on) => on && capture.loadRecent().catch(() => {}),
+)
+const newest = (i) =>
+  i === 0 && capture.lastCapture?.files?.some((f) => f.path === capture.recent[0]?.path)
 </script>
 
 <template>

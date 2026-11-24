@@ -43,18 +43,13 @@ watch(
     <template v-if="!locked">
       <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
         <UiNumber v-model="shoot.stack.shots" label="Frames" :min="2" :max="200" :step="1" />
-        <UiNumber
-          v-model="shoot.stack.steps"
-          label="Focus step"
-          :min="1"
-          :max="32767"
-          :step="1"
-        />
+        <UiNumber v-model="shoot.stack.steps" label="Focus step" :min="1" :max="32767" :step="1" />
       </div>
       <p class="text-xs text-camera-muted" data-testid="travel">
         Total focus travel: {{ travel }} steps over {{ shoot.stack.shots }} frames
         <span v-if="focus.status?.range">
-          (the camera allows {{ focus.status.range.min }} to {{ focus.status.range.max }} per move)</span
+          (the camera allows {{ focus.status.range.min }} to {{ focus.status.range.max }} per
+          move)</span
         >.
       </p>
       <details class="text-sm">

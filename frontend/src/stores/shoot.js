@@ -55,7 +55,9 @@ export const useShootStore = defineStore('shoot', () => {
   const starting = ref(false)
   const bracketJob = computed(() => jobs.byId[bracketJobId.value] || null)
   const stackJob = computed(() => jobs.byId[stackJobId.value] || null)
-  const bracketRunning = computed(() => !!bracketJob.value && ACTIVE.includes(bracketJob.value.status))
+  const bracketRunning = computed(
+    () => !!bracketJob.value && ACTIVE.includes(bracketJob.value.status),
+  )
   const stackRunning = computed(() => !!stackJob.value && ACTIVE.includes(stackJob.value.status))
   const bulbRunning = computed(() => bulb.active)
   const anyRunning = computed(() => bracketRunning.value || stackRunning.value || bulbRunning.value)
@@ -74,9 +76,13 @@ export const useShootStore = defineStore('shoot', () => {
   const noTarget = computed(() => storage.noTarget || isNoTarget(capture.lastError))
   const stackProblem = computed(() => {
     const s = stack
-    if (!finite(s.settle) || s.settle < 0 || s.settle > 60000) return 'Settle time must be 0 to 60000 ms'
+    if (!finite(s.settle) || s.settle < 0 || s.settle > 60000)
+      return 'Settle time must be 0 to 60000 ms'
     if (s.name && s.name.length > 40) return 'Name is too long'
-    return stackIssue({ steps: s.steps, shots: s.shots, direction: s.direction }, focus.status?.range)
+    return stackIssue(
+      { steps: s.steps, shots: s.shots, direction: s.direction },
+      focus.status?.range,
+    )
   })
   const bulbOk = computed(
     () => finite(bulbForm.seconds) && bulbForm.seconds >= 1 && bulbForm.seconds <= 3600,
@@ -176,9 +182,11 @@ export const useShootStore = defineStore('shoot', () => {
   }
   /** Cancel the running job of the selected mode (closes the bulb shutter). */
   async function stop() {
-    const id = { bracket: bracketJobId.value, bulb: bulb.jobId || bulb.status?.job_id, stack: stackJobId.value }[
-      mode.value
-    ]
+    const id = {
+      bracket: bracketJobId.value,
+      bulb: bulb.jobId || bulb.status?.job_id,
+      stack: stackJobId.value,
+    }[mode.value]
     if (!id) return
     try {
       await jobs.cancel(id)

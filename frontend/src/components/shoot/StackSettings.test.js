@@ -1,19 +1,19 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import FocusStackCard from './FocusStackCard.vue'
+import StackSettings from './StackSettings.vue'
 import { useFocusStore } from '@/stores/focus'
 import { useJobsStore } from '@/stores/jobs'
+import { useShootStore } from '@/stores/shoot'
 import { mountCard, button, inputByLabel } from './testing'
 
-vi.mock('@/api', () => ({ api: {}, downloadBlob: vi.fn() }))
-beforeEach(() => vi.useFakeTimers())
-afterEach(() => vi.useRealTimers())
+vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {}, downloadBlob: vi.fn() }))
 
 const range = { min: -100, max: 100, step: 1 }
 function setup(opts) {
-  return mountCard(FocusStackCard, {
+  return mountCard(StackSettings, {
     ...opts,
     setup: () => {
+      useShootStore().mode = 'stack'
       const f = useFocusStore()
       f.status = { relative_position: 0, range }
       f.fetchStatus = vi.fn().mockResolvedValue()
@@ -21,30 +21,31 @@ function setup(opts) {
   })
 }
 
-describe('FocusStackCard', () => {
-  it('validates steps per shot against the focus range and shows total travel', async () => {
+describe('StackSettings and the stack shutter', () => {
+  it('validates the focus step against the focus range and shows total travel', async () => {
     const { wrapper } = setup()
-    expect(wrapper.find('[data-testid=travel]').text()).toContain(
-      'Total travel: 180 steps over 10 shots',
-    )
-    const input = inputByLabel(wrapper, 'Steps per shot')
+    const shoot = useShootStore()
+    expect(wrapper.find('[data-testid=travel]').text()).toContain('180 steps over 10 frames')
+    const input = inputByLabel(wrapper, 'Focus step')
     await input.setValue('500')
     expect(wrapper.find('[data-testid=stack-issue]').text()).toContain('-100 to 100')
-    expect(button(wrapper, 'Start stack').attributes('disabled')).toBeDefined()
+    expect(shoot.canPress).toBe(false)
+    expect(shoot.blockedReason).toContain('-100 to 100')
     await input.setValue('20')
     expect(wrapper.find('[data-testid=stack-issue]').exists()).toBe(false)
-    expect(button(wrapper, 'Start stack').attributes('disabled')).toBeUndefined()
+    expect(shoot.canPress).toBe(true)
   })
 
-  it('starts a job, shows progress, result and a Gallery link; cancel calls the jobs store', async () => {
+  it('starts a job, shows progress and the result; Stop cancels, Gallery link navigates', async () => {
     const { wrapper } = setup()
+    const shoot = useShootStore()
     const focus = useFocusStore()
     const jobs = useJobsStore()
     focus.stack = vi
       .fn()
       .mockResolvedValue({ id: 'j1', status: 'running', progress: 0.3, message: 'Shot 3/10' })
     jobs.cancel = vi.fn().mockResolvedValue({})
-    await button(wrapper, 'Start stack').trigger('click')
+    await shoot.press()
     await flushPromises()
     expect(focus.stack).toHaveBeenCalledWith({
       steps_per_shot: 20,
@@ -55,7 +56,8 @@ describe('FocusStackCard', () => {
       name: null,
     })
     expect(wrapper.find('[data-testid=stack-job]').text()).toContain('Shot 3/10')
-    await button(wrapper, 'Cancel').trigger('click')
+    expect(shoot.label).toBe('Frame 3 of 10')
+    await shoot.press()
     expect(jobs.cancel).toHaveBeenCalledWith('j1')
     jobs.onJobEvent({
       job: {
@@ -68,19 +70,15 @@ describe('FocusStackCard', () => {
     })
     await flushPromises()
     expect(wrapper.text()).toContain('10 files')
-    await button(wrapper, 'Open stack_1 in Gallery').trigger('click')
+    await button(wrapper, 'Open in Gallery').trigger('click')
     expect(wrapper.emitted('navigate')[0]).toEqual(['gallery', 'stack_1'])
   })
 
-  it('keeps Cancel usable while its own lease is held, but blocks Start for other leases', () => {
-    const own = setup({ leasedBy: 'focus-stack' })
-    expect(own.wrapper.find('[data-testid=busy]').exists()).toBe(false)
-    const other = setup({ leasedBy: 'bulb' })
-    expect(other.wrapper.find('[data-testid=busy]').text()).toBe('Busy: bulb')
-    expect(button(other.wrapper, 'Start stack').attributes('disabled')).toBeDefined()
-  })
-
-  it('shows an empty state when disconnected', () => {
-    expect(setup({ connected: false }).wrapper.text()).toContain('Camera not connected')
+  it('keeps Stop usable under its own lease, but blocks Start under other leases', () => {
+    setup({ leasedBy: 'bulb' })
+    expect(useShootStore().blockedReason).toBe('Busy: Bulb exposure.')
+    expect(useShootStore().canPress).toBe(false)
+    setup({ leasedBy: 'focus-stack' })
+    expect(useShootStore().blockedReason).toBe('')
   })
 })

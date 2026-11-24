@@ -89,7 +89,7 @@ async function doSave() {
     saving.value = false
   }
 }
-watch(saveOpen, (o) => o && prepareSave())
+watch(saveOpen, (o) => o && prepareSave(), { immediate: true })
 
 // --- edit
 const edit = reactive({ open: false, preset: null, name: '', description: '', saving: false })

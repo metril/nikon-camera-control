@@ -126,9 +126,11 @@ bulb.fetchStatus().catch(() => {})
     <div v-else class="flex flex-col gap-2" aria-live="polite" data-testid="bulb-running">
       <div class="flex items-baseline justify-between text-xs text-camera-muted">
         <span>Time left</span>
-        <b class="font-mono text-base font-medium tabular-nums text-camera-text" data-testid="countdown">{{
-          fmtDuration(Math.ceil(remaining))
-        }}</b>
+        <b
+          class="font-mono text-base font-medium tabular-nums text-camera-text"
+          data-testid="countdown"
+          >{{ fmtDuration(Math.ceil(remaining)) }}</b
+        >
       </div>
       <UiProgress :value="Math.min(1, Math.max(0, fraction))" label="Exposure progress" />
       <p class="text-xs text-camera-muted">

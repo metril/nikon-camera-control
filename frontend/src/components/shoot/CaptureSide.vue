@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { useCaptureStore } from '@/stores/capture'
 import { CAPTURE_MODES, useShootStore } from '@/stores/shoot'
+import { useKeyboardHints } from '@/composables/useKeyboardHints'
 import { fileKind } from '@/labels'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -18,6 +19,7 @@ import StackSettings from './StackSettings.vue'
 const emit = defineEmits(['navigate', 'open-settings'])
 const capture = useCaptureStore()
 const shoot = useShootStore()
+const { hints } = useKeyboardHints()
 
 const modes = CAPTURE_MODES.map(({ value, label }) => ({ value, label }))
 const modeTitle = computed(() => CAPTURE_MODES.find((m) => m.value === shoot.mode)?.title)
@@ -67,7 +69,7 @@ const recordingOpen = ref(false)
           <template v-else-if="shoot.blockedReason && !shoot.stoppable">{{
             shoot.blockedReason
           }}</template>
-          <span v-else class="kbdonly"><kbd>Space</kbd></span>
+          <span v-else-if="hints" class="kbdonly"><kbd>Space</kbd></span>
         </span>
       </div>
       <div v-if="settingsView" class="msettings">
@@ -84,7 +86,11 @@ const recordingOpen = ref(false)
           <template v-if="result.files?.length > 1"> · {{ result.files.length }} files</template>
         </span>
       </template>
-      <span v-else-if="capture.lastError && !shoot.noTarget" class="text-camera-danger" role="alert">
+      <span
+        v-else-if="capture.lastError && !shoot.noTarget"
+        class="text-camera-danger"
+        role="alert"
+      >
         {{ capture.lastError.message }}
       </span>
       <span v-else class="text-camera-muted">No captures yet</span>

@@ -1,27 +1,30 @@
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch } from 'vue'
 import { useJobsStore } from '@/stores/jobs'
 import { useToastsStore } from '@/stores/toasts'
+import { jobKind, jobStatus } from '@/labels'
 import UiBadge from '@/components/ui/UiBadge.vue'
-import UiProgress from '@/components/ui/UiProgress.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
-import UiEmpty from '@/components/ui/UiEmpty.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiModal from '@/components/ui/UiModal.vue'
+import UiProgress from '@/components/ui/UiProgress.vue'
+import { jobSummary } from './jobSummary'
 
-const props = defineProps({ open: Boolean })
+defineProps({ open: Boolean })
 const emit = defineEmits(['close'])
 
 const jobs = useJobsStore()
 const toasts = useToastsStore()
-const closeBtn = ref(null)
 const cancelling = ref({})
 
 const ACTIVE = ['queued', 'pending', 'running']
 const isActive = (j) => ACTIVE.includes(j.status)
 const TONES = {
   queued: 'neutral',
-  running: 'info',
+  pending: 'neutral',
+  running: 'accent',
   completed: 'ok',
-  failed: 'error',
+  failed: 'danger',
   cancelled: 'warn',
 }
 
@@ -34,22 +37,12 @@ watch(
       const before = seen.get(j.id)
       seen.set(j.id, j.status)
       if (before === undefined || !ACTIVE.includes(before)) continue
-      if (j.status === 'completed') toasts.success(`Job finished: ${j.kind}`)
+      if (j.status === 'completed') toasts.success(`${jobKind(j.kind)} finished`)
       else if (j.status === 'failed')
-        toasts.error(`Job failed: ${j.kind}${j.error ? ` - ${j.error}` : ''}`)
+        toasts.error(`${jobKind(j.kind)} failed${j.error ? `: ${j.error}` : ''}`)
     }
   },
   { immediate: true, deep: true },
-)
-
-watch(
-  () => props.open,
-  async (o) => {
-    if (o) {
-      await nextTick()
-      closeBtn.value?.focus()
-    }
-  },
 )
 
 async function cancel(id) {
@@ -62,82 +55,49 @@ async function cancel(id) {
     cancelling.value = { ...cancelling.value, [id]: false }
   }
 }
-function summary(j) {
-  if (j.error) return j.error
-  const r = j.result
-  if (!r || typeof r !== 'object') return ''
-  return Object.entries(r)
-    .filter(([, v]) => v == null || typeof v !== 'object')
-    .slice(0, 4)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join(' · ')
-}
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-40 flex justify-end bg-black/50"
-      @mousedown.self="emit('close')"
-    >
-      <aside
-        role="dialog"
-        aria-label="Jobs"
-        class="flex h-full w-full max-w-md flex-col border-l border-camera-border bg-camera-surface shadow-xl"
-        @keydown.esc="emit('close')"
+  <UiModal :open="open" variant="side" title="Jobs" @close="emit('close')">
+    <ul v-if="jobs.list.length" class="flex flex-col" aria-live="polite">
+      <li
+        v-for="j in jobs.list"
+        :key="j.id"
+        class="flex flex-col gap-2 border-b border-camera-subtle py-3 first:pt-0 last:border-b-0"
+        data-test="job"
       >
-        <header class="flex items-center justify-between border-b border-camera-border px-4 py-3">
-          <h2 class="text-base font-semibold">Jobs</h2>
-          <button
-            ref="closeBtn"
-            type="button"
-            aria-label="Close jobs panel"
-            class="rounded px-2 text-xl leading-none text-camera-muted hover:text-camera-text"
-            @click="emit('close')"
+        <div class="flex items-center justify-between gap-2">
+          <span class="min-w-0 truncate font-medium">{{ jobKind(j.kind) }}</span>
+          <UiBadge :tone="TONES[j.status] || 'neutral'">{{ jobStatus(j.status) }}</UiBadge>
+        </div>
+        <UiProgress v-if="isActive(j)" :value="j.progress ?? null" :label="j.message || ''" />
+        <p v-else-if="j.message" class="text-sm text-camera-muted">{{ j.message }}</p>
+        <p
+          v-if="jobSummary(j)"
+          class="break-words text-[12.5px]"
+          :class="j.error ? 'text-camera-danger' : 'text-camera-muted'"
+          data-test="summary"
+        >
+          {{ jobSummary(j) }}
+        </p>
+        <div v-if="isActive(j)">
+          <UiConfirmButton
+            size="sm"
+            variant="ghost"
+            class="-ml-2.5"
+            confirm-text="Cancel job?"
+            :loading="!!cancelling[j.id]"
+            @confirm="cancel(j.id)"
           >
-            &times;
-          </button>
-        </header>
-        <ul class="flex-1 divide-y divide-camera-border overflow-y-auto" aria-live="polite">
-          <li
-            v-for="j in jobs.list"
-            :key="j.id"
-            class="flex flex-col gap-2 px-4 py-3"
-            data-test="job"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <span class="font-medium">{{ j.kind }}</span>
-              <UiBadge :tone="TONES[j.status] || 'neutral'">{{ j.status }}</UiBadge>
-            </div>
-            <UiProgress v-if="isActive(j)" :value="j.progress ?? null" :label="j.message || ''" />
-            <p v-else-if="j.message" class="text-sm text-camera-muted">{{ j.message }}</p>
-            <p
-              v-if="summary(j)"
-              class="break-words text-xs"
-              :class="j.error ? 'text-red-400' : 'text-camera-muted'"
-            >
-              {{ summary(j) }}
-            </p>
-            <div v-if="isActive(j)">
-              <UiConfirmButton
-                size="sm"
-                variant="ghost"
-                confirm-text="Cancel job?"
-                :loading="!!cancelling[j.id]"
-                @confirm="cancel(j.id)"
-              >
-                Cancel
-              </UiConfirmButton>
-            </div>
-          </li>
-        </ul>
-        <UiEmpty
-          v-if="!jobs.list.length"
-          title="No jobs"
-          hint="Background work such as video rendering shows up here."
-        />
-      </aside>
+            Cancel
+          </UiConfirmButton>
+        </div>
+      </li>
+    </ul>
+    <div v-else class="flex flex-col items-center gap-2.5 px-4 py-8 text-center text-camera-muted">
+      <UiIcon name="ListChecks" :size="28" />
+      <b class="text-[15px] text-camera-text">No jobs</b>
+      <span>Video renders and file transfers show here.</span>
     </div>
-  </Teleport>
+  </UiModal>
 </template>

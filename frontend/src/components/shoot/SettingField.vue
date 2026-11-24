@@ -37,7 +37,9 @@ const why = computed(() => props.reason || fixedReason.value)
 const segmented = computed(() => kind.value === 'choice' && short.value && s.value.type === 'radio')
 const showHeading = computed(() => kind.value === 'readonly' || segmented.value)
 // camera labels come in Title Case ("ISO Speed"): use the app's own wording where we have it
-const title = computed(() => SETTING_NAMES[s.value.label] || SETTING_NAMES[s.value.name] || s.value.label)
+const title = computed(
+  () => SETTING_NAMES[s.value.label] || SETTING_NAMES[s.value.name] || s.value.label,
+)
 const emitChange = (v) => emit('change', s.value.name, v)
 </script>
 

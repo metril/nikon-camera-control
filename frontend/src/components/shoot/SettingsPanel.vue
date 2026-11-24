@@ -39,9 +39,7 @@ const refreshing = ref(false)
 const showAll = ref(false)
 const search = ref('')
 
-const leaseReason = computed(() =>
-  camera.leasedBy ? `Busy: ${leaseOwner(camera.leasedBy)}` : '',
-)
+const leaseReason = computed(() => (camera.leasedBy ? `Busy: ${leaseOwner(camera.leasedBy)}` : ''))
 const visible = (s) => s.type !== 'section' && s.type !== 'button'
 
 // Non-writable toggles are action widgets (autofocusdrive, bulb, movie ...): not useful as rows.

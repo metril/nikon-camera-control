@@ -11,9 +11,7 @@ const ticks = Array.from({ length: 19 }, (_, i) => {
   const big = i % 3 === 0
   return { v, big, x: x(v), label: v === 0 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v)}` }
 })
-const marks = computed(() =>
-  props.offsets.map((v) => x(Math.max(-3, Math.min(3, v)))),
-)
+const marks = computed(() => props.offsets.map((v) => x(Math.max(-3, Math.min(3, v)))))
 const description = computed(() => `Bracket frames: ${props.offsets.map(fmtEV).join(', ')} EV`)
 </script>
 

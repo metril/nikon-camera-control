@@ -78,7 +78,7 @@ describe('RecordingCard', () => {
   it('is disabled when disconnected or leased by another feature', () => {
     expect(setup({ connected: false }).wrapper.text()).toContain('Camera not connected')
     const { wrapper } = setup({ leasedBy: 'bulb' })
-    expect(wrapper.find('[data-testid=busy]').text()).toBe('Busy: bulb')
+    expect(wrapper.find('[data-testid=busy]').text()).toBe('Busy: Bulb exposure')
     expect(button(wrapper, 'Start recording').attributes('disabled')).toBeDefined()
   })
 })

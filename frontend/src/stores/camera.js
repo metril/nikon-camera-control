@@ -5,14 +5,14 @@ import { guard } from './helpers'
 
 const DESCRIPTIONS = {
   disconnected: 'Camera not connected',
-  connecting: 'Connecting...',
+  connecting: 'Connecting…',
   idle: 'Ready',
-  liveview: 'Live View active',
-  capturing: 'Capturing...',
-  recording: 'Recording video...',
-  bulb: 'Bulb exposure...',
-  busy: 'Processing...',
-  error: 'Error - check connection',
+  liveview: 'Live view on',
+  capturing: 'Capturing…',
+  recording: 'Recording video…',
+  bulb: 'Bulb exposure…',
+  busy: 'Processing…',
+  error: 'Error. Check the connection.',
 }
 
 export const useCameraStore = defineStore('camera', () => {

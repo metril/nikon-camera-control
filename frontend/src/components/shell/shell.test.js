@@ -7,7 +7,9 @@ import { useToastsStore } from '@/stores/toasts'
 import { useJobsStore } from '@/stores/jobs'
 import { useAuthStore } from '@/stores/auth'
 import { useEventsStore } from '@/stores/events'
-import StatusBar from './StatusBar.vue'
+import AppHeader from './AppHeader.vue'
+import CameraGate from './CameraGate.vue'
+import { jobSummary } from './jobSummary'
 import ToastHost from './ToastHost.vue'
 import JobsPanel from './JobsPanel.vue'
 import ApiKeyPrompt from './ApiKeyPrompt.vue'
@@ -20,36 +22,129 @@ vi.mock('@/api', async (orig) => ({
 
 const pinia = () => createTestingPinia({ stubActions: false, createSpy: vi.fn })
 
-describe('StatusBar', () => {
-  it('shows model, battery, free storage, lease and connect action', async () => {
+describe('AppHeader and camera chip', () => {
+  const mountHeader = (p, activeTab = 'shoot') =>
+    mount(AppHeader, { props: { activeTab }, global: { plugins: [p] }, attachTo: document.body })
+
+  it('has four tabs (no Advanced) and marks the active one', () => {
+    const p = pinia()
+    useCameraStore().fetchStorage = vi.fn(async () => {})
+    const w = mountHeader(p, 'gallery')
+    const tabs = w.findAll('nav a')
+    expect(tabs.map((t) => t.text())).toEqual(['Shoot', 'Time-lapse', 'Gallery', 'Settings'])
+    expect(w.find('nav a[aria-current="page"]').text()).toBe('Gallery')
+    w.unmount()
+  })
+
+  it('shows the camera state, battery, shots left and the job count', async () => {
     const p = pinia()
     const camera = useCameraStore()
     camera.fetchStorage = vi.fn(async () => {})
-    camera.connect = vi.fn(async () => {})
-    camera.model = 'D500'
+    camera.connected = true
+    camera.state = 'idle'
     camera.battery = { percent: 80 }
-    camera.storage = { cards: [{ free_kb: 1024 * 1024 }] }
-    camera.leasedBy = 'timelapse'
-    camera.state = 'disconnected'
-    const w = mount(StatusBar, { global: { plugins: [p] } })
-    expect(w.find('[data-test="model"]').text()).toBe('D500')
+    camera.storage = { cards: [{ free_images: 1284, free_kb: 1024 * 1024 }] }
+    useJobsStore().upsert({ id: 'a', kind: 'bulb', status: 'running', created: '1' })
+    const w = mountHeader(p)
+    expect(w.find('[data-test="state"]').text()).toBe('Connected')
     expect(w.find('[data-test="battery"]').text()).toContain('80%')
-    expect(w.find('[data-test="storage"]').text()).toContain('1.0 GB')
-    expect(w.find('[data-test="lease"]').text()).toBe('Busy: timelapse')
-    await w.find('[data-test="toggle"]').trigger('click')
-    expect(camera.connect).toHaveBeenCalled()
+    expect(w.find('[data-test="shots"]').text()).toContain('1,284')
+    expect(w.find('[data-test="jobs-count"]').text()).toBe('1')
+    camera.leasedBy = 'timelapse'
+    await nextTick()
+    expect(w.find('[data-test="state"]').text()).toBe('Busy')
+    w.unmount()
   })
 
-  it('toasts when connecting fails', async () => {
+  it('says No permission when connecting failed because the camera cannot be opened', () => {
     const p = pinia()
     const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
+    camera.lastError = Object.assign(new Error('x'), { code: 'CAMERA_PERMISSION_DENIED' })
+    const w = mountHeader(p)
+    expect(w.find('[data-test="state"]').text()).toBe('No permission')
+    w.unmount()
+  })
+
+  it('connects from the chip when disconnected and toasts other failures', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
     camera.connect = vi.fn(async () => {
       throw new Error('no camera')
     })
-    const w = mount(StatusBar, { global: { plugins: [p] } })
-    await w.find('[data-test="toggle"]').trigger('click')
+    const w = mountHeader(p)
+    expect(w.find('[data-test="state"]').text()).toBe('Disconnected')
+    await w.find('[data-test="chip"]').trigger('click')
     await flushPromises()
+    expect(camera.connect).toHaveBeenCalled()
     expect(useToastsStore().items.at(-1).message).toBe('no camera')
+    w.unmount()
+  })
+
+  it('opens the camera popover when connected; Esc closes it and Disconnect works', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
+    camera.disconnect = vi.fn(async () => {})
+    camera.connected = true
+    camera.state = 'idle'
+    camera.model = 'D500'
+    const w = mountHeader(p)
+    await w.find('[data-test="chip"]').trigger('click')
+    const pop = w.find('[data-test="camera-popover"]')
+    expect(pop.exists()).toBe(true)
+    expect(pop.find('[data-test="model"]').text()).toBe('D500')
+    await pop.trigger('keydown', { key: 'Escape' })
+    expect(w.find('[data-test="camera-popover"]').exists()).toBe(false)
+    await w.find('[data-test="chip"]').trigger('click')
+    await w.find('[data-test="toggle"]').trigger('click')
+    expect(camera.disconnect).toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('switches the layout from the header', async () => {
+    const p = pinia()
+    useCameraStore().fetchStorage = vi.fn(async () => {})
+    const w = mountHeader(p)
+    await w.find('[data-test="layout-touch"]').trigger('click')
+    expect(document.documentElement.dataset.layout).toBe('touch')
+    expect(w.find('[data-test="layout-touch"]').attributes('aria-pressed')).toBe('true')
+    await w.find('[data-test="layout-desktop"]').trigger('click')
+    expect(document.documentElement.dataset.layout).toBe('desktop')
+    w.unmount()
+  })
+})
+
+describe('CameraGate', () => {
+  it('offers Connect when disconnected', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.connect = vi.fn(async () => {})
+    const w = mount(CameraGate, { global: { plugins: [p] } })
+    expect(w.text()).toContain('Camera not connected')
+    await w.find('[data-test="gate-connect"]').trigger('click')
+    expect(camera.connect).toHaveBeenCalled()
+  })
+
+  it('explains a permission failure with the udev commands and Try again', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.lastError = Object.assign(new Error("Camera found, but the app can't open it."), {
+      code: 'CAMERA_PERMISSION_DENIED',
+      details: { bus: '004', device: '004' },
+    })
+    camera.connect = vi.fn(async () => {})
+    const w = mount(CameraGate, { global: { plugins: [p] } })
+    expect(w.find('[role="alert"]').text()).toContain("Camera found, but the app can't open it")
+    expect(w.find('[role="alert"]').text()).toContain('bus 004, device 004')
+    expect(w.find('[data-test="udev-commands"]').text()).toContain('udevadm control --reload-rules')
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Try again')
+      .trigger('click')
+    expect(camera.connect).toHaveBeenCalled()
+    expect(w.text()).not.toContain('Camera not connected')
   })
 })
 
@@ -96,7 +191,7 @@ describe('JobsPanel', () => {
     jobs.cancel = vi.fn(async () => {})
     jobs.upsert({
       id: 'j1',
-      kind: 'render',
+      kind: 'render-video',
       status: 'running',
       progress: 0.4,
       message: 'encoding',
@@ -109,7 +204,8 @@ describe('JobsPanel', () => {
     })
     await nextTick()
     const row = document.body.querySelector('[data-test="job"]')
-    expect(row.textContent).toContain('render')
+    expect(row.textContent).toContain('Video render')
+    expect(row.textContent).toContain('Running')
     expect(row.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('40')
     const cancel = [...row.querySelectorAll('button')].find((b) => b.textContent.includes('Cancel'))
     cancel.click()
@@ -117,13 +213,25 @@ describe('JobsPanel', () => {
     cancel.click()
     expect(jobs.cancel).toHaveBeenCalledWith('j1')
 
-    jobs.upsert({ id: 'j1', kind: 'render', status: 'completed', progress: 1, created: '1' })
+    jobs.upsert({ id: 'j1', kind: 'render-video', status: 'completed', progress: 1, created: '1' })
     await nextTick()
-    expect(toasts.items.at(-1).message).toContain('Job finished')
+    expect(toasts.items.at(-1).message).toBe('Video render finished')
     jobs.upsert({ id: 'j2', kind: 'zip', status: 'failed', error: 'oops', created: '2' })
     await nextTick()
     expect(toasts.items.some((t) => t.kind === 'error')).toBe(false) // first seen finished: no toast
     w.unmount()
+  })
+})
+
+describe('jobSummary', () => {
+  it('writes readable summaries and never prints raw result keys', () => {
+    expect(jobSummary({ error: 'oops' })).toBe('oops')
+    expect(jobSummary({ result: { file_count: 10, folder: 'stack_1' } })).toBe(
+      '10 files · in stack_1',
+    )
+    expect(jobSummary({ result: { output: 'videos/a.mp4' } })).toBe('Saved a.mp4')
+    expect(jobSummary({ result: { copied: 1, failed: 2 } })).toBe('1 file copied · 2 failed')
+    expect(jobSummary({ result: { weird_key: 'x' } })).toBe('')
   })
 })
 

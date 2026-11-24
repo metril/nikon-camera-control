@@ -8,7 +8,7 @@ const emit = defineEmits(['open-settings'])
 <template>
   <div
     v-if="compact"
-    class="flex flex-wrap items-center gap-2 text-sm text-camera-warning"
+    class="flex flex-wrap items-center gap-2 text-sm text-camera-warn"
     role="status"
     data-test="no-target"
   >

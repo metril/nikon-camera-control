@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import StorageSection from './StorageSection.vue'
 import StorageChip from '@/components/shell/StorageChip.vue'
-import CaptureControls from '@/components/shoot/CaptureControls.vue'
+import CaptureSide from '@/components/shoot/CaptureSide.vue'
 import LocalFiles from '@/components/gallery/LocalFiles.vue'
 import { useStorageStore } from '@/stores/storage'
 import { useSessionsStore } from '@/stores/sessions'
@@ -212,9 +212,8 @@ describe('NO_TARGET handling', () => {
   it('capture is disabled with a hint when there is no target', () => {
     const { pinia } = setup([], null)
     useCameraStore().connected = true
-    const w = mnt(CaptureControls, pinia)
+    const w = mnt(CaptureSide, pinia)
     expect(w.find('[data-testid="capture-btn"]').attributes('disabled')).toBeDefined()
-    expect(w.find('[data-testid="trigger-btn"]').attributes('disabled')).toBeDefined()
     expect(w.text()).toContain('No storage target')
   })
 

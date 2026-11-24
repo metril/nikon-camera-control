@@ -28,7 +28,8 @@ const maxOk = computed(
 
 const reason = computed(() => {
   if (!camera.connected) return 'Camera not connected'
-  if (camera.leasedBy && camera.leasedBy !== 'recording') return `Busy: ${leaseOwner(camera.leasedBy)}`
+  if (camera.leasedBy && camera.leasedBy !== 'recording')
+    return `Busy: ${leaseOwner(camera.leasedBy)}`
   return ''
 })
 const disabled = computed(() => !!reason.value)
@@ -110,86 +111,86 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
     <p v-if="reason" class="text-sm text-camera-warn" role="status" data-testid="busy">
       {{ reason }}
     </p>
-      <div v-if="!active" class="flex flex-col gap-4">
-        <UiNumber
-          v-model="form.max"
-          label="Longest recording (optional)"
-          unit="s"
-          :min="1"
-          :max="1799"
-          :step="1"
-          :disabled="disabled"
-        />
-        <p class="text-xs text-camera-muted">Up to 29 min 59 s, the camera's clip limit.</p>
-        <UiToggle
-          v-model="form.download"
-          label="Download clip to server when done"
-          :disabled="disabled"
-        />
-        <UiButton
-          variant="primary"
-          :loading="starting"
-          :disabled="disabled || !maxOk"
-          :title="reason"
-          @click="start"
-        >
-          Start recording
-        </UiButton>
-      </div>
-      <div v-else class="flex flex-col gap-4" aria-live="polite">
-        <p class="flex items-center gap-2 text-3xl font-mono tabular-nums">
-          <span class="h-3 w-3 animate-pulse rounded-full bg-camera-danger-fill" aria-hidden="true" />
-          <span data-testid="elapsed">{{ fmtDuration(elapsed) }}</span>
-          <span v-if="status?.max_seconds" class="text-base text-camera-muted"
-            >/ {{ fmtDuration(status.max_seconds) }}</span
-          >
-        </p>
-        <UiButton variant="danger" :loading="stopping" @click="stop">Stop recording</UiButton>
-      </div>
-
-      <p v-if="startError" class="text-sm text-camera-danger" role="alert" data-testid="start-error">
-        {{ startError.message }}
-        <span v-if="movieHint" class="block text-camera-muted">
-          The camera's live view selector must be set to movie mode.
-        </span>
-      </p>
-      <p v-if="status?.note" class="text-sm text-camera-warn" data-testid="rec-note">
-        {{ status.note }}
-      </p>
-      <p v-if="status?.segments > 1" class="text-sm text-camera-muted" data-testid="rec-segments">
-        {{ status.segments }} movie files so far
-      </p>
-      <p v-if="status?.warning" class="text-sm text-camera-warn" data-testid="rec-warning">
-        {{ status.warning }}
-      </p>
-      <p
-        v-if="!active && status?.ended_reason"
-        class="text-sm text-camera-muted"
-        data-testid="ended-reason"
+    <div v-if="!active" class="flex flex-col gap-4">
+      <UiNumber
+        v-model="form.max"
+        label="Longest recording (optional)"
+        unit="s"
+        :min="1"
+        :max="1799"
+        :step="1"
+        :disabled="disabled"
+      />
+      <p class="text-xs text-camera-muted">Up to 29 min 59 s, the camera's clip limit.</p>
+      <UiToggle
+        v-model="form.download"
+        label="Download clip to server when done"
+        :disabled="disabled"
+      />
+      <UiButton
+        variant="primary"
+        :loading="starting"
+        :disabled="disabled || !maxOk"
+        :title="reason"
+        @click="start"
       >
-        Ended: {{ REASONS[status.ended_reason] || 'Stopped' }}
+        Start recording
+      </UiButton>
+    </div>
+    <div v-else class="flex flex-col gap-4" aria-live="polite">
+      <p class="flex items-center gap-2 text-3xl font-mono tabular-nums">
+        <span class="h-3 w-3 animate-pulse rounded-full bg-camera-danger-fill" aria-hidden="true" />
+        <span data-testid="elapsed">{{ fmtDuration(elapsed) }}</span>
+        <span v-if="status?.max_seconds" class="text-base text-camera-muted"
+          >/ {{ fmtDuration(status.max_seconds) }}</span
+        >
       </p>
-      <p v-else-if="active && status?.ended_reason" class="text-sm text-camera-warn">
-        Automatic stop failed. Press Stop to try again.
-      </p>
+      <UiButton variant="danger" :loading="stopping" @click="stop">Stop recording</UiButton>
+    </div>
 
-      <div v-if="clip" class="space-y-1 text-sm" data-testid="last-clip">
-        <p>
-          Last clip: <strong>{{ clip.folder }}/{{ clip.name }}</strong>
-          <span v-if="clip.size" class="text-camera-muted">
-            ({{ (clip.size / 1048576).toFixed(1) }} MB)</span
-          >
-        </p>
-        <div v-if="dlJob" class="space-y-1">
-          <UiProgress
-            :value="dlJob.status === 'completed' ? 1 : dlJob.progress"
-            :label="dlJob.message || 'Downloading the clip'"
-          />
-          <UiBadge v-if="dlJob.status === 'completed'" tone="ok">Downloaded</UiBadge>
-          <UiBadge v-else-if="dlJob.status === 'failed'" tone="danger"
-            >Download failed: {{ dlJob.error }}</UiBadge
-          >
-        </div>
+    <p v-if="startError" class="text-sm text-camera-danger" role="alert" data-testid="start-error">
+      {{ startError.message }}
+      <span v-if="movieHint" class="block text-camera-muted">
+        The camera's live view selector must be set to movie mode.
+      </span>
+    </p>
+    <p v-if="status?.note" class="text-sm text-camera-warn" data-testid="rec-note">
+      {{ status.note }}
+    </p>
+    <p v-if="status?.segments > 1" class="text-sm text-camera-muted" data-testid="rec-segments">
+      {{ status.segments }} movie files so far
+    </p>
+    <p v-if="status?.warning" class="text-sm text-camera-warn" data-testid="rec-warning">
+      {{ status.warning }}
+    </p>
+    <p
+      v-if="!active && status?.ended_reason"
+      class="text-sm text-camera-muted"
+      data-testid="ended-reason"
+    >
+      Ended: {{ REASONS[status.ended_reason] || 'Stopped' }}
+    </p>
+    <p v-else-if="active && status?.ended_reason" class="text-sm text-camera-warn">
+      Automatic stop failed. Press Stop to try again.
+    </p>
+
+    <div v-if="clip" class="space-y-1 text-sm" data-testid="last-clip">
+      <p>
+        Last clip: <strong>{{ clip.folder }}/{{ clip.name }}</strong>
+        <span v-if="clip.size" class="text-camera-muted">
+          ({{ (clip.size / 1048576).toFixed(1) }} MB)</span
+        >
+      </p>
+      <div v-if="dlJob" class="space-y-1">
+        <UiProgress
+          :value="dlJob.status === 'completed' ? 1 : dlJob.progress"
+          :label="dlJob.message || 'Downloading the clip'"
+        />
+        <UiBadge v-if="dlJob.status === 'completed'" tone="ok">Downloaded</UiBadge>
+        <UiBadge v-else-if="dlJob.status === 'failed'" tone="danger"
+          >Download failed: {{ dlJob.error }}</UiBadge
+        >
       </div>
+    </div>
   </div>
 </template>

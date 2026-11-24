@@ -43,13 +43,24 @@ const stepValue = computed({
     </div>
     <div class="flex flex-col gap-2">
       <span class="text-xs font-medium text-camera-muted">Step between frames</span>
-      <UiSegmented v-model="stepValue" size="sm" class="w-full" :options="steps" :disabled="locked" />
+      <UiSegmented
+        v-model="stepValue"
+        size="sm"
+        class="w-full"
+        :options="steps"
+        :disabled="locked"
+      />
     </div>
     <div class="flex flex-col gap-2">
       <span class="text-xs font-medium text-camera-muted">Exposure of each frame</span>
       <EvScale :offsets="offsets" />
     </div>
-    <div v-if="job" class="flex flex-col gap-2 text-sm" aria-live="polite" data-testid="bracket-job">
+    <div
+      v-if="job"
+      class="flex flex-col gap-2 text-sm"
+      aria-live="polite"
+      data-testid="bracket-job"
+    >
       <template v-if="shoot.bracketRunning">
         <UiProgress :value="job.progress" :label="job.message || 'Capturing frames'" />
       </template>
@@ -60,7 +71,9 @@ const stepValue = computed({
         >Cancelled</UiBadge
       >
       <template v-else-if="job.status === 'completed'">
-        <UiBadge tone="ok" class="self-start">Done · {{ shots.length || offsets.length }} frames</UiBadge>
+        <UiBadge tone="ok" class="self-start"
+          >Done · {{ shots.length || offsets.length }} frames</UiBadge
+        >
         <UiButton
           v-if="job.result?.directory"
           variant="ghost"
