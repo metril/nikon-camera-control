@@ -215,3 +215,16 @@ State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, quiet windo
 Bugs: (1) download-all cancel leaves `.part` (download path in `backend/services/camera_files*`/download job; remove the partial in the cancel handler). (2) Progress text `(n/999)` uses a placeholder total before listing finishes. (3) `liveviewaffocus` reports `readonly:false` but PUT returns 403 `SETTING_NOT_ALLOWED` (settings allowlist vs `readonly` flag mismatch). (4) A single `capture` with NEF+Fine* and `download:false` reports `files: []` and camera_files `capt000N.jpg` + `.nef` (expected).
 
 State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, focusmode2 AF-C, liveviewaffocus Full-time-servo AF, liveviewafmode Normal-area AF, keepalive on, live view stopped, SSD target kept. Test files added to the SSD (`camera/` 399 files ~12 GB, time-lapse sessions hw62/hw63/hw64, video hw66).
+
+## Retest 0.4.3 (karpo, D500 V1.31, lens on M/A, 2026-11-24)
+
+| Item | Result | Evidence |
+|---|---|---|
+| 10.2 MF in live view | ✅ | Root cause of the 0.4.1 failure: `manualfocusdrive` returns -110 while `liveviewaffocus` is Full-time-servo AF (the lens switch was M/A). The app now switches live view AF to Single-servo for the drive: steps ±1, ±5, ±50 all 200. |
+| 10.3 MF with live view off | ✅ | Steps ±3 return 200, `relative_position` back to 0; `liveviewaffocus` stays Full-time-servo AF. |
+| 10.4 5-frame stack | ✅ | 5 files in `stacks/2026-11-24-115855`, `returned_to_start: true`, `net_steps: 0`. |
+| 10.5 cancel a stack | ✅ | Cancelled at shot 2/10; job result kept: 2 files, `returned_to_start: true`. |
+| Live view AF restore | ✅ | Back to Full-time-servo AF ~0.5 s after live view stops. A user's own PUT of `liveviewaffocus` while switched (even the same value) is kept, not overwritten. |
+| 11.2 set camera clock | ✅ | PUT `/camera/datetime` host mode at UTC-5: camera wall time 11:22 local; app time zone now America/New_York. |
+
+State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, liveviewaffocus Full-time-servo AF, idle.
