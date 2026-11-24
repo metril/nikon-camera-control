@@ -36,6 +36,7 @@ def build_bulb_service(s: State) -> BulbService:
         s.storage,
         files.index.invalidate,
         quiet_window_s=s.config_store.config.camera.event_quiet_window_s,
+        default_prefix=lambda: s.config_store.config.camera.filename_prefix,
     )
 
 

@@ -190,3 +190,32 @@ async def test_stray_file_is_downloaded_in_background_and_announced(
             seen.append(ev.data["files"])
     sub.close()
     assert [{"folder": stray[0].folder, "name": stray[0].name}] in seen
+
+
+async def test_trigger_refused_with_ram_target(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    await app.state.camera_service.set_setting("capturetarget", "Internal RAM")
+    r = await connected_client.post(f"{C}/trigger")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "INVALID_STATE"
+    assert fake_camera.calls.get("trigger", 0) == 0
+
+
+async def test_configured_prefix_used_unless_request_gives_one(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    app.state.config_store.update({"camera": {"filename_prefix": "wedding day"}})
+    a = (await connected_client.post(C, json={})).json()["files"][0]["name"]
+    b = (await connected_client.post(C, json={"filename_prefix": "own"})).json()["files"][0]["name"]
+    assert a.startswith("wedding-day-2") and b.startswith("own-2")
+
+
+async def test_download_photos_and_prefix_config_defaults_and_limit(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    cam = (await connected_client.get("/api/v1/config")).json()["camera"]
+    assert cam["download_photos"] is True and cam["filename_prefix"] is None
+    r = await connected_client.patch(
+        "/api/v1/config", json={"camera": {"filename_prefix": "x" * 41}}
+    )
+    assert r.status_code == 422

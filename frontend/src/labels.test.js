@@ -61,3 +61,16 @@ describe('label maps', () => {
     expect(videoCodec('libx264')).toBe('H.264')
   })
 })
+
+describe('sampleName', () => {
+  it('cleans the prefix like the backend and uses dashed dates', async () => {
+    const { sampleName, cleanPrefix } = await import('./labels')
+    expect(cleanPrefix('  my wedding!! ')).toBe('my-wedding-')
+    expect(cleanPrefix('___')).toBe('')
+    expect(cleanPrefix('x'.repeat(50))).toBe('x'.repeat(40) + '-')
+    expect(sampleName('a b', new Date(2026, 10, 24, 9, 46, 59))).toEqual([
+      'a-b-',
+      '2026-11-24-094659-DSC_2161.JPG',
+    ])
+  })
+})

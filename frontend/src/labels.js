@@ -248,3 +248,19 @@ export function settingValueLabel(name, value) {
   if (/^[A-Z][a-z]+( [A-Z][a-z]+)+$/.test(v)) return v.charAt(0) + v.slice(1).toLowerCase()
   return v
 }
+
+const pad = (n) => String(n).padStart(2, '0')
+/** Same cleaning as the backend's sanitize_prefix: unsafe runs become '-', ends trimmed, max 40. */
+export function cleanPrefix(prefix) {
+  const trim = (s) => s.replace(/^[_-]+|[_-]+$/g, '')
+  const c = trim(trim(String(prefix || '').replace(/[^A-Za-z0-9_-]+/g, '-')).slice(0, 40))
+  return c ? `${c}-` : ''
+}
+/** Example of a downloaded file name: [prefix, 'YYYY-MM-DD-HHMMSS-DSC_2161.JPG']. */
+export function sampleName(prefix, d = new Date()) {
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return [
+    cleanPrefix(prefix),
+    `${stamp}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-DSC_2161.JPG`,
+  ]
+}

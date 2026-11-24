@@ -14,7 +14,13 @@ from pathlib import Path
 from backend.api.schemas.common import EventType
 from backend.camera.backend import CameraFilePath
 from backend.core.camera_service import CameraService, Priority, dedupe_slot_copies
-from backend.core.errors import AppError, CameraNotConnected, DownloadFailed, NoTargetError
+from backend.core.errors import (
+    AppError,
+    CameraNotConnected,
+    DownloadFailed,
+    InvalidState,
+    NoTargetError,
+)
 from backend.core.storage_root import StorageRoot, as_root
 from backend.services.files import FileIndex
 from backend.services.storage import download_files
@@ -47,7 +53,9 @@ class CaptureService:
         index: FileIndex,
         *,
         keep_card_copy: Callable[[], bool] = lambda: True,
+        default_prefix: Callable[[], str | None] = lambda: None,
     ) -> None:
+        self._default_prefix = default_prefix
         self._keep_card_copy = keep_card_copy
         self._camera = camera
         self._store = as_root(store)
@@ -66,7 +74,7 @@ class CaptureService:
             None,
             download=download,
             owner=None,
-            name_prefix=sanitize_prefix(filename_prefix),
+            name_prefix=sanitize_prefix(filename_prefix or self._default_prefix()),
             delete_from_camera=delete_from_camera,
         )
         return CaptureResult(local, files)
@@ -191,6 +199,13 @@ class CaptureService:
             raise CameraNotConnected()
 
     async def trigger(self) -> None:
+        """Fire the shutter only. Refused with the RAM target: the photo would be lost."""
+        self._require_connected()
+        if await self._target_is_card(None) is False:
+            raise InvalidState(
+                "The camera saves to its internal memory, so the photo would be lost. "
+                "Set the camera to save to the memory card first."
+            )
         await self._camera.call(lambda b: b.trigger(), priority=Priority.CAPTURE)
 
     async def _download(

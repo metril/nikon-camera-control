@@ -6,11 +6,22 @@ import SettingsView from '@/views/SettingsView.vue'
 import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
+import { useCameraAdminStore } from '@/stores/cameraAdmin'
+import { useCameraStore } from '@/stores/camera'
 
 vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {} }))
 
 const schema = {
   $defs: {
+    Camera: {
+      title: 'CameraConfig',
+      type: 'object',
+      properties: {
+        download_photos: { type: 'boolean', title: 'Download photos' },
+        filename_prefix: { anyOf: [{ type: 'string', maxLength: 40 }, { type: 'null' }] },
+        keep_card_copy: { type: 'boolean', title: 'Keep a copy' },
+      },
+    },
     Video: {
       title: 'VideoConfig',
       type: 'object',
@@ -21,6 +32,7 @@ const schema = {
     },
   },
   properties: {
+    camera: { $ref: '#/$defs/Camera' },
     video: { $ref: '#/$defs/Video' },
     cors_origins: { type: 'array', items: { type: 'string' }, title: 'Cors origins' },
     demo_camera: { type: 'boolean' },
@@ -28,18 +40,23 @@ const schema = {
   },
 }
 const cfg = () => ({
+  camera: { download_photos: true, filename_prefix: null, keep_card_copy: true },
   video: { crf: 23, codec: 'a' },
   cors_origins: [],
   demo_camera: false,
   api_key_set: false,
 })
 
-async function setup() {
+async function setup({ target = null } = {}) {
   const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
   const config = useConfigStore()
   config.fetch = vi.fn(async () => (config.config = cfg()))
   config.fetchSchema = vi.fn(async () => (config.schema = schema))
   const auth = useAuthStore()
+  useCameraStore().connected = !!target
+  const admin = useCameraAdminStore()
+  admin.target = target
+  admin.fetchTarget = vi.fn().mockResolvedValue()
   auth.fetchInfo = vi.fn(
     async () =>
       (auth.info = {
@@ -53,7 +70,7 @@ async function setup() {
   )
   const w = mount(SettingsView, { global: { plugins: [pinia] } })
   await flushPromises()
-  return { w, config, auth }
+  return { w, config, auth, admin }
 }
 
 describe('SettingsView', () => {
@@ -69,6 +86,37 @@ describe('SettingsView', () => {
     expect(w.find('[data-test="ffmpeg"]').text()).toBe('Available')
     expect(w.find('[data-test="libgphoto2"]').text()).toBe('2.5.31')
     expect(w.find('[data-test="key-status"]').text()).toBe('Not set')
+  })
+
+  it('shows the prefix example and saves it', async () => {
+    const { w, config } = await setup()
+    config.patch = vi.fn(async () => config.config)
+    await w.find('[data-test="filename-prefix"] input').setValue('my wedding!')
+    expect(w.find('[data-test="prefix-example"]').text()).toContain('my-wedding-')
+    await w.find('[data-test="save"]').trigger('click')
+    expect(config.patch).toHaveBeenCalledWith({ camera: { filename_prefix: 'my wedding!' } })
+  })
+
+  it('turning downloads off locks the target, dims the copy rows and drops the example', async () => {
+    const { w } = await setup()
+    await w.find('[data-test="download-photos"]').trigger('click')
+    expect(w.find('[data-test="target-locked"]').text()).toContain('Locked to memory card')
+    expect(w.find('[data-test="camera-target"] select').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="filename-prefix"] input').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="photo-location"] select').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="prefix-unused"]').text()).toContain('Not used while photos stay')
+    expect(w.find('[data-test="prefix-example"]').exists()).toBe(false)
+  })
+
+  it('switches a RAM target to the card before turning downloads off', async () => {
+    const { w, admin } = await setup({
+      target: { value: 'Internal RAM', choices: ['Internal RAM', 'Memory card'] },
+    })
+    admin.setTarget = vi.fn(async (v) => (admin.target = { ...admin.target, value: v }))
+    await w.find('[data-test="download-photos"]').trigger('click')
+    await flushPromises()
+    expect(admin.setTarget).toHaveBeenCalledWith('Memory card')
+    expect(w.find('[data-test="target-locked"]').exists()).toBe(true)
   })
 
   it('follows a server-side config change without showing unsaved changes', async () => {
@@ -165,7 +213,7 @@ describe('SettingsView', () => {
     expect(document.documentElement.dataset.layout).toBe('touch')
     expect(w.find('[data-section="capture"]').text()).toContain('Camera saves to')
     expect(w.find('[data-test="target-reason"]').text()).toContain('Connect the camera')
-    expect(w.find('[data-field="camera-clock"]').exists()).toBe(false) // no camera section in this schema
+    expect(w.find('[data-field="camera-clock"]').exists()).toBe(true)
   })
 
   it('shows a generated key once and requires confirmation', async () => {

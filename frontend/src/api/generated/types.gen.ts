@@ -467,11 +467,23 @@ export type CameraConfig = {
      */
     connect_timeout_s?: number;
     /**
+     * Download photos
+     *
+     * Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner.
+     */
+    download_photos?: boolean;
+    /**
      * Event quiet period
      *
      * After a capture, stop listening for camera events once none arrive for this long.
      */
     event_quiet_window_s?: number;
+    /**
+     * File name prefix
+     *
+     * Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.
+     */
+    filename_prefix?: string | null;
     /**
      * Keep a copy on the camera card
      *
@@ -521,11 +533,23 @@ export type CameraConfigPatch = {
      */
     connect_timeout_s?: number | null;
     /**
+     * Download Photos
+     *
+     * Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner.
+     */
+    download_photos?: boolean | null;
+    /**
      * Event Quiet Window S
      *
      * After a capture, stop listening for camera events once none arrive for this long.
      */
     event_quiet_window_s?: number | null;
+    /**
+     * Filename Prefix
+     *
+     * Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.
+     */
+    filename_prefix?: string | null;
     /**
      * Keep Card Copy
      *

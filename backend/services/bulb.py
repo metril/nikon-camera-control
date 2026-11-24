@@ -69,6 +69,7 @@ class BulbService:
         invalidate_index: Callable[[], None],
         *,
         quiet_window_s: float = 1.0,
+        default_prefix: Callable[[], str | None] = lambda: None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -78,6 +79,7 @@ class BulbService:
         self._store = as_root(output_dir)
         self._invalidate = invalidate_index
         self._quiet = quiet_window_s
+        self._default_prefix = default_prefix
         self._sleep = sleep
         self._clock = clock
         self._run: _Run | None = None
@@ -357,13 +359,14 @@ class BulbService:
         local: list[Path] = []
         if req.download:
             stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-")
+            prefix = sanitize_prefix(req.filename_prefix or self._default_prefix())
             try:
                 local = await download_files(
                     self._camera,
                     files,
                     self._store.root(),
                     owner=OWNER,
-                    name_prefix=f"{sanitize_prefix(req.filename_prefix)}{stamp}",
+                    name_prefix=f"{prefix}{stamp}",
                     on_stored=self._store.stored,
                 )
             finally:
