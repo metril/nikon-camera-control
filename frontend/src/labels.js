@@ -127,6 +127,10 @@ export const cameraState = labeller(CAMERA_STATES)
 export const VIDEO_CODECS = {
   h264: 'H.264',
   h265: 'H.265',
+  libvpx_vp9: 'VP9',
+  'libvpx-vp9': 'VP9',
+  libx264: 'H.264',
+  libx265: 'H.265',
   prores: 'ProRes',
   vp9: 'VP9',
 }
@@ -157,6 +161,21 @@ export const videoCodec = labeller(VIDEO_CODECS)
 export const encoderPreset = labeller(ENCODER_PRESETS)
 export const videoQuality = labeller(VIDEO_QUALITIES)
 export const videoResolution = labeller(VIDEO_RESOLUTIONS)
+
+export const LIVEVIEW_QUALITIES = { small: 'Small', medium: 'Medium', large: 'Large' }
+export const liveviewQuality = labeller(LIVEVIEW_QUALITIES)
+
+/** Where the camera stores a photo, as its capture-target choices are worded. */
+export const CAPTURE_TARGETS = {
+  'Internal RAM': 'Camera memory',
+  'Internal memory': 'Camera memory',
+  'Memory card': 'Memory card',
+}
+export const captureTarget = labeller(CAPTURE_TARGETS)
+
+/** Label for one value of an enum config field, chosen by the field's name. */
+const CONFIG_ENUMS = { codec: videoCodec, preset: encoderPreset, quality: liveviewQuality }
+export const configEnum = (field, value) => (CONFIG_ENUMS[field] || humanize)(value)
 
 /** Select options ({ value, label }) for the enums above. */
 export const options = (map) => Object.entries(map).map(([value, label]) => ({ value, label }))

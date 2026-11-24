@@ -24,6 +24,7 @@ from backend.camera.backend import (
     FileKind,
     StorageInfo,
 )
+from backend.camera.usb_access import DEFAULT_DEV_ROOT, DEFAULT_SYSFS_ROOT, find_unopenable_nikon
 from backend.core.errors import (
     AppError,
     CameraBusy,
@@ -31,6 +32,7 @@ from backend.core.errors import (
     CameraNotConnected,
     CameraNotFound,
     CameraOperationFailed,
+    CameraPermissionDenied,
     CameraTimeout,
     FeatureUnsupported,
     FileNotFoundError_,
@@ -223,7 +225,13 @@ def coerce_config_value(w: ConfigWidget, value: object) -> str | int | float:
 class Gphoto2Backend:
     """CameraBackend over python-gphoto2."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        sysfs_root: Path = DEFAULT_SYSFS_ROOT,
+        dev_root: Path = DEFAULT_DEV_ROOT,
+    ) -> None:
+        self._sysfs_root = sysfs_root
+        self._dev_root = dev_root
         self._camera: Any = None
         self._ctx: Any = None
         self._model = ""
@@ -245,7 +253,12 @@ class Gphoto2Backend:
             model = camera.get_abilities().model
         except gp.GPhoto2Error as e:
             self._exit_quietly(camera, ctx)
-            raise translate_error(e, "open") from e
+            err = translate_error(e, "open")
+            if isinstance(err, CameraNotFound | CameraIOError | CameraOperationFailed):
+                problem = find_unopenable_nikon(self._sysfs_root, self._dev_root)
+                if problem is not None:
+                    raise CameraPermissionDenied(details=problem.details()) from e
+            raise err from e
         self._camera, self._ctx, self._model = camera, ctx, str(model)
         self._viewfinder_on = False
 
