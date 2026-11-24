@@ -307,6 +307,7 @@ class _Faults:
     latency: dict[str, float] = field(default_factory=dict)
     unplugged: bool = False
     card_full: bool = False
+    card: str = "rw"  # "rw" | "ro" | "none"
     calls: dict[str, int] = field(default_factory=dict)
 
 
@@ -495,6 +496,12 @@ class FakeCamera:
         """While set, capture/trigger/movie raise CameraIOError and free space reads 0."""
         with self._flock:
             self._faults.card_full = full
+
+    def card_state(self, state: str) -> None:
+        """ "rw" (default), "ro" (write-protected) or "none" (no card). With the card as capture
+        target, shots then fail with a bare "Unspecified error" like a real D500."""
+        with self._flock:
+            self._faults.card = state
 
     def _enter(self, op: str) -> None:
         with self._flock:
@@ -739,6 +746,9 @@ class FakeCamera:
     def _check_space(self) -> None:
         with self._flock:
             full = self._faults.card_full
+            card = self._faults.card
+        if card != "rw" and str(self._values["capturetarget"]) != "Internal RAM":
+            raise CameraOperationFailed("capture: Unspecified error")
         if full or self._free_kb() <= 0:
             raise StorageFull("Card full")
 
@@ -930,6 +940,10 @@ class FakeCamera:
         files = [f for fs in self._files.values() for f in fs.values()]
         avg_kb = max(1, (sum(len(f.data) for f in files) // max(1, len(files))) // 1024)
         free = self._free_kb()
+        with self._flock:
+            card = self._faults.card
+        if card == "none":
+            return []
         return [
             StorageInfo(
                 label="Memory card",
@@ -937,6 +951,6 @@ class FakeCamera:
                 capacity_kb=self._capacity_kb,
                 free_kb=free,
                 free_images=free // avg_kb,
-                access="rw",
+                access=card,
             )  # fmt: skip
         ]

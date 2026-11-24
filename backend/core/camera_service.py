@@ -80,8 +80,11 @@ from backend.core.errors import (
     CameraNotConnected,
     CameraOperationFailed,
     CameraTimeout,
+    CardLocked,
     InvalidState,
+    NoCard,
     SettingNotFound,
+    StorageFull,
 )
 from backend.core.events import EventBus
 from backend.core.state import CameraState, can_transition
@@ -499,6 +502,7 @@ class CameraService:
         self._battery: Any = None
         self._settings_tree: list[ConfigWidget] | None = None
         self._settings_map: dict[str, ConfigWidget] = {}
+        self._storage_cache: tuple[float, list[Any]] | None = None
         self._cache_epoch = 0
         self._read_exposure_timeout_s = 5.0
         self._refuse_bulb_timeout_s = 10.0
@@ -1179,6 +1183,7 @@ class CameraService:
         self._check_lease(Priority.CAPTURE, owner)
         t = timeout if timeout is not None else self._config.config.camera.capture_timeout_s
         await self._refuse_bulb_shutter()
+        await self.require_card_ready()
         prior = await self.transition(_S.CAPTURING)
         self._bus.publish(EventType.CAPTURE_STARTED, {})
 
@@ -1218,6 +1223,9 @@ class CameraService:
         except CameraTimeout:
             self._ensure_recovery()  # ERROR must resolve to IDLE without user action
             raise
+        except CameraOperationFailed as e:
+            await self.explain_failure(e)
+            raise
         finally:
             if self._state == _S.CAPTURING:
                 self._try_state(prior)
@@ -1226,6 +1234,47 @@ class CameraService:
             {"files": [{"folder": f.folder, "name": f.name} for f in files]},
         )
         return files
+
+    async def card_problem(self, *, fresh: bool = False) -> AppError | None:
+        """With the card as capture target: why a shot would fail (no card, locked, full), or
+        None. Storage is cached for a few seconds unless ``fresh``. Best effort: an unreadable
+        target or storage never blocks a shot."""
+        if self._state not in _LIVE_STATES:
+            return None
+        try:
+            target = await self.get_setting("capturetarget")
+            if "ram" in str(target.value).lower():
+                return None
+            now = time.monotonic()
+            if not fresh and self._storage_cache is not None and now - self._storage_cache[0] < 3.0:
+                cards = self._storage_cache[1]
+            else:
+                cards = await self._run(lambda b: b.storage_info(), Priority.CONTROL, 10.0)
+                self._storage_cache = (time.monotonic(), cards)
+        except AppError:
+            return None
+        if not cards:
+            return NoCard()
+        writable = [c for c in cards if c.access != "ro"]
+        if not writable:
+            return CardLocked()
+        if all(c.free_images <= 0 for c in writable):
+            return StorageFull("The memory card is full.")
+        return None
+
+    async def require_card_ready(self) -> None:
+        """Raise NoCard / CardLocked / StorageFull before firing with the card as target."""
+        if (problem := await self.card_problem()) is not None:
+            raise problem
+
+    async def explain_failure(self, exc: AppError) -> None:
+        """A bare camera failure with the card as target may be a missing, locked or full
+        card (the pre-check can be stale): re-read storage and raise that instead."""
+        if (
+            type(exc) is CameraOperationFailed
+            and (problem := await self.card_problem(fresh=True)) is not None
+        ):
+            raise problem from exc
 
     async def refuse_bulb_shutter(self) -> None:
         """Public guard for callers that fire the shutter outside capture() (trigger)."""

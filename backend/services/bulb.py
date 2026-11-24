@@ -207,6 +207,7 @@ class BulbService:
         result: dict[str, Any] = {}
         warnings: list[str] = []
         try:
+            await cam.require_card_ready()
             prior_state = await cam.transition(CameraState.BULB)
             try:
                 prior_mode = await self._read_mode()
@@ -227,6 +228,7 @@ class BulbService:
                 try:
                     cancel = await self._open(run)
                 except AppError as e:
+                    await cam.explain_failure(e)
                     hint = " Bulb usually needs exposure program M." if warnings else ""
                     raise CameraOperationFailed(
                         f"Could not open the shutter: {e.message.rstrip('.')}.{hint}",

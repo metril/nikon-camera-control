@@ -29,6 +29,8 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `CAMERA_IO_ERROR` | 502 | `CameraIOError` | Camera I/O error |
 | `CAMERA_OPERATION_FAILED` | 502 | `CameraOperationFailed` | Camera operation failed |
 | `STORAGE_FULL` | 507 | `StorageFull` | Camera storage is full |
+| `NO_CARD` | 409 | `NoCard` | No memory card in the camera. Insert a card or save to camera memory. |
+| `CARD_LOCKED` | 409 | `CardLocked` | The memory card is locked (write-protected). Unlock it or save to camera memory. |
 | `INVALID_STATE` | 409 | `InvalidState` | Operation not allowed in the current state |
 | `SETTING_NOT_FOUND` | 404 | `SettingNotFound` | Setting not found |
 | `SETTING_NOT_ALLOWED` | 403 | `SettingNotAllowed` | Setting cannot be changed |

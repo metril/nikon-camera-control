@@ -22,6 +22,8 @@ class ErrorCode(StrEnum):
     CAMERA_IO_ERROR = "CAMERA_IO_ERROR"
     CAMERA_OPERATION_FAILED = "CAMERA_OPERATION_FAILED"
     STORAGE_FULL = "STORAGE_FULL"
+    NO_CARD = "NO_CARD"
+    CARD_LOCKED = "CARD_LOCKED"
     INVALID_STATE = "INVALID_STATE"
     SETTING_NOT_FOUND = "SETTING_NOT_FOUND"
     SETTING_NOT_ALLOWED = "SETTING_NOT_ALLOWED"
@@ -145,6 +147,24 @@ class StorageFull(AppError):
     code = ErrorCode.STORAGE_FULL
     http_status = 507
     default_message = "Camera storage is full"
+
+
+class NoCard(AppError):
+    """The capture target is the memory card but no card is inserted."""
+
+    code = ErrorCode.NO_CARD
+    http_status = 409
+    default_message = "No memory card in the camera. Insert a card or save to camera memory."
+
+
+class CardLocked(AppError):
+    """Every inserted memory card is write-protected."""
+
+    code = ErrorCode.CARD_LOCKED
+    http_status = 409
+    default_message = (
+        "The memory card is locked (write-protected). Unlock it or save to camera memory."
+    )
 
 
 class InvalidState(AppError):

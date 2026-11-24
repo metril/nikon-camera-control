@@ -25,6 +25,7 @@ from backend.core.clock import local_now
 from backend.core.errors import (
     AppError,
     CameraNotConnected,
+    CameraOperationFailed,
     CameraTimeout,
     DownloadFailed,
     InvalidState,
@@ -225,6 +226,7 @@ class CaptureService:
                 "Set the camera to save to the memory card first."
             )
         await self._camera.refuse_bulb_shutter()
+        await self._camera.require_card_ready()
 
         wait_s = self._camera.capture_timeout_s
         quiet = self._camera.quiet_window_s
@@ -266,6 +268,9 @@ class CaptureService:
             files = await self._camera.call(
                 _fire, priority=Priority.CAPTURE, timeout=wait_s + first_s + quiet + 5.0
             )
+        except CameraOperationFailed as e:
+            await self._camera.explain_failure(e)
+            raise
         finally:
             if self._camera.state == CameraState.CAPTURING:
                 with contextlib.suppress(AppError):

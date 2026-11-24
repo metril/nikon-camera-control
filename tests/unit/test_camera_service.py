@@ -19,6 +19,7 @@ from backend.camera.backend import (
     CameraFilePath,
     ConfigType,
     ConfigWidget,
+    StorageInfo,
 )
 from backend.camera.backend import EventType as CamEvent
 from backend.core.camera_service import CameraService, Priority
@@ -67,6 +68,7 @@ class StubBackend:
     def __init__(self) -> None:
         self.opens = 0
         self.closes = 0
+        self.storage = [StorageInfo("SD", "/store", 100, 50, 10, "rw")]
         self._open = False
         self.fail_open: Exception | None = None
         self.fail_battery: Exception | None = None
@@ -110,6 +112,9 @@ class StubBackend:
         leaves = tuple(self._leaf(k, v) for k, v in self.values.items())
         sec = ConfigWidget("main", "Main", "/main", ConfigType.SECTION, children=leaves)
         return [sec]
+
+    def storage_info(self) -> list[StorageInfo]:
+        return self.storage
 
     def get_config(self, name: str) -> ConfigWidget:
         if name == "hang":
@@ -761,12 +766,13 @@ async def test_bulb_precheck_uses_fresh_cache_and_reads_when_stale(env: Env) -> 
     svc = await env.make()
     env.backend.values["shutterspeed"] = "1/250"
     await svc.get_setting("shutterspeed")
+    await svc.get_setting("capturetarget")
     before = env.backend.get_calls
     await svc.capture()
     assert env.backend.get_calls == before  # cached non-bulb: no extra read
     svc.invalidate_settings()
     await svc.capture()
-    assert env.backend.get_calls == before + 1
+    assert env.backend.get_calls == before + 2  # shutterspeed + capturetarget
     env.backend.values["shutterspeed"] = "Bulb"
     svc.invalidate_settings()
     with pytest.raises(InvalidState):
