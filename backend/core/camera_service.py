@@ -482,6 +482,7 @@ class CameraService:
         self._factory = backend_factory
         self._config = config_store
         self._bus = event_bus
+        self._setting_listeners: list[Callable[[str], None]] = []
         self._state = CameraState.DISCONNECTED
         self._loop: asyncio.AbstractEventLoop | None = None
         self._worker: _Worker | None = None
@@ -1113,6 +1114,17 @@ class CameraService:
         self._store_widget(widget)
         return widget
 
+    def on_setting_write(self, fn: Callable[[str], None]) -> Callable[[], None]:
+        """Call ``fn(name)`` after every ``set_setting`` (a user write, even of the same value);
+        not for the app's own ``note_setting``. Returns the unsubscribe function."""
+        self._setting_listeners.append(fn)
+        return lambda: self._setting_listeners.remove(fn) if fn in self._setting_listeners else None
+
+    def note_setting(self, widget: ConfigWidget) -> None:
+        """Record a widget written outside ``set_setting`` (cache + SETTING_CHANGED)."""
+        self._store_widget(widget)
+        self._bus.publish(EventType.SETTING_CHANGED, {"name": widget.name, "value": widget.value})
+
     async def set_setting(
         self, name: str, value: str | int | float | bool, *, owner: str | None = None
     ) -> ConfigWidget:
@@ -1143,6 +1155,8 @@ class CameraService:
         else:
             self._store_widget(widget)
         self._bus.publish(EventType.SETTING_CHANGED, {"name": name, "value": widget.value})
+        for fn in list(self._setting_listeners):
+            fn(name)
         return widget
 
     # capture / preview ------------------------------------------------------------
