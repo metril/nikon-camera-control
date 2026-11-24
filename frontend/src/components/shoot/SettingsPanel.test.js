@@ -65,14 +65,14 @@ describe('SettingsPanel', () => {
   it('shows an empty state when disconnected', () => {
     const { pinia } = setup({ connected: false })
     const w = mnt(pinia)
-    expect(w.text()).toContain('Camera not connected')
+    expect(w.text()).toContain('Connect the camera to change settings')
     expect(w.find('[data-setting]').exists()).toBe(false)
   })
 
   it('locks fields with the reason when leased', () => {
     const { pinia } = setup({ leasedBy: 'timelapse' })
     const w = mnt(pinia)
-    expect(w.text()).toContain('Busy: timelapse running')
+    expect(w.text()).toContain('Busy: Time-lapse')
     expect(w.find('[data-setting="iso"] select').attributes('disabled')).toBeDefined()
   })
 

@@ -1,11 +1,10 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 
 export const TABS = [
-  { id: 'shoot', label: 'Shoot' },
-  { id: 'timelapse', label: 'Time-lapse' },
-  { id: 'gallery', label: 'Gallery' },
-  { id: 'advanced', label: 'Advanced' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'shoot', label: 'Shoot', icon: 'Camera' },
+  { id: 'timelapse', label: 'Time-lapse', icon: 'Clock' },
+  { id: 'gallery', label: 'Gallery', icon: 'Images' },
+  { id: 'settings', label: 'Settings', icon: 'Settings' },
 ]
 const STORAGE_KEY = 'nikon-active-tab'
 const valid = (id) => TABS.some((t) => t.id === id)

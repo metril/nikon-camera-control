@@ -1,65 +1,56 @@
 <script setup>
-import { ref, computed } from 'vue'
+/** Warns only when the camera reports a mode other than P, A, S or M (Auto, Scene, …). */
+import { computed, ref } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useSettingsStore } from '@/stores/settings'
-import UiButton from '@/components/ui/UiButton.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import { MODE_NAMES, SETTING_FOR, modeLetter } from './exposure'
 
+const KEY = 'nikon-mode-warning-dismissed'
 const camera = useCameraStore()
 const settings = useSettingsStore()
-const dismissed = ref(false)
 
-const MODES = [
-  { key: 'P', label: 'Program' },
-  { key: 'A', label: 'Aperture' },
-  { key: 'S', label: 'Shutter' },
-  { key: 'M', label: 'Manual' },
-]
-const OK = /^(p|a|s|m)$|program|aperture|shutter|manual/i
+const read = () => {
+  try {
+    return localStorage.getItem(KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const dismissed = ref(read())
+function dismiss() {
+  dismissed.value = true
+  try {
+    localStorage.setItem(KEY, '1')
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 const mode = computed(() => {
-  const v = settings.get('expprogram') ?? settings.get('autoexposuremode')
-  return v === null || v === undefined || v === '' ? null : String(v)
+  for (const n of SETTING_FOR.mode) {
+    const v = settings.get(n)
+    if (v !== null && v !== undefined && v !== '') return String(v)
+  }
+  return null
 })
-// Hide only when we know the dial is in a usable mode; unknown still shows the reminder.
+// Only a known, unusable mode warns: an unknown mode is not worth interrupting for.
 const show = computed(
-  () => camera.connected && !dismissed.value && !(mode.value && OK.test(mode.value)),
+  () => camera.connected && !dismissed.value && !!mode.value && !modeLetter(mode.value),
 )
+const modes = Object.entries(MODE_NAMES).map(([k, v]) => `${k} (${v.toLowerCase()})`)
 </script>
 
 <template>
-  <div
+  <UiAlert
     v-if="show"
-    class="rounded-lg border border-camera-warning/30 bg-camera-warning/10 px-4 py-3"
-    role="status"
-    aria-live="polite"
+    tone="warn"
+    title="Set the mode dial to P, A, S or M"
+    dismissible
     data-testid="mode-warning"
+    @dismiss="dismiss"
   >
-    <div class="flex items-start gap-3">
-      <div class="flex-1">
-        <h3 class="font-medium text-camera-warning">Mode Dial Requirement</h3>
-        <p class="mt-1 text-sm text-camera-text/80">
-          Ensure your camera's mode dial is set to <strong>P</strong>, <strong>A</strong>,
-          <strong>S</strong>, or <strong>M</strong> mode. Auto and Scene modes will cause settings
-          changes to silently fail.
-          <span v-if="mode" data-testid="current-mode">Current mode: {{ mode }}.</span>
-        </p>
-        <ul class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs">
-          <li v-for="m in MODES" :key="m.key" class="flex items-center gap-1.5">
-            <span
-              class="flex h-6 w-6 items-center justify-center rounded bg-camera-success/20 font-bold text-camera-success"
-              >{{ m.key }}</span
-            >
-            <span class="text-camera-muted">{{ m.label }}</span>
-          </li>
-        </ul>
-      </div>
-      <UiButton
-        size="sm"
-        variant="ghost"
-        aria-label="Dismiss mode warning"
-        @click="dismissed = true"
-        >&times;</UiButton
-      >
-    </div>
-  </div>
+    The camera is in <span data-testid="current-mode">{{ mode }}</span> mode. In Auto and Scene
+    modes, setting changes silently fail. Use {{ modes.join(', ') }}.
+  </UiAlert>
 </template>

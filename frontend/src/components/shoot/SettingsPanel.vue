@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToastsStore } from '@/stores/toasts'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiText from '@/components/ui/UiText.vue'
-import UiEmpty from '@/components/ui/UiEmpty.vue'
+import { leaseOwner, settingName } from '@/labels'
 import SettingField from './SettingField.vue'
 
 const GROUPS = [
@@ -40,7 +40,7 @@ const showAll = ref(false)
 const search = ref('')
 
 const leaseReason = computed(() =>
-  camera.leasedBy ? `Busy: ${String(camera.leasedBy).replace(/[-_]/g, ' ')} running` : '',
+  camera.leasedBy ? `Busy: ${leaseOwner(camera.leasedBy)}` : '',
 )
 const visible = (s) => s.type !== 'section' && s.type !== 'button'
 
@@ -82,7 +82,7 @@ async function change(name, value) {
     await settings.set(name, value)
   } catch (e) {
     errors[name] = e?.message || 'Failed to change setting'
-    if (pending[name] === 1) toasts.error(`${name}: ${errors[name]} (reverted)`)
+    if (pending[name] === 1) toasts.error(`${settingName(name)}: ${errors[name]} (reverted)`)
   } finally {
     pending[name]--
     if (pending[name] <= 0) delete pending[name]
@@ -113,12 +113,12 @@ onMounted(ensureLoaded)
 </script>
 
 <template>
-  <section
-    class="rounded-lg border border-camera-border bg-camera-surface"
-    aria-label="Camera settings"
-  >
-    <header class="flex items-center justify-between border-b border-camera-border px-4 py-2">
-      <h2 class="font-medium">Camera Settings</h2>
+  <section class="flex flex-col gap-5" aria-label="Camera settings">
+    <div class="flex items-center justify-between gap-2">
+      <p v-if="!camera.connected" class="text-sm text-camera-muted">
+        Connect the camera to change settings.
+      </p>
+      <span v-else />
       <UiButton
         size="sm"
         :loading="refreshing"
@@ -127,31 +127,18 @@ onMounted(ensureLoaded)
         @click="refresh"
         >Refresh</UiButton
       >
-    </header>
+    </div>
 
-    <UiEmpty
-      v-if="!camera.connected"
-      class="p-4"
-      title="Camera not connected"
-      hint="Connect the camera to change settings."
-    >
-      <template #actions>
-        <UiButton variant="primary" size="sm" @click="camera.connect().catch(toasts.error)"
-          >Connect</UiButton
-        >
-      </template>
-    </UiEmpty>
-
-    <div v-else class="flex flex-col gap-5 p-4">
-      <p v-if="leaseReason" class="text-sm text-camera-warning" role="status" aria-live="polite">
-        {{ leaseReason }} - settings are locked.
+    <div v-if="camera.connected" class="flex flex-col gap-5">
+      <p v-if="leaseReason" class="text-sm text-camera-warn" role="status" aria-live="polite">
+        {{ leaseReason }}. Settings are locked.
       </p>
       <p v-if="!settings.common.length" class="text-sm text-camera-muted">
-        {{ settings.loading ? 'Loading settings...' : 'No settings available.' }}
+        {{ settings.loading ? 'Loading settings…' : 'No settings available.' }}
       </p>
 
       <div v-for="g in grouped" :key="g.title">
-        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-camera-muted">
+        <h3 class="eyebrow mb-2">
           {{ g.title }}
         </h3>
         <div class="grid gap-4 sm:grid-cols-2">
@@ -168,18 +155,19 @@ onMounted(ensureLoaded)
         </div>
       </div>
 
-      <div class="border-t border-camera-border pt-3">
+      <div class="border-t border-camera-subtle pt-3">
         <UiButton
           variant="ghost"
           size="sm"
+          class="-ml-2.5"
           :aria-expanded="showAll"
           data-testid="show-all"
           @click="showAll = !showAll"
           >{{ showAll ? 'Hide all settings' : 'Show all settings' }}</UiButton
         >
         <div v-if="showAll" class="mt-3 flex flex-col gap-3" data-testid="all-settings">
-          <UiText v-model="search" label="Search settings" placeholder="name, label or value" />
-          <p v-if="settings.loading" class="text-sm text-camera-muted">Loading...</p>
+          <UiText v-model="search" label="Search settings" placeholder="Name, label or value" />
+          <p v-if="settings.loading" class="text-sm text-camera-muted">Loading…</p>
           <div class="grid gap-4 sm:grid-cols-2">
             <SettingField
               v-for="s in shownAll"

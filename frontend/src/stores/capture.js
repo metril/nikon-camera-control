@@ -32,9 +32,11 @@ export const useCaptureStore = defineStore('capture', () => {
   /** Newest saved files (Shoot's recent captures). */
   async function loadRecent() {
     const page = await api.listFiles({
-      query: { folder: '', page: 1, limit: RECENT_LIMIT, kind: 'all', sort: 'newest' },
+      query: { folder: '', page: 1, limit: RECENT_LIMIT, kind: 'image', sort: 'newest' },
     })
     recent.value = page.items || []
+    // the last shot overlay on the live view reads lastFiles: seed it after a reload
+    if (!lastFiles.value.length && recent.value.length) lastFiles.value = [recent.value[0]]
     return recent.value
   }
 
