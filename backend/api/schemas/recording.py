@@ -35,6 +35,12 @@ class RecordingStatus(BaseModel):
     max_seconds: int | None = Field(default=None, description="Auto-stop limit of this recording")
     state: CameraState
     last_clip: ClipOut | None = None
+    duration_s: float | None = Field(
+        default=None,
+        ge=0,
+        description="Real clip length read with ffprobe once the download finished; null if "
+        "not downloaded or ffprobe is unavailable. elapsed_s is the app's own timing",
+    )
     job_id: str | None = Field(default=None, description="Download job, if requested")
     ended_reason: str | None = Field(
         default=None,

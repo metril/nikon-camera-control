@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
@@ -58,6 +59,23 @@ _OFF_VALUES = frozenset({"", "0", "false", "off", "none"})
 RECORDINGS_DIR = "recordings"
 
 
+async def ffprobe_duration(path: Path) -> float | None:
+    """Real duration of a media file via ffprobe, or None if it is missing or fails."""
+    exe = shutil.which("ffprobe")
+    if exe is None:
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            exe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )  # fmt: skip
+        out, _ = await asyncio.wait_for(proc.communicate(), 15.0)
+        value = float(out.decode().strip())
+    except (OSError, ValueError, TimeoutError):
+        return None
+    return value if value >= 0 else None
+
+
 def _is_on(value: object) -> bool:
     return str(value).strip().lower() not in _OFF_VALUES
 
@@ -83,6 +101,7 @@ class _Active:
     stack: AsyncExitStack
     clips: list[CameraFilePath] = field(default_factory=list)
     stopped_at: float | None = None
+    stop_requested_at: float | None = None  # first movie=0, even if the camera refused it
 
 
 @dataclass(slots=True)
@@ -94,6 +113,7 @@ class _Last:
     job_id: str | None = None
     reason: str | None = None
     warning: str | None = None
+    duration_s: float | None = None  # clip length read with ffprobe after a download
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +129,7 @@ class RecordingInfo:
     warning: str | None
     segments: int = 0
     note: str | None = None
+    duration_s: float | None = None
 
 
 def _drain(b: CameraBackend, wait_s: float) -> list[CameraFilePath]:
@@ -141,6 +162,7 @@ class RecordingService:
         sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
         poll_s: float = _POLL_S,
         retry_delay_s: float = _RETRY_DELAY_S,
+        probe: Callable[[Path], Awaitable[float | None]] = ffprobe_duration,
     ) -> None:
         """``clock``/``sleep``/``poll_s`` are injectable so the watchdog runs on virtual time
         in tests. ``liveview_running``: True if the live view service wants the stream."""
@@ -153,6 +175,7 @@ class RecordingService:
         self._sleep = sleep
         self._poll_s = poll_s
         self._retry_delay_s = retry_delay_s
+        self._probe = probe
         self._lock = asyncio.Lock()
         self._active: _Active | None = None
         self._last = _Last()
@@ -175,6 +198,7 @@ class RecordingService:
                 last.warning,
                 len(a.clips),
                 self._note(max(0.0, self._clock() - a.t0)),
+                None,
             )
         return RecordingInfo(
             False,
@@ -188,6 +212,7 @@ class RecordingService:
             last.warning,
             len(last.clips),
             self._note(last.elapsed_s),
+            last.duration_s,
         )
 
     @staticmethod
@@ -432,16 +457,22 @@ class RecordingService:
             log.warning("recording ended: %s", warning)
 
     def _record_end(self, a: _Active, reason: str, warning: str | None) -> None:
-        self._last.elapsed_s = max(0.0, (a.stopped_at or self._clock()) - a.t0)
+        # The D500 ends the clip at the first stop request, even though it answers that request
+        # with an error while it finalises: later retries must not stretch the duration.
+        end = next((t for t in (a.stop_requested_at, a.stopped_at) if t is not None), self._clock())
+        self._last.elapsed_s = max(0.0, end - a.t0)
         self._last.reason = reason
         self._last.warning = warning
 
     async def _stop_camera(self, a: _Active) -> None:
         """Send movie=0, retrying with backoff for STOP_WINDOW_S. On success records the real
-        stop time (``a.stopped_at``) so the reported duration is not inflated by retries."""
+        stop time (``a.stopped_at``); the first request (``a.stop_requested_at``) is what the
+        reported duration uses."""
         err: AppError | None = None
         attempts = max(1, round(STOP_WINDOW_S / self._retry_delay_s)) if self._retry_delay_s else 30
         for attempt in range(attempts):
+            if a.stop_requested_at is None:
+                a.stop_requested_at = self._clock()
             try:
                 await self._camera.call(
                     lambda b: b.set_config("movie", 0), owner=OWNER, retry=False
@@ -457,6 +488,7 @@ class RecordingService:
                     raise
                 await asyncio.sleep(self._retry_delay_s)
         cause = err.message if err else "unknown"
+        a.stop_requested_at = None  # never stopped: a later retry is the real first request
         raise CameraOperationFailed(
             f"FAILED TO STOP RECORDING after {attempts} attempts ({cause}); the camera "
             "may still be recording. Retry POST /recording/stop or stop it on the body.",
@@ -551,7 +583,11 @@ class RecordingService:
             paths = await download_files(
                 camera, clips, root / RECORDINGS_DIR, on_stored=store.stored
             )
+            durations = [await self._probe(p) for p in paths]
+            if durations and all(d is not None for d in durations):
+                last.duration_s = round(sum(d for d in durations if d is not None), 2)
             ctx.report(1.0, "Done")
             return {"files": [p.relative_to(root).as_posix() for p in paths]}
 
+        last = self._last
         return self._jobs.submit("recording_download", run)

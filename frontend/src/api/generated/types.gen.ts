@@ -2731,6 +2731,12 @@ export type RecordingStatus = {
      */
     active: boolean;
     /**
+     * Duration S
+     *
+     * Real clip length read with ffprobe once the download finished; null if not downloaded or ffprobe is unavailable. elapsed_s is the app's own timing
+     */
+    duration_s?: number | null;
+    /**
      * Elapsed S
      *
      * Seconds recorded (final value once ended)
@@ -7853,7 +7859,14 @@ export type GetSettingData = {
          */
         name: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Fresh
+         *
+         * Re-read this one setting from the camera instead of the cache
+         */
+        fresh?: boolean;
+    };
     url: '/api/v1/settings/{name}';
 };
 

@@ -1639,6 +1639,7 @@ operation_id: `get_setting`
 | Name | In | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|---|
 | `name` | path | string | yes |  |  |  |
+| `fresh` | query | boolean | no | `false` |  | Re-read this one setting from the camera instead of the cache |
 
 **Responses**
 

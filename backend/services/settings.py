@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from backend.api.schemas.common import EventType
 from backend.camera.backend import ConfigRange, ConfigType, ConfigWidget
 from backend.core.camera_service import CameraService
 from backend.core.errors import AppError, SettingInvalid, SettingNotAllowed, SettingNotFound
@@ -335,9 +336,18 @@ class SettingsService:
             return [self._view(w) for w in leaves]
         return self._common(leaves)
 
-    async def get(self, name: str) -> SettingView:
+    async def get(self, name: str, *, fresh: bool = False) -> SettingView:
+        """One setting. ``fresh`` re-reads just that widget from the camera (one get_config)
+        and announces SETTING_CHANGED if it differs from what was cached."""
         logical = resolve_name(name)
-        w = await self._cam.get_setting(await self._actual(name))
+        actual = await self._actual(name)
+        if fresh:
+            before = self._cam.cached_setting(actual)
+            w = await self._cam.refresh_setting(actual)
+            if before is None or before.value != w.value:
+                self._cam.bus.publish(EventType.SETTING_CHANGED, {"name": w.name, "value": w.value})
+        else:
+            w = await self._cam.get_setting(actual)
         return self._view(w, logical if logical in SETTING_NAMES else None)
 
     async def refresh(self, group: Literal["common", "all"] = "common") -> list[SettingView]:

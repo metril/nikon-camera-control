@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from backend.camera.backend import (
     EventType,
     FileKind,
     StorageInfo,
+    parse_property_event,
 )
 from backend.core.errors import (
     CameraBusy,
@@ -354,6 +356,7 @@ class FakeCamera:
         slot2_mirror: bool = False,
         ram_info_fails: bool = False,
         bulb_capture_hangs: bool = False,
+        property_events: bool = False,
         nr_busy_s: float = 0.0,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
@@ -377,11 +380,15 @@ class FakeCamera:
         slot 2). ``ram_info_fails``: file_info on RAM-capture files at "/" raises (-1).
         ``bulb_capture_hangs``: capture() with shutterspeed Bulb/Time blocks until
         ``release_all()``/``reset_device()``, like the real body waiting for a shutter close.
+        ``property_events``: also announce the app's own widget writes as PTP property-change
+        events (``body_set`` always does).
         With capturetarget "Internal RAM" files land in "/" as capt0000.jpg, capt0001.nef..."""
         self._late_second = late_second_file
         self._late_complete = False
         self._late: list[tuple[str, str, _File]] = []
         self._emit_complete = emit_capture_complete
+        self._prop_events = property_events
+        self.property_listener: Callable[[int], None] | None = None
         self._capture_exits_lv = capture_exits_liveview
         self._pv_flag = False  # mirrors Gphoto2Backend._viewfinder_on
         self._rng = random.Random(seed)  # noqa: S311
@@ -666,6 +673,35 @@ class FakeCamera:
                     ),
                 )
         self._values[name] = new
+        if self._prop_events:
+            self._announce_property(name, new)
+
+    # PTP device property codes announced for the widgets the app syncs.
+    _PROP_CODES = {
+        "iso": 0x500F, "f-number": 0x5007, "shutterspeed": 0x500D,
+        "exposurecompensation": 0x5010, "expprogram": 0x500E, "whitebalance": 0x5005,
+        "focusmode": 0x500A, "exposuremetermode": 0x500B, "imagequality": 0x5004,
+        "imagesize": 0x5003,
+    }  # fmt: skip
+
+    def _announce_property(self, name: str, value: object) -> None:
+        code = self._PROP_CODES.get(name)
+        if code is None:
+            return
+        label = self._specs[name].label
+        text = f'PTP Property {code:04x} changed, "{label}" to "{value}"'
+        with self._cond:
+            self._events.append(
+                CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": 99, "data": text})
+            )
+            self._cond.notify_all()
+
+    def body_set(self, name: str, value: str | int | float | bool) -> None:
+        """Change a widget as if on the camera body: no app write, but a property event."""
+        s = self._spec(name)
+        new = self._coerce(s, value)
+        self._values[name] = new
+        self._announce_property(name, new)
 
     @staticmethod
     def _coerce(s: _Spec, value: object) -> str | int | float | bool:
@@ -881,7 +917,11 @@ class FakeCamera:
                     return CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": 99})
                 self._cond.wait_for(lambda: bool(self._events), timeout=max(0.0, timeout_s))
             if self._events:
-                return self._events.popleft()
+                ev = self._events.popleft()
+                code = parse_property_event(ev.payload.get("data")) if ev.payload else None
+                if code is not None and self.property_listener is not None:
+                    self.property_listener(code)
+                return ev
         return CameraEvent(EventType.TIMEOUT)
 
     # ---- files ----

@@ -97,4 +97,23 @@ describe('ShootView', () => {
     expect(wrapper.find('[data-test="lv"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="gate-connect"]').exists()).toBe(false)
   })
+
+  it('re-reads the exposure strip on show and every 5 s while idle, not while busy', () => {
+    vi.useFakeTimers()
+    try {
+      setup()
+      const camera = useCameraStore()
+      const st = useSettingsStore()
+      st.refreshExposure = vi.fn().mockResolvedValue()
+      camera.connected = true
+      camera.state = 'idle'
+      vi.advanceTimersByTime(5000)
+      expect(st.refreshExposure).toHaveBeenCalledTimes(1)
+      camera.state = 'capturing'
+      vi.advanceTimersByTime(5000)
+      expect(st.refreshExposure).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

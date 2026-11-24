@@ -142,3 +142,15 @@ async def test_refresh_settings_route_rereads_tree(
     n = fake_camera.calls["list_config"]
     r = await connected_client.post(f"{S}/refresh")
     assert r.status_code == 200 and fake_camera.calls["list_config"] == n + 1
+
+
+async def test_fresh_get_rereads_one_widget_and_announces_change(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    await connected_client.get(S)
+    fake_camera._values["iso"] = "800"  # changed on the body, no event
+    before = fake_camera.calls.get("list_config", 0)
+    r = await connected_client.get(f"{S}/iso", params={"fresh": "true"})
+    assert r.json()["value"] == "800"
+    assert fake_camera.calls.get("list_config", 0) == before
+    assert (await connected_client.get(f"{S}/iso")).json()["value"] == "800"

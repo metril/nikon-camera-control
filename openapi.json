@@ -4459,6 +4459,19 @@
             "title": "Active",
             "type": "boolean"
           },
+          "duration_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Real clip length read with ffprobe once the download finished; null if not downloaded or ffprobe is unavailable. elapsed_s is the app's own timing",
+            "title": "Duration S"
+          },
           "elapsed_s": {
             "description": "Seconds recorded (final value once ended)",
             "minimum": 0.0,
@@ -14432,6 +14445,18 @@
             "schema": {
               "title": "Name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Re-read this one setting from the camera instead of the cache",
+            "in": "query",
+            "name": "fresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Re-read this one setting from the camera instead of the cache",
+              "title": "Fresh",
+              "type": "boolean"
             }
           }
         ],

@@ -20,6 +20,8 @@ Contract:
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -91,6 +93,18 @@ class CameraFileInfo:
     height: int = 0
 
 
+_PROP_EVENT = re.compile(r"PTP Property ([0-9a-fA-F]{1,4}) changed")
+
+
+def parse_property_event(text: object) -> int | None:
+    """PTP device property code from a libgphoto2 ptp2 UNKNOWN event text, else None.
+
+    ptp2 formats (strings present in libgphoto2 2.5.31 ptp2.so): ``PTP Property %04x changed``
+    and ``PTP Property %04x changed, "%s" to "%s"`` (label, new value)."""
+    m = _PROP_EVENT.search(str(text))
+    return int(m.group(1), 16) if m else None
+
+
 @dataclass(frozen=True, slots=True)
 class CameraEvent:
     type: EventType
@@ -111,6 +125,10 @@ class StorageInfo:
 @runtime_checkable
 class CameraBackend(Protocol):
     """Blocking camera driver."""
+
+    # Called (on the worker thread) with the PTP code of each property-change event that
+    # wait_for_event sees; set by the camera service.
+    property_listener: Callable[[int], None] | None
 
     @property
     def is_open(self) -> bool:

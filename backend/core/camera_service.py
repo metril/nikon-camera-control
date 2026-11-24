@@ -88,6 +88,7 @@ from backend.core.errors import (
     StorageFull,
 )
 from backend.core.events import EventBus
+from backend.core.property_sync import PropertySync
 from backend.core.state import CameraState, can_transition
 
 T = TypeVar("T")
@@ -117,6 +118,8 @@ _LIVE_STATES = frozenset({_S.IDLE, _S.LIVEVIEW, _S.CAPTURING, _S.RECORDING, _S.B
 _KEEPALIVE_STATES = frozenset({_S.IDLE, _S.BUSY})
 _PREVIEW_STATES = frozenset({_S.LIVEVIEW, _S.RECORDING})
 _KEEPALIVE_FAILURES = 3
+_EVENT_POLL_S = 0.5  # idle camera event poll (body property changes, body-shutter files)
+_PREVIEW_EVENT_S = 1.0  # live view: drain camera events at most this often
 _KEEPALIVE_TIMEOUT_S = 10.0
 _PREVIEW_TIMEOUT_S = 10.0
 _MAX_BACKOFF_S = 30.0
@@ -500,6 +503,9 @@ class CameraService:
         self._lease_token: object | None = None
         self._preview_item: _Item | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
+        self._event_task: asyncio.Task[None] | None = None
+        self._prop_sync = PropertySync(self)
+        self._last_preview_drain = 0.0
         self._reconnect_task: asyncio.Task[None] | None = None
         self._battery: Any = None
         self._settings_tree: list[ConfigWidget] | None = None
@@ -596,6 +602,8 @@ class CameraService:
         await self._cancel_task("_reconnect_task")
         await self._cancel_task("_recover_task")
         await self._cancel_task("_keepalive_task")
+        await self._cancel_task("_event_task")
+        self._prop_sync.close()
         was_live = self._state in _LIVE_STATES or self._state == _S.ERROR
         self._try_state(_S.DISCONNECTED)
         if was_live:
@@ -728,6 +736,8 @@ class CameraService:
             with contextlib.suppress(Exception):
                 old.close()
         backend = self._factory()
+        with contextlib.suppress(Exception):
+            backend.property_listener = self._on_property_code
         try:
             backend.open()
             model = backend.model()
@@ -743,6 +753,19 @@ class CameraService:
             raise
         w.backend = backend
         return model, serial
+
+    def _on_property_code(self, code: int) -> None:
+        """Worker thread: a PTP property-change event was read; sync on the loop."""
+        loop = self._loop
+        if loop is not None:
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(self._prop_sync.on_codes, [code])
+
+    def cached_setting(self, name: str) -> ConfigWidget | None:
+        return self._settings_map.get(name)
+
+    def cached_setting_names(self) -> frozenset[str]:
+        return frozenset(self._settings_map)
 
     def _on_strays(self, files: list[CameraFilePath]) -> None:
         for f in files:
@@ -828,6 +851,7 @@ class CameraService:
             for n, v in exposure.items():
                 self._bus.publish(EventType.SETTING_CHANGED, {"name": n, "value": v})
         self._keepalive_task = asyncio.create_task(self._keepalive_loop(), name="camera-keepalive")
+        self._event_task = asyncio.create_task(self._event_poll_loop(), name="camera-events")
 
     async def _read_exposure(self, worker: _Worker) -> dict[str, object]:
         """Best effort: read the exposure program and shutter speed the body came back with
@@ -871,6 +895,10 @@ class CameraService:
         self._keepalive_task = None
         if ka is not None and ka is not asyncio.current_task():
             ka.cancel()
+        et, self._event_task = self._event_task, None
+        if et is not None:
+            et.cancel()
+        self._prop_sync.close()
         worker = self._worker
         if worker is not None:
             worker.fail_queued(CameraNotConnected)
@@ -1185,6 +1213,7 @@ class CameraService:
 
     def note_setting(self, widget: ConfigWidget) -> None:
         """Record a widget written outside ``set_setting`` (cache + SETTING_CHANGED)."""
+        self._prop_sync.note_write(widget.name)
         self._store_widget(widget)
         self._bus.publish(EventType.SETTING_CHANGED, {"name": widget.name, "value": widget.value})
 
@@ -1196,6 +1225,7 @@ class CameraService:
         ``MODE_LIKE_SETTINGS`` whose change can alter other widgets' choices: those drop the
         whole cache."""
         self._check_lease(Priority.CONTROL, owner)
+        self._prop_sync.note_write(name)  # the body echoes our write; that is not a body change
 
         def _set(b: CameraBackend) -> ConfigWidget:
             before = b.get_config(name).value if name in _NEIGHBOUR_FIX else None
@@ -1213,6 +1243,7 @@ class CameraService:
                     w = await self.refresh_setting(name)
                     self._bus.publish(EventType.SETTING_CHANGED, {"name": name, "value": w.value})
             raise
+        self._prop_sync.note_write(name)
         if name in MODE_LIKE_SETTINGS:
             self._invalidate_cache()
         else:
@@ -1390,7 +1421,18 @@ class CameraService:
         # end_preview (it would switch the viewfinder back on): state is already left by then.
         if self._state not in _PREVIEW_STATES:
             raise InvalidState("Live view is not active")
-        return w.require().capture_preview()
+        b = w.require()
+        frame = b.capture_preview()
+        now = time.monotonic()
+        if now - self._last_preview_drain >= _PREVIEW_EVENT_S:
+            self._last_preview_drain = now
+            late: list[CameraFilePath] = []
+            with contextlib.suppress(Exception):
+                drain_pending_events(b, limit=50, keep=late)
+            if late and self._loop is not None:
+                with contextlib.suppress(RuntimeError):
+                    self._loop.call_soon_threadsafe(self._on_strays, late)
+        return frame
 
     def _clear_preview_cb(self, item: _Item, _fut: object) -> None:
         if self._preview_item is item:
@@ -1417,6 +1459,32 @@ class CameraService:
                 self._lease_token = None
                 with contextlib.suppress(RuntimeError):
                     self._ensure_recovery()  # ERROR set under the lease was postponed to here
+
+    # event poll ---------------------------------------------------------------------
+    async def _event_poll_loop(self) -> None:
+        """While idle, read camera events so body property changes (and body-shutter files)
+        are noticed. Never queues behind another call."""
+        while True:
+            await asyncio.sleep(_EVENT_POLL_S)
+            if self._state != _S.IDLE:
+                continue
+            w = self._worker
+            if w is None or w.inflight is not None or not w.queue.empty():
+                continue
+
+            def _poll(b: CameraBackend) -> list[CameraFilePath]:
+                found: list[CameraFilePath] = []
+                drain_pending_events(b, limit=50, keep=found)
+                return found
+
+            try:
+                found = await self._run(_poll, Priority.KEEPALIVE, _KEEPALIVE_TIMEOUT_S, False)
+            except (CameraIOError, CameraNotConnected):
+                return  # _finish already moved to DISCONNECTED
+            except Exception:  # noqa: BLE001, S112 - best effort; keepalive handles a dead link
+                continue
+            if found:
+                self._on_strays(found)
 
     # keepalive ---------------------------------------------------------------------
     async def _keepalive_loop(self) -> None:
