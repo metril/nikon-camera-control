@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useCameraAdminStore } from '@/stores/cameraAdmin'
 import { useCameraStore } from '@/stores/camera'
 import { useToastsStore } from '@/stores/toasts'
-import AdvCard from './AdvCard.vue'
+import { leaseOwner } from '@/labels'
+import UiCard from '@/components/ui/UiCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
@@ -42,6 +43,12 @@ const diffText = computed(() => {
 })
 
 const recordingNow = computed(() => camera.state === 'recording')
+const reason = computed(() => {
+  if (!camera.connected) return 'Camera not connected'
+  if (camera.leasedBy) return `Busy: ${leaseOwner(camera.leasedBy)}`
+  return ''
+})
+const disabled = computed(() => !!reason.value)
 const targetOptions = computed(() =>
   (target.value?.choices || []).map((c) => ({ value: c, label: c })),
 )
@@ -91,14 +98,14 @@ watch(
 </script>
 
 <template>
-  <AdvCard title="Camera clock and storage" subtitle="Clock sync and capture target">
-    <template #default="{ disabled, reason }">
-      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm" data-testid="clock">
-        <dt class="text-slate-400">Camera</dt>
-        <dd>{{ view?.camera ?? '–' }}</dd>
-        <dt class="text-slate-400">This device</dt>
-        <dd>{{ view?.device ?? '–' }}</dd>
-        <dt class="text-slate-400">Offset</dt>
+  <UiCard title="Camera clock and storage" subtitle="Clock sync and where the camera saves photos">
+    <div class="flex flex-col gap-4">
+      <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm" data-testid="clock">
+        <dt class="text-camera-muted">Camera</dt>
+        <dd class="tabular-nums">{{ view?.camera ?? '–' }}</dd>
+        <dt class="text-camera-muted">This device</dt>
+        <dd class="tabular-nums">{{ view?.device ?? '–' }}</dd>
+        <dt class="text-camera-muted">Offset</dt>
         <dd data-testid="offset">{{ view ? diffText : '–' }}</dd>
       </dl>
       <div class="flex flex-wrap gap-2">
@@ -107,25 +114,23 @@ watch(
           variant="primary"
           :loading="syncing"
           :disabled="disabled || recordingNow"
-          :title="reason"
           @click="sync"
         >
           Sync camera clock to this device
         </UiButton>
       </div>
-
-      <div class="space-y-1 border-t border-slate-700 pt-3">
+      <div class="flex flex-col gap-2 border-t border-camera-subtle pt-4">
         <UiSelect
           :model-value="target?.value"
-          label="Capture target"
+          label="Camera saves to"
           :options="targetOptions"
           :disabled="disabled || recordingNow || savingTarget || !targetOptions.length"
           @update:model-value="setTarget"
         />
-        <p v-if="reason || recordingNow" class="text-xs text-slate-400" data-testid="target-reason">
+        <p v-if="reason || recordingNow" class="text-xs text-camera-muted" data-testid="target-reason">
           {{ reason || 'Not while recording' }}
         </p>
       </div>
-    </template>
-  </AdvCard>
+    </div>
+  </UiCard>
 </template>

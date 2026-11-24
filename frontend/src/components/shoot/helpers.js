@@ -54,8 +54,20 @@ export function stackIssue({ steps, shots, direction }, range) {
   return ''
 }
 
-/** e.g. 5 shots at 1 EV -> ['-2','-1','0','1','2'] (values for a quick bracketing `exposure` list). */
-export function evSeries(shots, ev) {
-  const half = (shots - 1) / 2
-  return Array.from({ length: shots }, (_, i) => String((i - half) * ev))
+/** Signed EV text: 0 -> "0", 0.33 -> "+0.3", -1 -> "-1" (with a real minus sign). */
+export function fmtEV(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n) || Math.abs(n) < 0.01) return '0'
+  const r = Math.round(n * 10) / 10
+  return `${r > 0 ? '+' : '\u2212'}${Math.abs(r)}`
 }
+
+/** EV offsets of each bracket frame: 5 frames at 1 EV -> [-2, -1, 0, 1, 2]. */
+export function bracketOffsets(frames, step) {
+  const half = (frames - 1) / 2
+  return Array.from({ length: frames }, (_, i) => (i - half) * step)
+}
+
+/** Camera-neutral decimal strings for a quick bracketing `exposure` list ("-0.667", "0", "0.667"). */
+export const evSeries = (frames, step) =>
+  bracketOffsets(frames, step).map((v) => String(Math.round(v * 1000) / 1000 || 0))

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import CameraAdminCard from './CameraAdminCard.vue'
 import { api } from '@/api'
-import { mountCard, button } from './testing'
+import { mountCard, button } from '../shoot/testing'
 
 vi.mock('@/api', () => ({
   api: {

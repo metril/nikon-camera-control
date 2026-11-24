@@ -1,25 +1,38 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+/** Presets dialogs for Shoot: manage (apply, edit, delete, export, import) and save current settings. */
+import { computed, reactive, ref, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { usePresetsStore } from '@/stores/presets'
 import { useSettingsStore } from '@/stores/settings'
+import { useShootStore } from '@/stores/shoot'
 import { useToastsStore } from '@/stores/toasts'
 import { downloadBlob } from '@/api'
-import AdvCard from './AdvCard.vue'
+import { leaseOwner, settingName } from '@/labels'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiBadge from '@/components/ui/UiBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import UiModal from '@/components/ui/UiModal.vue'
 import UiText from '@/components/ui/UiText.vue'
 import UiToggle from '@/components/ui/UiToggle.vue'
-import UiBadge from '@/components/ui/UiBadge.vue'
 
+const manageOpen = defineModel('manageOpen', { type: Boolean, default: false })
+const saveOpen = defineModel('saveOpen', { type: Boolean, default: false })
 const emit = defineEmits(['navigate'])
+
+const camera = useCameraStore()
 const presets = usePresetsStore()
 const settings = useSettingsStore()
+const shoot = useShootStore()
 const toasts = useToastsStore()
 
 const settingsPresets = computed(() => presets.settingsPresets)
 const bracketPresets = computed(() => presets.bracketPresets)
+const reason = computed(() => {
+  if (!camera.connected) return 'Camera not connected'
+  if (camera.leasedBy) return `Busy: ${leaseOwner(camera.leasedBy)}`
+  return ''
+})
 
 // --- apply
 const applying = ref(null)
@@ -29,6 +42,8 @@ async function apply(p) {
   try {
     const r = await presets.apply(p.id)
     results[p.id] = { ok: true, applied: r.applied || [] }
+    shoot.appliedPreset = p.name
+    settings.fetchCommon().catch(() => {})
   } catch (e) {
     const d = e?.details || {}
     results[p.id] = {
@@ -46,15 +61,13 @@ async function apply(p) {
 
 // --- save from camera
 const writable = computed(() => settings.common.filter((s) => s.writable && !s.readonly))
-const saveOpen = ref(false)
 const save = reactive({ name: '', description: '', names: [] })
 const saving = ref(false)
-async function openSave() {
+async function prepareSave() {
   if (!settings.common.length) await settings.fetchCommon().catch((e) => toasts.error(e))
   save.name = ''
   save.description = ''
   save.names = writable.value.map((s) => s.name)
-  saveOpen.value = true
 }
 const toggleName = (n) =>
   (save.names = save.names.includes(n) ? save.names.filter((x) => x !== n) : [...save.names, n])
@@ -62,12 +75,13 @@ const saveValid = computed(() => save.name.trim() && save.names.length)
 async function doSave() {
   saving.value = true
   try {
-    await presets.fromCamera({
+    const p = await presets.fromCamera({
       name: save.name.trim(),
       description: save.description.trim(),
       names: save.names,
     })
     saveOpen.value = false
+    shoot.appliedPreset = p?.name || save.name.trim()
     toasts.success('Preset saved')
   } catch (e) {
     toasts.error(e)
@@ -75,6 +89,7 @@ async function doSave() {
     saving.value = false
   }
 }
+watch(saveOpen, (o) => o && prepareSave())
 
 // --- edit
 const edit = reactive({ open: false, preset: null, name: '', description: '', saving: false })
@@ -98,11 +113,11 @@ async function doEdit() {
     edit.saving = false
   }
 }
-
 async function remove(p) {
   try {
     await presets.remove(p.id)
     delete results[p.id]
+    if (shoot.appliedPreset === p.name) shoot.appliedPreset = null
   } catch (e) {
     toasts.error(e)
   }
@@ -128,6 +143,7 @@ const replace = ref(false)
 const importing = ref(false)
 const importResult = ref(null)
 const fileInput = ref(null)
+const IMPORT_STATUS = { created: 'Created', skipped: 'Skipped', failed: 'Failed' }
 async function onFile(ev) {
   const file = ev.target.files?.[0]
   ev.target.value = ''
@@ -142,7 +158,7 @@ async function onFile(ev) {
       throw new Error('That file is not valid JSON')
     }
     const list = Array.isArray(doc) ? doc : doc?.presets
-    if (!Array.isArray(list)) throw new Error('No "presets" list found in the file')
+    if (!Array.isArray(list)) throw new Error('No presets list found in the file')
     importResult.value = await presets.importPresets({
       schema_version: doc.schema_version ?? 1,
       replace: replace.value,
@@ -154,28 +170,30 @@ async function onFile(ev) {
     importing.value = false
   }
 }
-
-const camera = useCameraStore()
-onMounted(() => {
-  presets.fetch().catch(() => {})
-  if (camera.connected && !settings.common.length) settings.fetchCommon().catch(() => {})
-})
+const label = (s) => s.label || settingName(s.name)
 </script>
 
 <template>
-  <AdvCard title="Settings presets" subtitle="Save and re-apply camera settings">
-    <template #default="{ disabled, reason }">
-      <p v-if="presets.warning" class="text-sm text-amber-300">{{ presets.warning }}</p>
-      <ul v-if="settingsPresets.length" class="space-y-3" data-testid="settings-presets">
-        <li v-for="p in settingsPresets" :key="p.id" class="rounded border border-slate-700 p-2">
+  <UiModal :open="manageOpen" title="Presets" @close="manageOpen = false">
+    <div class="flex flex-col gap-4">
+      <UiAlert v-if="presets.warning" tone="warn">{{ presets.warning }}</UiAlert>
+      <p v-if="reason" class="text-sm text-camera-warn" role="status" data-testid="presets-reason">
+        {{ reason }}: presets cannot be applied right now.
+      </p>
+      <ul v-if="settingsPresets.length" class="flex flex-col gap-2" data-testid="settings-presets">
+        <li
+          v-for="p in settingsPresets"
+          :key="p.id"
+          class="rounded-inner border border-camera-subtle p-3"
+        >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="min-w-0">
-              <p class="font-medium">
+              <p class="flex items-center gap-2 font-medium">
                 {{ p.name }}
-                <UiBadge v-if="p.builtin" tone="neutral">built-in</UiBadge>
+                <UiBadge v-if="p.builtin">Built-in</UiBadge>
               </p>
-              <p v-if="p.description" class="text-sm text-slate-400">{{ p.description }}</p>
-              <p class="text-xs text-slate-400">
+              <p v-if="p.description" class="text-sm text-camera-muted">{{ p.description }}</p>
+              <p class="text-xs text-camera-muted">
                 {{ Object.keys(p.values || {}).length }} settings
               </p>
             </div>
@@ -184,8 +202,7 @@ onMounted(() => {
                 size="sm"
                 variant="primary"
                 :loading="applying === p.id"
-                :disabled="disabled"
-                :title="reason"
+                :disabled="!!reason"
                 @click="apply(p)"
               >
                 Apply
@@ -215,37 +232,40 @@ onMounted(() => {
             :data-testid="`result-${p.id}`"
           >
             <template v-if="results[p.id].ok">
-              <p class="text-emerald-400">Applied:</p>
+              <p class="text-camera-ok">Applied:</p>
               <ul>
                 <li v-for="a in results[p.id].applied" :key="a.name">
-                  {{ a.name }} = {{ a.value }}
+                  {{ settingName(a.name) }}: {{ a.value }}
                 </li>
               </ul>
             </template>
             <template v-else>
-              <p class="text-red-400" role="alert">
+              <p class="text-camera-danger" role="alert">
                 Nothing was applied: {{ results[p.id].error }}
               </p>
-              <p v-if="results[p.id].invalid" class="text-red-300">
-                Invalid setting: <strong>{{ results[p.id].invalid }}</strong>
+              <p v-if="results[p.id].invalid" class="text-camera-danger">
+                Invalid setting: <strong>{{ settingName(results[p.id].invalid) }}</strong>
                 <span v-if="results[p.id].value !== undefined">
                   (value {{ results[p.id].value }})</span
                 >
               </p>
-              <p v-if="results[p.id].nearby.length" class="text-slate-400">
+              <p v-if="results[p.id].nearby.length" class="text-camera-muted">
                 Closest choices: {{ results[p.id].nearby.join(', ') }}
               </p>
-              <p v-if="results[p.id].applied.length" class="text-amber-300">
+              <p v-if="results[p.id].applied.length" class="text-camera-warn">
                 Already applied before the failure: {{ results[p.id].applied.join(', ') }}
               </p>
             </template>
           </div>
         </li>
       </ul>
-      <p v-else class="text-sm text-slate-400">No settings presets yet.</p>
+      <p v-else class="text-sm text-camera-muted">No settings presets yet.</p>
 
       <div class="flex flex-wrap gap-2">
-        <UiButton variant="primary" :disabled="disabled" :title="reason" @click="openSave"
+        <UiButton
+          variant="primary"
+          :disabled="!!reason"
+          @click="((manageOpen = false), (saveOpen = true))"
           >Save current settings as preset</UiButton
         >
         <UiButton :loading="exporting" @click="doExport">Export</UiButton>
@@ -261,87 +281,87 @@ onMounted(() => {
         />
       </div>
       <UiToggle v-model="replace" label="Import replaces existing presets" />
-
       <div v-if="importResult" class="text-sm" aria-live="polite" data-testid="import-result">
         <p>
           {{ importResult.created }} created, {{ importResult.skipped }} skipped,
           {{ importResult.failed }} failed
         </p>
-        <ul>
-          <li v-for="i in importResult.items" :key="i.index">
+        <ul class="mt-1 flex flex-col gap-1">
+          <li v-for="i in importResult.items" :key="i.index" class="flex items-center gap-2">
             <UiBadge
-              :tone="i.status === 'created' ? 'ok' : i.status === 'skipped' ? 'warn' : 'error'"
-              >{{ i.status }}</UiBadge
+              :tone="i.status === 'created' ? 'ok' : i.status === 'skipped' ? 'warn' : 'danger'"
+              >{{ IMPORT_STATUS[i.status] || i.status }}</UiBadge
             >
             {{ i.name || `#${i.index + 1}` }}
-            <span v-if="i.error" class="text-red-300">{{ i.error }}</span>
+            <span v-if="i.error" class="text-camera-danger">{{ i.error }}</span>
           </li>
         </ul>
       </div>
 
       <div
         v-if="bracketPresets.length"
-        class="space-y-1 border-t border-slate-700 pt-2"
+        class="flex flex-col gap-1 border-t border-camera-subtle pt-3"
         data-testid="bracket-presets"
       >
         <p class="text-sm font-medium">Bracket presets (read-only here)</p>
-        <ul class="text-sm text-slate-300">
+        <ul class="text-sm text-camera-muted">
           <li v-for="p in bracketPresets" :key="p.id">
-            {{ p.name
-            }}<span v-if="p.description" class="text-slate-400"> – {{ p.description }}</span>
+            {{ p.name }}<span v-if="p.description"> – {{ p.description }}</span>
           </li>
         </ul>
-        <button
-          type="button"
-          class="text-sm text-sky-400 underline"
-          @click="emit('navigate', 'timelapse')"
+        <UiButton
+          variant="ghost"
+          size="sm"
+          class="-ml-2.5 self-start"
+          @click="((manageOpen = false), emit('navigate', 'timelapse'))"
         >
-          Edit bracket presets in the Time-lapse tab
-        </button>
+          Edit bracket presets in Time-lapse
+        </UiButton>
       </div>
+    </div>
+  </UiModal>
 
-      <UiModal :open="saveOpen" title="Save current settings as preset" @close="saveOpen = false">
-        <div class="space-y-3">
-          <UiText v-model="save.name" label="Name" :maxlength="80" />
-          <UiText v-model="save.description" label="Description" :maxlength="500" />
-          <fieldset>
-            <legend class="mb-1 text-sm">Settings to include</legend>
-            <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
-              <label v-for="s in writable" :key="s.name" class="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  :checked="save.names.includes(s.name)"
-                  @change="toggleName(s.name)"
-                />
-                {{ s.label || s.name }} <span class="text-slate-400">{{ s.value }}</span>
-              </label>
-            </div>
-          </fieldset>
+  <UiModal :open="saveOpen" title="Save current settings as preset" @close="saveOpen = false">
+    <div class="flex flex-col gap-4">
+      <UiText v-model="save.name" label="Name" :maxlength="80" />
+      <UiText v-model="save.description" label="Description" :maxlength="500" />
+      <fieldset>
+        <legend class="mb-2 text-xs font-medium text-camera-muted">Settings to include</legend>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label v-for="s in writable" :key="s.name" class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              :checked="save.names.includes(s.name)"
+              @change="toggleName(s.name)"
+            />
+            <span class="min-w-0 truncate">{{ label(s) }}</span>
+            <span class="text-camera-muted tabular-nums">{{ s.value }}</span>
+          </label>
         </div>
-        <template #footer>
-          <UiButton @click="saveOpen = false">Cancel</UiButton>
-          <UiButton variant="primary" :loading="saving" :disabled="!saveValid" @click="doSave"
-            >Save preset</UiButton
-          >
-        </template>
-      </UiModal>
-
-      <UiModal :open="edit.open" title="Edit preset" @close="edit.open = false">
-        <div class="space-y-3">
-          <UiText v-model="edit.name" label="Name" :maxlength="80" />
-          <UiText v-model="edit.description" label="Description" :maxlength="500" />
-        </div>
-        <template #footer>
-          <UiButton @click="edit.open = false">Cancel</UiButton>
-          <UiButton
-            variant="primary"
-            :loading="edit.saving"
-            :disabled="!edit.name.trim()"
-            @click="doEdit"
-            >Save</UiButton
-          >
-        </template>
-      </UiModal>
+      </fieldset>
+    </div>
+    <template #footer>
+      <UiButton @click="saveOpen = false">Cancel</UiButton>
+      <UiButton variant="primary" :loading="saving" :disabled="!saveValid" @click="doSave"
+        >Save preset</UiButton
+      >
     </template>
-  </AdvCard>
+  </UiModal>
+
+  <UiModal :open="edit.open" title="Edit preset" @close="edit.open = false">
+    <div class="flex flex-col gap-4">
+      <UiText v-model="edit.name" label="Name" :maxlength="80" />
+      <UiText v-model="edit.description" label="Description" :maxlength="500" />
+    </div>
+    <template #footer>
+      <UiButton @click="edit.open = false">Cancel</UiButton>
+      <UiButton
+        variant="primary"
+        :loading="edit.saving"
+        :disabled="!edit.name.trim()"
+        @click="doEdit"
+        >Save</UiButton
+      >
+    </template>
+  </UiModal>
 </template>
