@@ -107,11 +107,25 @@ Captures go to a storage location chosen in the web UI: a USB drive (mounted ins
 - Cross-origin protection: POST/PUT/PATCH/DELETE requests and WebSocket handshakes that carry an `Origin` header must be same-origin (same host:port as `Host`, scheme ignored) or listed in `cors_origins` (read live), otherwise they get 403 `FORBIDDEN_ORIGIN` (WebSocket: close code 4403). This stops other web pages on the LAN from driving the camera in open mode. Requests without `Origin` (curl, scripts) are unaffected, so it is not a substitute for an API key. Behind a reverse proxy that rewrites `Host`, add the public origin to `cors_origins`.
 - Rotating, removing or creating the API key closes open WebSockets with code 4401.
 
+## Touchscreen kiosk
+
+An optional `kiosk` service shows the touch UI full-screen on the host's HDMI output (cage + Chromium in a container; the host needs no desktop, display server or browser).
+
+```bash
+stat -c %g /dev/dri/card0 /dev/dri/renderD128 /dev/input/event0   # put these gids in group_add
+docker compose -f docker/compose.yaml --profile kiosk up -d
+```
+
+- `group_add` in the `kiosk` service takes the host's numeric gids for video, render and input (defaults 44, 992, 996 on Debian 13).
+- The container starts as root only to run `seatd`, then cage and Chromium run as an unprivileged user. Not privileged, no added capabilities; Chromium runs with `--no-sandbox` because the container is the sandbox.
+- Rotate the screen: run `docker exec nikon-camera-control-kiosk wlr-randr --output HDMI-A-1 --transform 90` (env `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR=/tmp/xdg` may be needed, run as user `kiosk`), or add cage's `-r` flag in `docker/kiosk/entrypoint.sh`.
+- Check GPU acceleration: open `chrome://gpu` on the kiosk (or `docker logs nikon-camera-control-kiosk`) and look for hardware acceleration and VA-API.
+
 ## Releases
 
 1. Bump `__version__` in `backend/__init__.py`, `version` in `frontend/package.json` and the image tag in `docker/compose.yaml` (check with `make release-check`).
 2. Commit, then `git tag vX.Y.Z && git push --tags`.
-3. CI (`.github/workflows/release.yml`) verifies the versions match the tag, publishes the multi-arch image to GHCR and creates the GitHub release.
+3. CI (`.github/workflows/release.yml`) verifies the versions match the tag, publishes the multi-arch app and kiosk images to GHCR and creates the GitHub release.
 
 ## Known limitations
 

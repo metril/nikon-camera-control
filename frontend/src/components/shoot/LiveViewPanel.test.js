@@ -28,6 +28,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
+import { useFocusStore } from '@/stores/focus'
 
 let n
 function setup(connected = true) {
@@ -124,6 +125,8 @@ describe('LiveViewPanel', () => {
     s.status.value = 'forbidden'
     await flushPromises()
     expect(w.text()).toContain('origin is not allowed')
+    expect(w.text()).toContain('Settings › General › Allowed origins')
+    expect(w.text()).not.toContain('cors_origins')
     w.unmount()
   })
 
@@ -174,7 +177,7 @@ describe('LiveViewPanel', () => {
     status(s)
     s.handlers.onFrame(new ArrayBuffer(4))
     await nextTick()
-    expect(w.find('[data-testid="lv-state"]').text()).toBe('Live')
+    expect(w.find('[data-testid="lv-state"]').text()).toBe('Live · 9.5 fps')
     expect(w.find('[data-testid="lv-stale"]').exists()).toBe(false)
     await vi.advanceTimersByTimeAsync(3100)
     expect(w.find('[data-testid="lv-stale"]').exists()).toBe(true)
@@ -190,11 +193,11 @@ describe('LiveViewPanel', () => {
     const s = await started(w)
     status(s, { client_frames_dropped: 2 })
     await nextTick()
-    expect(w.text()).toContain('9.5 fps')
+    expect(w.text()).toContain('Live · 9.5 fps')
     expect(w.text()).toContain('2 dropped')
-    status(s, { phase: 'waiting', reason: 'capturing' })
+    status(s, { phase: 'waiting', reason: 'camera_capturing' })
     await nextTick()
-    expect(w.find('[data-testid="lv-state"]').text()).toBe('Paused: capturing')
+    expect(w.find('[data-testid="lv-state"]').text()).toBe('Paused: camera capturing')
     w.unmount()
   })
 
@@ -206,5 +209,61 @@ describe('LiveViewPanel', () => {
     await flushPromises()
     expect(useToastsStore().items.at(-1).message).toBe('nope')
     expect(sockets[0].start).not.toHaveBeenCalled()
+  })
+
+  it('shows the tool pill with the grid cycling and persisted tool toggles', async () => {
+    const { pinia, lv } = setup()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    const bar = w.find('[data-testid="lv-toolbar"]')
+    for (const l of ['Thirds', 'Histogram', 'Clipping', 'Peaking', 'Loupe', 'Last shot overlay'])
+      expect(bar.text()).toContain(l)
+    expect(bar.text()).not.toMatch(/onion/i)
+    await w.find('[data-testid="lv-tool-grid"]').trigger('click')
+    expect(w.find('[data-testid="lv-tool-grid"]').text()).toBe('Golden')
+    await w.find('[data-testid="lv-tool-grid"]').trigger('click')
+    await w.find('[data-testid="lv-tool-grid"]').trigger('click')
+    expect(w.find('[data-testid="lv-tool-grid"]').text()).toBe('Grid off')
+    expect(w.find('[data-testid="lv-tool-grid"]').attributes('aria-pressed')).toBe('false')
+    expect(w.find('[data-testid="lv-hist"]').exists()).toBe(true)
+    await w.find('[data-testid="lv-tool-hist"]').trigger('click')
+    expect(lv.tools.hist).toBe(false)
+    expect(w.find('[data-testid="lv-hist"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('focus pill drives manual steps and autofocus, with a Focus locked badge', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    vi.spyOn(focus, 'manual').mockResolvedValue()
+    vi.spyOn(focus, 'autofocus').mockResolvedValue({ focused: true })
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    await w.find('[data-testid="lv-focus-near-large"]').trigger('click')
+    await w.find('[data-testid="lv-focus-far-small"]').trigger('click')
+    expect(focus.manual).toHaveBeenNthCalledWith(1, -250)
+    expect(focus.manual).toHaveBeenNthCalledWith(2, 50)
+    await w.find('[data-testid="lv-autofocus"]').trigger('click')
+    await flushPromises()
+    expect(focus.autofocus).toHaveBeenCalled()
+    expect(w.find('[data-testid="lv-state"]').text()).toBe('Focus locked')
+    w.unmount()
+  })
+
+  it('labels the fullscreen button', async () => {
+    const { pinia } = setup()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    expect(w.find('[data-testid="lv-fullscreen"]').attributes('aria-label')).toBe('Fullscreen')
+    w.unmount()
   })
 })

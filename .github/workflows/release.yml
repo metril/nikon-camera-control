@@ -22,6 +22,7 @@ jobs:
       packages: write
     env:
       IMAGE: ghcr.io/metril/nikon-camera-control
+      KIOSK_IMAGE: ghcr.io/metril/nikon-camera-control-kiosk
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -51,11 +52,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - id: kmeta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.KIOSK_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: docker/kiosk
+          file: docker/kiosk/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.kmeta.outputs.tags }}
+          labels: ${{ steps.kmeta.outputs.labels }}
+          cache-from: type=gha,scope=kiosk
+          cache-to: type=gha,mode=max,scope=kiosk
       - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           body: |
             ```bash
             docker pull ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+            docker pull ${{ env.KIOSK_IMAGE }}:${{ steps.meta.outputs.version }}
             ```
             Images: linux/amd64, linux/arm64. See the README for the compose setup.
