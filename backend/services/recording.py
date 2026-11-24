@@ -256,16 +256,7 @@ class RecordingService:
                 issued = asyncio.ensure_future(
                     self._camera.call(lambda b: b.set_config("movie", 1), owner=OWNER, retry=False)
                 )
-                try:
-                    await asyncio.shield(issued)
-                except (CameraNotConnected, InvalidState):
-                    raise
-                except AppError as e:
-                    raise CameraOperationFailed(
-                        f"The camera refused to start recording ({e.message}). On Nikon bodies "
-                        "the live view selector must be set to movie mode.",
-                        details={"cause": e.message},
-                    ) from e
+                await asyncio.shield(issued)
             except BaseException:
                 if issued is not None:
                     await self._undo_start(issued)

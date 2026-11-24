@@ -21,6 +21,7 @@ from backend.camera.gphoto2_backend import (
     widget_to_config,
 )
 from backend.core.errors import (
+    AppError,
     CameraBusy,
     CameraIOError,
     CameraNotConnected,
@@ -568,3 +569,136 @@ def test_port_of_uses_get_path() -> None:
             return "usb:001,007"
 
     assert _port_of(Info()) == (1, 7)
+
+
+# ------------------------------------------------- context messages / prohibit widgets
+
+
+def _refusal_root(prohibit: str) -> StubWidget:
+    vf = StubWidget("viewfinder", gp.GP_WIDGET_TOGGLE, 0)
+    lp = StubWidget("liveviewprohibit", gp.GP_WIDGET_TEXT, prohibit, readonly=1)
+    return StubWidget(
+        "main",
+        gp.GP_WIDGET_WINDOW,
+        children=(StubWidget("actions", gp.GP_WIDGET_SECTION, children=(vf, lp)),),
+    )
+
+
+class _RefusingCamera(FakeCamera):
+    def __init__(self, root: StubWidget, backend: Gphoto2Backend, ctx_text: str) -> None:
+        super().__init__(root)
+        self.backend, self.ctx_text = backend, ctx_text
+
+    def set_single_config(self, name: str, w: StubWidget, ctx: Any) -> None:
+        self.backend._on_context_text(None, self.ctx_text, None)
+        raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_ERROR)
+
+
+def test_context_text_and_prohibit_reported_verbatim() -> None:
+    b = Gphoto2Backend()
+    b._camera = _RefusingCamera(
+        _refusal_root("Live View prohibit conditions: Battery exhausted"),
+        b,
+        "Liveview cannot start: Battery exhausted",
+    )
+    with pytest.raises(CameraOperationFailed) as ei:
+        b.set_config("viewfinder", 1)
+    d = ei.value.details
+    assert d["camera_message"] == "Live view cannot start: Battery exhausted"
+    assert d["camera_message_raw"] == "Liveview cannot start: Battery exhausted"
+    assert d["prohibit"] == "Battery exhausted"
+    assert d["nikon_manual"].startswith("D500 manual p.35")
+    assert ei.value.message == "The camera refused live view. Camera reports: Battery exhausted"
+
+
+def test_neutral_prohibit_adds_nothing_and_context_text_used() -> None:
+    b = Gphoto2Backend()
+    b._camera = _RefusingCamera(
+        _refusal_root("Liveview should not be prohibited"), b, "Liveview cannot start: Card error"
+    )
+    with pytest.raises(CameraOperationFailed) as ei:
+        b.set_config("viewfinder", 1)
+    assert "prohibit" not in ei.value.details and "nikon_manual" not in ei.value.details
+    assert ei.value.message == "set_config(viewfinder): Live view cannot start: Card error"
+
+
+def test_context_text_does_not_leak_into_next_call() -> None:
+    b = _backend(FakeCamera(_root()))
+    b._on_context_text(None, "stale", None)
+    b.get_config("iso")
+    assert b._take_msgs() == []
+
+
+def test_context_callbacks_retained_until_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    sentinels = [object(), object()]
+
+    class Ctx:
+        def set_error_func(self, f: Any, d: Any) -> object:
+            return sentinels[0]
+
+        def set_message_func(self, f: Any, d: Any) -> object:
+            return sentinels[1]
+
+    class Cam:
+        def init(self, ctx: Any) -> None: ...
+
+        def get_abilities(self) -> Any:
+            return type("A", (), {"model": "Nikon DSC D500"})()
+
+        def get_port_info(self) -> Any:
+            return type("P", (), {"get_path": lambda s: "usb:001,002"})()
+
+        def exit(self, ctx: Any) -> None: ...
+
+    monkeypatch.setattr(gp, "Context", Ctx)
+    monkeypatch.setattr(gp, "Camera", Cam)
+    b = Gphoto2Backend()
+    b.open()
+    assert b._ctx_cbs == tuple(sentinels)
+    b.close()
+    assert b._ctx_cbs is None
+
+
+def test_prohibit_not_read_for_io_errors() -> None:
+    class IoCamera(_RefusingCamera):
+        def set_single_config(self, name: str, w: StubWidget, ctx: Any) -> None:
+            raise gp.GPhoto2Error(gp.GP_ERROR_IO)
+
+    b = Gphoto2Backend()
+    b._camera = IoCamera(_refusal_root("Live View prohibit conditions: Card error"), b, "")
+    with pytest.raises(AppError) as ei:
+        b.set_config("viewfinder", 1)
+    assert not isinstance(ei.value, CameraOperationFailed)
+    assert "prohibit" not in ei.value.details
+
+
+def test_movie_selector_reason_cites_manual() -> None:
+    b = Gphoto2Backend()
+    b._camera = _RefusingCamera(
+        _refusal_root("Live View prohibit conditions: Set live view selector is enabled"),
+        b,
+        "x",
+    )
+    with pytest.raises(CameraOperationFailed) as ei:
+        b.set_config("viewfinder", 1)
+    assert ei.value.message == (
+        "The camera refused live view. Camera reports: Set live view selector is enabled"
+    )
+    assert "p.58" in ei.value.details["nikon_manual"]
+
+
+def test_context_text_bytes_decoded() -> None:
+    from backend.camera.camera_text import camera_details
+
+    b = Gphoto2Backend()
+    b._on_context_text(
+        None, b"Movie recording cannot start: Set liveview selector is enabled.\n", None
+    )
+    b._on_context_text(None, "b'Other thing.'", None)
+    raw = b._take_msgs()
+    assert raw == [
+        "Movie recording cannot start: Set liveview selector is enabled.",
+        "Other thing.",
+    ]
+    d = camera_details([b"Foo bar.", "b'Foo bar.'"])
+    assert d["camera_message_raw"] == "Foo bar.; Foo bar."

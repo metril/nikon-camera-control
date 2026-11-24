@@ -155,7 +155,7 @@ class FocusService:
         except AppError as e:
             raise InvalidState(
                 "Manual focus needs single-servo: set Live View AF to AF-S on the camera",
-                details={"liveviewaffocus": cur},
+                details={**e.details, "liveviewaffocus": cur},
             ) from e
         if self._lva_orig is None:
             self._lva_orig = cur

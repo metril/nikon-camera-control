@@ -171,10 +171,13 @@ async def test_internal_ram_capture_target_is_only_a_warning(rig: Rig) -> None:
     await rig.rec.stop()
 
 
-async def test_start_failure_surfaces_movie_mode_hint_and_rolls_back(rig: Rig) -> None:
-    rig.fake.fail_next("set_config", exc=CameraOperationFailed("refused"))
-    with pytest.raises(CameraOperationFailed, match="movie mode"):
+async def test_start_failure_passes_backend_error_through_and_rolls_back(rig: Rig) -> None:
+    err = CameraOperationFailed("refused", details={"prohibit": "X", "nikon_manual": "p.58"})
+    rig.fake.fail_next("set_config", exc=err)
+    with pytest.raises(CameraOperationFailed) as ei:
         await rig.rec.start(max_seconds=None, download_after=False)
+    assert ei.value.message == "refused"
+    assert ei.value.details == {"prohibit": "X", "nikon_manual": "p.58"}
     assert rig.cam.state == S.IDLE and not rig.fake.viewfinder_on
     assert rig.cam.status().leased_by is None and not rig.rec.info().active
 

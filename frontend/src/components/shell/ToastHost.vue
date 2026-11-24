@@ -32,6 +32,16 @@ const detail = (t) =>
       <UiIcon :name="tone(t).icon" :class="tone(t).cls" />
       <div class="min-w-0">
         <p class="break-words">{{ t.message }}</p>
+        <p
+          v-if="t.reported && !t.message.includes(t.reported)"
+          class="break-words text-xs text-camera-muted"
+          data-test="reported"
+        >
+          Camera reports: {{ t.reported }}
+        </p>
+        <p v-if="t.manual" class="break-words text-xs text-camera-muted" data-test="manual">
+          Nikon {{ t.manual }}
+        </p>
         <details v-if="detail(t)" class="mt-1 text-xs text-camera-muted">
           <summary class="cursor-pointer">Technical details</summary>
           <p class="break-all" data-test="detail">{{ detail(t) }}</p>

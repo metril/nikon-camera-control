@@ -21,6 +21,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageDraw
 
@@ -36,6 +37,7 @@ from backend.camera.backend import (
     StorageInfo,
     parse_property_change,
 )
+from backend.camera.camera_text import apply_prohibit, camera_details, prohibit_reasons
 from backend.core.errors import (
     CameraBusy,
     CameraIOError,
@@ -98,6 +100,16 @@ _SHUTTER = [
 ]  # fmt: skip
 
 
+_FAKE_PROHIBIT = {
+    "liveview": (
+        "liveviewprohibit",
+        "Live View prohibit conditions:",
+        "Liveview should not be prohibited",
+    ),
+    "movie": ("movieprohibit", "Movie prohibit conditions:", "No movie prohibit conditions"),
+}
+
+
 @dataclass
 class _Spec:
     section: str
@@ -137,6 +149,22 @@ def _specs() -> list[_Spec]:
         _Spec("status", "serialnumber", "Serial Number", ConfigType.TEXT, "9000001", True),
         _Spec("status", "cameramodel", "Camera Model", ConfigType.TEXT, "D500", True),
         _Spec("status", "batterylevel", "Battery Level", ConfigType.TEXT, "87%", True),
+        _Spec(
+            "status",
+            "liveviewprohibit",
+            "Liveview Prohibit Condition",
+            ConfigType.TEXT,
+            "Liveview should not be prohibited",
+            True,
+        ),
+        _Spec(
+            "status",
+            "movieprohibit",
+            "Movie Prohibit Condition",
+            ConfigType.TEXT,
+            "No movie prohibit conditions",
+            True,
+        ),
         _Spec(
             "imgsettings",
             "iso",
@@ -404,6 +432,7 @@ class FakeCamera:
         self._nr_busy_s = nr_busy_s
         self._nr_until = 0.0
         self._movie_stop_until = 0.0
+        self._refusals: dict[str, tuple[str, ...]] = {}
         self._nr_held: list[CameraEvent] = []
         self._folders = {k: list(v) for k, v in _FOLDERS.items()}
         if slot2_mirror:
@@ -497,6 +526,16 @@ class FakeCamera:
         self._check_op(op)
         with self._flock:
             self._faults.latency[op] = seconds
+
+    def refuse(self, what: str, *reasons: str) -> None:
+        """Like the D500: starting ``what`` ("liveview" or "movie") fails with a context error and
+        the read-only prohibit widget lists ``reasons`` (none clears the refusal)."""
+        if what not in _FAKE_PROHIBIT:
+            raise ValueError(f"unknown refusal {what!r}")
+        widget, prefix, neutral = _FAKE_PROHIBIT[what]
+        with self._flock:
+            self._refusals[what] = reasons
+            self._values[widget] = f"{prefix} {', '.join(reasons)}" if reasons else neutral
 
     def movie_stop_fails_for(self, seconds: float) -> None:
         """Movie stop (movie=0) raises "Unspecified error" for ``seconds``, then succeeds."""
@@ -620,6 +659,21 @@ class FakeCamera:
         except KeyError:
             raise SettingNotFound(f"Setting {name!r} not found") from None
 
+    def _check_refusal(self, what: str, name: str) -> None:
+        reasons = self._refusals.get(what)
+        if not reasons:
+            return
+        what_txt, raw_ctx = (
+            ("live view", ["Liveview cannot start: " + r for r in reasons])
+            if what == "liveview"
+            else ("movie recording", [])
+        )
+        details: dict[str, Any] = {"operation": f"set_config({name})", **camera_details(raw_ctx)}
+        raw = self._values[_FAKE_PROHIBIT[what][0]]
+        _, parsed = prohibit_reasons(raw)
+        msg = apply_prohibit(details, what_txt, str(raw), parsed) or f"set_config({name}) failed"
+        raise CameraOperationFailed(msg, details=details)
+
     def set_config(self, name: str, value: str | int | float | bool) -> None:
         self._enter("set_config")
         s = self._spec(name)
@@ -631,6 +685,8 @@ class FakeCamera:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
         new = self._coerce(s, value)
+        if new and name in ("viewfinder", "movie"):
+            self._check_refusal("liveview" if name == "viewfinder" else "movie", name)
         if name == "manualfocusdrive" and str(self._values["liveviewaffocus"]) != "Single-servo AF":
             raise CameraBusy("set_config(manualfocusdrive): I/O in progress")  # PTP -110
         if name == "manualfocusdrive" and self.focus_travel is not None:

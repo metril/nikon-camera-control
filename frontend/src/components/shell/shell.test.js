@@ -181,6 +181,23 @@ describe('ToastHost', () => {
     expect(w.find('[data-test="detail"]').text()).toContain('E_BUSY')
     expect(w.find('[data-test="detail"]').text()).toContain('req-1')
   })
+
+  it('shows camera-reported text and the manual note as secondary text', async () => {
+    const p = pinia()
+    const toasts = useToastsStore()
+    const w = mount(ToastHost, { global: { plugins: [p] } })
+    toasts.error({
+      code: 'X',
+      message: 'The camera refused live view.',
+      details: {
+        prohibit: 'Battery exhausted',
+        nikon_manual: 'D500 manual p.35 (Battery Level): x',
+      },
+    })
+    await nextTick()
+    expect(w.find('[data-test="reported"]').text()).toBe('Camera reports: Battery exhausted')
+    expect(w.find('[data-test="manual"]').text()).toBe('Nikon D500 manual p.35 (Battery Level): x')
+  })
 })
 
 describe('JobsPanel', () => {
