@@ -18,6 +18,7 @@ async def test_list_common_and_all(connected_client: httpx.AsyncClient) -> None:
     ap = next(s for s in common if s["name"] == "f-number")
     assert ap["alias"] == "aperture" and ap["writable"] and "f/5.6" in ap["choices"]
     assert not next(s for s in common if s["name"] == "capturetarget")["writable"]
+    assert all(not s["writable"] or not s["readonly"] for s in common)
     allv = (await connected_client.get(S, params={"group": "all"})).json()
     assert {"datetime", "serialnumber", "manualfocusdrive"} <= {s["name"] for s in allv}
     mf = next(s for s in allv if s["name"] == "manualfocusdrive")

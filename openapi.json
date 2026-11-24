@@ -2770,10 +2770,18 @@
             "type": "string"
           },
           "progress": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Progress",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0..1, or null while the total is unknown",
+            "title": "Progress"
           },
           "result": {
             "anyOf": [

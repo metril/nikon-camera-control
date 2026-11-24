@@ -1730,8 +1730,10 @@ export type JobOut = {
     message?: string;
     /**
      * Progress
+     *
+     * 0..1, or null while the total is unknown
      */
-    progress: number;
+    progress: number | null;
     /**
      * Result
      */
