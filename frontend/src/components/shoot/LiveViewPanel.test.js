@@ -259,6 +259,53 @@ describe('LiveViewPanel', () => {
     w.unmount()
   })
 
+  it('focus limit: no toast, that direction disabled, re-enabled by the opposite step', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    const limitErr = Object.assign(new Error('The lens is at its closest focus'), {
+      status: 409,
+      code: 'FOCUS_LIMIT',
+    })
+    vi.spyOn(focus, 'manual').mockRejectedValueOnce(limitErr).mockResolvedValue()
+    const near = w.find('[data-testid="lv-focus-near-small"]')
+    await near.trigger('click')
+    await flushPromises()
+    expect(useToastsStore().items).toHaveLength(0)
+    expect(near.attributes('aria-disabled')).toBe('true')
+    expect(near.attributes('title')).toBe('Closest focus')
+    expect(w.find('[data-testid="lv-focus-near-large"]').attributes('aria-disabled')).toBe('true')
+    expect(w.find('[data-testid="lv-focus-far-small"]').attributes('aria-disabled')).toBeUndefined()
+    await near.trigger('click') // blocked locally
+    expect(focus.manual).toHaveBeenCalledTimes(1)
+    await w.find('[data-testid="lv-focus-far-small"]').trigger('click')
+    await flushPromises()
+    expect(near.attributes('aria-disabled')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a non-limit focus step error still toasts', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    vi.spyOn(focus, 'manual').mockRejectedValue(new Error('boom'))
+    await w.find('[data-testid="lv-focus-near-small"]').trigger('click')
+    await flushPromises()
+    expect(useToastsStore().items.at(-1).message).toBe('boom')
+    expect(
+      w.find('[data-testid="lv-focus-near-small"]').attributes('aria-disabled'),
+    ).toBeUndefined()
+    w.unmount()
+  })
+
   it('manual mode: tap only moves the AF point, no autofocus; steps follow the config', async () => {
     const { pinia } = setup()
     const focus = useFocusStore()

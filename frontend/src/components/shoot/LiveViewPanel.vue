@@ -402,8 +402,12 @@ const frameFocused = () => camera.connected && !!hasFrame.value
 let pointUnsupported = false // the body can't move its AF point: skip setPoint this connection
 watch(
   () => [camera.model, camera.connectedAt],
-  () => (pointUnsupported = false),
+  () => {
+    pointUnsupported = false
+    focusLimit.value = 0
+  },
 )
+watch(shouldRun, (run) => run && (focusLimit.value = 0))
 function readFocusMode() {
   try {
     return localStorage.getItem('focusMode') === 'manual' ? 'manual' : 'af'
@@ -432,6 +436,7 @@ async function movePointOnly() {
 }
 async function runAutofocus(move = false) {
   if (!camera.connected) return
+  focusLimit.value = 0
   clearTimeout(lockTimer)
   const { w, h } = frameSize.value
   if (!focusPt.value) focusPt.value = { x: w / 2, y: h / 2 }
@@ -447,6 +452,7 @@ async function runAutofocus(move = false) {
       }
     }
     const r = await focus.autofocus()
+    focusLimit.value = 0
     if (r?.focused === false) {
       focusState.value = 'idle'
       toasts.warn('Autofocus could not lock. Try another spot or focus by hand.')
@@ -461,7 +467,13 @@ async function runAutofocus(move = false) {
     afBusy.value = false
   }
 }
+const focusLimit = ref(0) // -1 closest / 1 farthest reached by manual steps, 0 none
+const focusBump = ref(0)
 async function focusStep(dir, size) {
+  if (focusLimit.value === dir) {
+    focusBump.value++
+    return
+  }
   const cam = config.config?.camera
   const step =
     (size === 'large' ? cam?.focus_step_large : cam?.focus_step_small) ?? FOCUS_STEP[size]
@@ -470,8 +482,12 @@ async function focusStep(dir, size) {
   if (r) n = Math.max(r.min, Math.min(r.max, n))
   try {
     await focus.manual(n)
+    focusLimit.value = 0
   } catch (e) {
-    toasts.error(e)
+    if (e?.code === 'FOCUS_LIMIT') {
+      focusLimit.value = dir
+      focusBump.value++
+    } else toasts.error(e)
   }
 }
 
@@ -704,6 +720,8 @@ onUnmounted(() => {
           :disabled="!camera.connected"
           :busy="afBusy"
           :mode="focusMode"
+          :limit="focusLimit"
+          :bump="focusBump"
           @mode="setFocusMode"
           @step="focusStep"
           @autofocus="runAutofocus()"
