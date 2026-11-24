@@ -8,6 +8,9 @@ import {
   liveviewPauseReason,
   options,
   VIDEO_CODECS,
+  videoCodec,
+  timelapseWarning,
+  timelapseState,
 } from './labels'
 
 describe('humanize', () => {
@@ -40,5 +43,12 @@ describe('label maps', () => {
   })
   it('builds select options', () => {
     expect(options(VIDEO_CODECS)[0]).toEqual({ value: 'h264', label: 'H.264' })
+  })
+  it('labels time-lapse warnings, states and ffprobe encoder names', () => {
+    expect(timelapseWarning('interval_too_short')).toBe(
+      'The interval is shorter than one frame takes',
+    )
+    expect(timelapseState('interrupted')).toBe('Interrupted')
+    expect(videoCodec('libx264')).toBe('H.264')
   })
 })

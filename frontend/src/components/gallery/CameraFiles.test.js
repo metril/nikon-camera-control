@@ -59,7 +59,7 @@ describe('CameraFiles', () => {
     setup()
     await flushPromises()
     expect(wrapper.text()).toContain('A.NEF')
-    expect(wrapper.text()).toContain('downloaded')
+    expect(wrapper.text()).toContain('Downloaded')
     expect(wrapper.find('[data-testid=storage]').text()).toContain('CF1')
     expect(wrapper.text()).toContain('100NCD')
   })
@@ -69,7 +69,7 @@ describe('CameraFiles', () => {
     await flushPromises()
     const del = wrapper.find('[data-testid=delete-card-file]')
     expect(del.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('Busy: timelapse')
+    expect(wrapper.text()).toContain('Busy: Time-lapse')
   })
 
   it('delete failure is visible via toast', async () => {
