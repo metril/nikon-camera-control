@@ -11,6 +11,7 @@ list_folders, list_files, read_file, delete_file, storage_info (close never fail
 
 from __future__ import annotations
 
+import copy
 import io
 import random
 import threading
@@ -469,6 +470,14 @@ class FakeCamera:
                 raise q.popleft()
         if op != "open" and not self._open:
             raise CameraNotConnected()
+
+    def clone(self) -> FakeCamera:
+        """A new backend object over the same camera (files, settings, fault state), closed.
+        Lets tests give every worker its own backend, like the real factory does."""
+        other = copy.copy(self)
+        other._open = False
+        other._pv_flag = False
+        return other
 
     # ---- lifecycle ----
 

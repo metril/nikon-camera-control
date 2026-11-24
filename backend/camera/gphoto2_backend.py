@@ -29,6 +29,7 @@ from backend.camera.usb_access import (
     DEFAULT_DEV_ROOT,
     DEFAULT_SYSFS_ROOT,
     find_unopenable_nikon,
+    parse_usb_port,
     reset_nikon_usb,
 )
 from backend.core.errors import (
@@ -232,6 +233,10 @@ def coerce_config_value(w: ConfigWidget, value: object) -> str | int | float:
 class Gphoto2Backend:
     """CameraBackend over python-gphoto2."""
 
+    # (bus, device) of the camera we last opened, shared by every instance so a USB reset can
+    # target just that node even from a fresh, never-opened backend.
+    _last_port: tuple[int, int] | None = None
+
     def __init__(
         self,
         sysfs_root: Path = DEFAULT_SYSFS_ROOT,
@@ -268,6 +273,10 @@ class Gphoto2Backend:
                     raise CameraPermissionDenied(details=problem.details()) from e
             raise err from e
         self._camera, self._ctx, self._model = camera, ctx, str(model)
+        try:
+            Gphoto2Backend._last_port = parse_usb_port(str(camera.get_port_info().path))
+        except Exception as e:  # noqa: BLE001 - only used to narrow a best-effort reset
+            log.debug("port_info_unavailable", error=str(e))
         self._viewfinder_on = False
 
     def close(self) -> None:
@@ -290,7 +299,7 @@ class Gphoto2Backend:
     def reset_device(self) -> None:
         """Best-effort USB port reset of the Nikon device (works while closed)."""
         try:
-            if reset_nikon_usb(self._sysfs_root, self._dev_root):
+            if reset_nikon_usb(self._sysfs_root, self._dev_root, Gphoto2Backend._last_port):
                 log.info("usb_device_reset")
         except Exception as e:  # noqa: BLE001 - best effort
             log.warning("usb_reset_failed", error=str(e))

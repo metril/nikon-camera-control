@@ -433,11 +433,13 @@ async def test_abandoned_worker_never_closes_backend_of_newer_worker(env: Env) -
     await svc.disconnect()  # bounded wait elapses -> worker abandoned
     with pytest.raises(CameraNotConnected):
         await blocker
-    await svc.connect()  # new worker, same backend object from the factory
-    assert env.backend.is_open
+    svc._zombie_wait_s = 0.05  # noqa: SLF001
+    with pytest.raises(CameraTimeout):  # never open while the abandoned call is still hung
+        await svc.connect()
     env.backend.release.set()
     await wait_until(lambda: not old.is_alive())
-    assert env.backend.is_open and env.backend.closes == 0
+    await svc.connect()  # new worker, same backend object from the factory
+    assert env.backend.is_open  # the old worker closed its own backend before the new open
     assert await svc.call(lambda b: "ok") == "ok"
 
 

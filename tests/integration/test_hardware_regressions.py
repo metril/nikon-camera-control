@@ -38,7 +38,7 @@ async def make(config_store: ConfigStore, bus: EventBus) -> AsyncIterator[Make]:
 
     async def _make(fake: FakeCamera, *, connect: bool = True, **kw: Any) -> CameraService:
         kw.setdefault("event_quiet_window_s", 0.05)
-        s = CameraService(lambda: fake, config_store, bus, **kw)
+        s = CameraService(fake.clone, config_store, bus, **kw)
         made.append((s, fake))
         await s.start()
         if connect:
@@ -105,9 +105,8 @@ async def test_unfixable_mismatch_is_an_error(make: Make) -> None:
 async def test_card_capture_is_fast_despite_event_chatter_and_slot2_copies(make: Make) -> None:
     fake = FakeCamera(event_chatter=True, slot2_backup=True)
     svc = await make(fake)
-    t0 = time.monotonic()
     files = await svc.capture(timeout=30)
-    assert time.monotonic() - t0 < 2.0
+    assert fake.calls["wait_for_event"] < 100  # not 30 s worth of chatter
     assert [f.name for f in files] == ["DSC_0001.JPG"]  # the _1 backup copy is dropped
     assert "DSC_0001_1.JPG" in fake._files["/store_00010001/DCIM/100ND500"]  # stays on the card
     await svc.set_setting("imagequality", "NEF+JPEG Fine")
@@ -161,3 +160,26 @@ async def test_hung_open_does_not_wedge_later_connects(make: Make) -> None:
     assert svc.state == CameraState.DISCONNECTED
     st = await svc.connect()  # reset unblocks the stuck open, then a fresh worker connects
     assert st.state == CameraState.IDLE
+
+
+async def test_hang_disconnect_connect_resets_usb_before_reopening(make: Make) -> None:
+    fake = FakeCamera()
+    svc = await make(fake, stuck_grace_s=60, zombie_wait_s=2.0, disconnect_wait_s=0.1)
+    fake.hang("capture")
+    task = asyncio.create_task(svc.call(lambda b: b.capture(), timeout=30))
+    await until(lambda: fake.calls.get("capture", 0) == 1)
+    await svc.disconnect()
+    with pytest.raises(Exception):  # noqa: B017 - the in-flight caller is failed
+        await task
+    assert fake.calls.get("reset_device", 0) == 0
+    st = await svc.connect()
+    assert st.state == CameraState.IDLE
+    assert fake.calls.get("reset_device", 0) >= 1
+
+
+async def test_stray_file_is_recorded_not_attributed_or_lost(make: Make) -> None:
+    fake = FakeCamera()
+    svc = await make(fake)
+    fake.press_shutter()  # body shutter: FILE_ADDED queued outside any capture
+    files = await svc.capture(timeout=5)
+    assert len(files) == 1 and len(svc.stray_files) == 1

@@ -48,6 +48,7 @@ Design contract
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import enum
 import functools
@@ -203,6 +204,7 @@ class _Worker:
         self._seq = itertools.count(1)
         self.backend: CameraBackend | None = None
         self.inflight: _Item | None = None
+        self.recovering = False  # close/reset/reopen after a timeout is still running
         self.stopped = False
         self.gen = next(svc._generations)
         self.thread = threading.Thread(
@@ -280,6 +282,8 @@ class _Worker:
                     if not abandoned:
                         item.finished = True
                     reset = item.reset
+                if abandoned and reset and not self.stopped:
+                    self.recovering = True
                 self.inflight = None
                 if abandoned:
                     self._after_abandoned(reset)
@@ -305,6 +309,8 @@ class _Worker:
             backend.open()
         except Exception:
             ok = False
+        finally:
+            self.recovering = False
         loop = self._svc._loop
         if loop is not None:
             with contextlib.suppress(RuntimeError):
@@ -364,16 +370,25 @@ def _same_choice(widget: ConfigWidget, requested: object) -> bool:
     return any(norm == c.strip().lower() for c in cands)
 
 
-def drain_pending_events(b: CameraBackend, *, limit: int = 1000) -> int:
+def drain_pending_events(
+    b: CameraBackend, *, limit: int = 1000, keep: list[CameraFilePath] | None = None
+) -> int:
     """Discard queued camera events without waiting (worker thread only). Called right before
     a capture so only the files that capture produces are collected; the listing cache is
-    invalidated by the capture's own CAPTURE_COMPLETE. Returns the number dropped."""
+    invalidated by the capture's own CAPTURE_COMPLETE. FILE_ADDED events are appended to
+    ``keep`` when given (a file that arrived late must not be lost). Returns events seen."""
     n = 0
-    while n < limit and b.wait_for_event(0).type != CamEventType.TIMEOUT:
+    while n < limit:
+        ev = b.wait_for_event(0)
+        if ev.type == CamEventType.TIMEOUT:
+            break
+        if keep is not None and ev.type == CamEventType.FILE_ADDED and ev.file is not None:
+            keep.append(ev.file)
         n += 1
     return n
 
 
+_NEIGHBOUR_FIX = frozenset({"shutterspeed", "shutterspeed2"})  # known one-step shift
 _COPY_SUFFIX = re.compile(r"^(.+_\d{4,})_(\d{1,3})(\.[^./]*)?$")  # DSC_0001_1.JPG
 
 
@@ -460,6 +475,8 @@ class CameraService:
         self._stuck_grace_s = stuck_grace_s
         self._zombie_wait_s = zombie_wait_s
         self._zombies: list[_Worker] = []
+        # Files announced outside any capture (body shutter, late second file); newest last.
+        self.stray_files: collections.deque[CameraFilePath] = collections.deque(maxlen=100)
         self._recover_task: asyncio.Task[None] | None = None
         self._name_cache: dict[str, str] = {}
         self._disconnect_wait_s = disconnect_wait_s
@@ -504,7 +521,7 @@ class CameraService:
             # A timed-out call may still hold the worker: give up on it so the open below runs
             # on a fresh one, and drop whatever lease the failed operation held.
             w = self._worker
-            if w is not None and w.inflight is not None:
+            if w is not None and (w.inflight is not None or w.recovering):
                 self._abandon_stuck(w)
             self._release_lease()
         await self._do_connect()
@@ -535,13 +552,13 @@ class CameraService:
             while worker.inflight is not None and time.monotonic() < deadline:  # noqa: ASYNC110
                 await asyncio.sleep(0.005)
         if worker.fail_inflight(CameraNotConnected):
-            self._abandon_worker(worker)  # stuck in a call: it closes the backend on exit
+            self._abandon_stuck(worker)  # stuck in a call: it closes the backend on exit
         elif worker.backend is not None:
             item = worker.submit(self._close_job, Priority.CONTROL, escalate=False)
             await asyncio.wait({item.fut}, timeout=self._close_wait_s)
             if not item.fut.done():
                 item.try_abandon(reset=False)
-                self._abandon_worker(worker)
+                self._abandon_stuck(worker)
         return self.status()
 
     @property
@@ -804,7 +821,11 @@ class CameraService:
         If it is still stuck after the grace period, abandon it and reconnect (with backoff) on
         a fresh worker, resetting the USB device on the way."""
         await asyncio.sleep(self._stuck_grace_s)
-        if worker is not self._worker or self._state != _S.ERROR or worker.inflight is None:
+        if (
+            worker is not self._worker
+            or self._state != _S.ERROR
+            or not (worker.inflight is not None or worker.recovering)
+        ):
             return
         log.warning(
             "camera call still hung after %.0fs; abandoning it and reconnecting",
@@ -916,7 +937,7 @@ class CameraService:
 
     @staticmethod
     def _correct_readback(
-        b: CameraBackend, name: str, value: object, got: ConfigWidget
+        b: CameraBackend, name: str, value: object, got: ConfigWidget, before: object = None
     ) -> ConfigWidget:
         """The camera reports a different choice than the one written (a D500 on libgphoto2
         2.5.34 lands one 1/3 stop off on shutter speed). Re-read once; then, if the readback is
@@ -928,7 +949,7 @@ class CameraService:
             return retry
         nums = sorted((n, c) for c in got.choices if (n := _choice_num(c)) is not None)
         order = [c for _, c in nums]
-        if want in order and str(retry.value) in order:
+        if name in _NEIGHBOUR_FIX and want in order and str(retry.value) in order:
             iw, ig = order.index(want), order.index(str(retry.value))
             if abs(iw - ig) == 1:
                 j = iw + (iw - ig)
@@ -945,6 +966,10 @@ class CameraService:
                     if _same_choice(fixed, value):
                         return fixed
                     retry = fixed
+                    if before is not None:  # put the original back rather than leave a stray
+                        with contextlib.suppress(Exception):
+                            b.set_config(name, str(before))
+                            retry = b.get_config(name)
         raise CameraOperationFailed(
             f"Camera did not accept {name}={want!r}; it reports {retry.value!r}",
             details={"name": name, "requested": want, "actual": retry.value},
@@ -984,13 +1009,21 @@ class CameraService:
         self._check_lease(Priority.CONTROL, owner)
 
         def _set(b: CameraBackend) -> ConfigWidget:
+            before = b.get_config(name).value if name in _NEIGHBOUR_FIX else None
             b.set_config(name, value)
             w = b.get_config(name)
             if w.type in (ConfigType.RADIO, ConfigType.MENU) and not _same_choice(w, value):
-                w = self._correct_readback(b, name, value, w)
+                w = self._correct_readback(b, name, value, w, before)
             return w
 
-        widget = await self._run(_set, Priority.CONTROL, 30.0)
+        try:
+            widget = await self._run(_set, Priority.CONTROL, 30.0)
+        except CameraOperationFailed as e:
+            if "actual" in e.details:  # the camera holds some other value now: show it
+                with contextlib.suppress(AppError):
+                    w = await self.refresh_setting(name)
+                    self._bus.publish(EventType.SETTING_CHANGED, {"name": name, "value": w.value})
+            raise
         if name in MODE_LIKE_SETTINGS:
             self._invalidate_cache()
         else:
@@ -1019,15 +1052,22 @@ class CameraService:
 
         def _do(b: CameraBackend) -> list[CameraFilePath]:
             # Events left by trigger-only shots or the body's own shutter are not ours.
-            drain_pending_events(b)
+            late: list[CameraFilePath] = []
+            drain_pending_events(b, keep=late)  # unattributed files are recorded, not lost
             files = [b.capture()]
+            for f in late:
+                log.info("file %s/%s arrived outside a capture", f.folder, f.name)
+                self.stray_files.append(f)
             b.invalidate_preview()  # a capture may drop the body out of live view
             quiet = self._quiet_window_s
-            deadline = last = time.monotonic()
+            deadline = last = seen = time.monotonic()
             deadline += t
             while True:
                 now = time.monotonic()
-                remaining = min(deadline - now, quiet - (now - last))
+                # Chatter extends the window, but never past 3x the quiet window after the last
+                # file; a file event restarts it.
+                end = min(max(last, seen) + quiet, last + 3 * quiet)
+                remaining = min(deadline - now, end - now)
                 if remaining <= 0:
                     break
                 ev = b.wait_for_event(min(remaining, 0.5))
@@ -1037,8 +1077,8 @@ class CameraService:
                     last = time.monotonic()
                     if ev.file not in files:
                         files.append(ev.file)
-                # TIMEOUT and UNKNOWN (property/storage change chatter, which a D500 saving to
-                # its card keeps emitting) must not restart the quiet window.
+                elif ev.type == CamEventType.UNKNOWN:
+                    seen = time.monotonic()  # property/storage chatter: capped extension only
             return dedupe_slot_copies(b, files)
 
         try:
