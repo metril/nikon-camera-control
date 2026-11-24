@@ -47,13 +47,13 @@ log = logging.getLogger(__name__)
 _S = CameraState
 OWNER = "recording"
 MAX_CLIP_S = 1799  # D500: 29 min 59 s per clip
-STOP_ATTEMPTS = 3
+STOP_WINDOW_S = 15.0  # keep retrying a refused stop for this long (D500 refuses right after start)
 FILE_WAIT_ATTEMPTS = 20  # x _EVENT_WAIT_S = bounded wait for the clip's FILE_ADDED
 _EVENT_WAIT_S = 0.25
 _POLL_S = 1.0
 RECOVER_POLLS = 30  # bounded wait for a reset camera to become usable again
 START_UNDO_S = 10.0  # bound for the best-effort movie=0 after a failed start
-_RETRY_DELAY_S = 0.3
+_RETRY_DELAY_S = 0.5
 _OFF_VALUES = frozenset({"", "0", "false", "off", "none"})
 RECORDINGS_DIR = "recordings"
 
@@ -82,6 +82,7 @@ class _Active:
     was_liveview: bool
     stack: AsyncExitStack
     clips: list[CameraFilePath] = field(default_factory=list)
+    stopped_at: float | None = None
 
 
 @dataclass(slots=True)
@@ -429,15 +430,21 @@ class RecordingService:
             log.warning("recording ended: %s", warning)
 
     def _record_end(self, a: _Active, reason: str, warning: str | None) -> None:
-        self._last.elapsed_s = max(0.0, self._clock() - a.t0)
+        self._last.elapsed_s = max(0.0, (a.stopped_at or self._clock()) - a.t0)
         self._last.reason = reason
         self._last.warning = warning
 
-    async def _stop_camera(self) -> None:
+    async def _stop_camera(self, a: _Active) -> None:
+        """Send movie=0, retrying with backoff for STOP_WINDOW_S. On success records the real
+        stop time (``a.stopped_at``) so the reported duration is not inflated by retries."""
         err: AppError | None = None
-        for attempt in range(STOP_ATTEMPTS):
+        attempts = max(1, round(STOP_WINDOW_S / self._retry_delay_s)) if self._retry_delay_s else 30
+        for attempt in range(attempts):
             try:
                 await self._camera.call(lambda b: b.set_config("movie", 0), owner=OWNER)
+                a.stopped_at = self._clock()
+                if attempt:
+                    log.warning("recording stopped after %d attempts", attempt + 1)
                 return
             except AppError as e:
                 err = e
@@ -447,7 +454,7 @@ class RecordingService:
                 await asyncio.sleep(self._retry_delay_s)
         cause = err.message if err else "unknown"
         raise CameraOperationFailed(
-            f"FAILED TO STOP RECORDING after {STOP_ATTEMPTS} attempts ({cause}); the camera "
+            f"FAILED TO STOP RECORDING after {attempts} attempts ({cause}); the camera "
             "may still be recording. Retry POST /recording/stop or stop it on the body.",
             details={"cause": cause},
         )
@@ -460,7 +467,7 @@ class RecordingService:
             raise InvalidState("No recording is in progress")
         warning: str | None = None
         try:
-            await self._stop_camera()
+            await self._stop_camera(a)
         except CameraNotConnected:
             warning = "Camera disconnected while stopping; the clip may be incomplete"
         attempts = 1 if reason == "camera_stopped" else FILE_WAIT_ATTEMPTS

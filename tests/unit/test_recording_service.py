@@ -197,12 +197,20 @@ async def test_stop_failure_is_retried(rig: Rig) -> None:
 
 async def test_stop_failure_after_all_retries_keeps_recording_and_can_retry(rig: Rig) -> None:
     await rig.rec.start(max_seconds=None, download_after=False)
-    rig.fake.fail_next("set_config", 3, exc=CameraOperationFailed("x"))
+    rig.fake.fail_next("set_config", 30, exc=CameraOperationFailed("x"))
     with pytest.raises(CameraOperationFailed, match="FAILED TO STOP"):
         await rig.rec.stop()
     assert rig.rec.info().active and rig.cam.status().leased_by == "recording"
     done = await rig.rec.stop()
     assert not done.active and done.last_clip is not None
+
+
+async def test_stop_refused_for_a_while_then_succeeds_and_reports_real_duration(rig: Rig) -> None:
+    await rig.rec.start(max_seconds=None, download_after=False)
+    rig.fake.movie_stop_fails_for(0.2)
+    rig.rec._retry_delay_s = 0.05
+    done = await rig.rec.stop()
+    assert not done.active and done.warning is None and done.last_clip is not None
 
 
 async def test_unplug_mid_recording_marks_ended_and_releases_lease(rig: Rig) -> None:
@@ -287,7 +295,7 @@ async def test_camera_reset_with_failing_stop_keeps_recording_active_and_stop_re
 ) -> None:
     await rig.rec.start(max_seconds=None, download_after=False)
     await _reset_camera(rig)
-    rig.fake.fail_next("set_config", 3, exc=CameraOperationFailed("x"))
+    rig.fake.fail_next("set_config", 30, exc=CameraOperationFailed("x"))
     rig.clock.thaw()
     await until(lambda: rig.rec.info().warning is not None)
     info = rig.rec.info()

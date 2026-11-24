@@ -393,6 +393,7 @@ class FakeCamera:
         # and the frame is announced (FILE_ADDED) only after this many seconds (dark frame).
         self._nr_busy_s = nr_busy_s
         self._nr_until = 0.0
+        self._movie_stop_until = 0.0
         self._nr_held: list[CameraEvent] = []
         self._folders = {k: list(v) for k, v in _FOLDERS.items()}
         if slot2_mirror:
@@ -484,6 +485,11 @@ class FakeCamera:
         self._check_op(op)
         with self._flock:
             self._faults.latency[op] = seconds
+
+    def movie_stop_fails_for(self, seconds: float) -> None:
+        """Movie stop (movie=0) raises "Unspecified error" for ``seconds``, then succeeds."""
+        with self._flock:
+            self._movie_stop_until = time.monotonic() + seconds
 
     def card_full(self, full: bool = True) -> None:
         """While set, capture/trigger/movie raise CameraIOError and free space reads 0."""
@@ -620,6 +626,8 @@ class FakeCamera:
             i = s.choices.index(str(new))
             new = s.choices[min(i + 1, len(s.choices) - 1)]
         old = self._values[name]
+        if name == "movie" and old and not new and time.monotonic() < self._movie_stop_until:
+            raise CameraOperationFailed("set_config(movie): Unspecified error")
         if name in ("movie", "bulb") and old and not new:
             self._check_space()
             if name == "bulb":
