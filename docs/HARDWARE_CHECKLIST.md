@@ -230,3 +230,29 @@ State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, focusmode2 
 | 11.3 clock around DST (America/New_York) | ✅ | Explicit UTC instants: 2027-03-14 06:59:30Z -> 01:59:30, 07:00:30Z -> 03:00:30 (spring forward); 2026-11-01 05:59:30Z -> 01:59:30, 06:00:30Z -> 01:00:30 (fall back). Restored to host time (12:27 local). |
 
 State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, liveviewaffocus Full-time-servo AF, idle.
+
+## Hands-on session (karpo, D500 V1.31 on AC power, 2026-11-24)
+
+With the user at the camera. Builds: 0.4.3 plus the fixes committed after it (released as 0.4.4).
+
+| Item | Result | Evidence |
+|---|---|---|
+| 2.11 body change + refresh | ✅ | ISO 2500 -> 400 on the body; cached value stayed 2500 until `POST /settings/refresh` (0.37 s), then 400. The app does not notice body changes on its own. |
+| 4.6 body buttons in live view | ✅ | During remote live view the D500 blanks its rear screen and locks its buttons; info and a full shutter press did nothing, stream stayed 8 fps, no stray file. |
+| 3.14 portrait NEF+JPEG | ✅ | EXIF Orientation "Rotate 90 CW" on both; app thumbnails 133x200 (upright) for JPEG and NEF. |
+| 8.3 bulb 30 s with long-exposure NR | ❌ -> ✅ | 0.4.3: close failed 4x while the body ran the NR dark frame, job BULB_SHUTTER_OPEN, camera left in M + Bulb, state error with no auto-recovery. Fixed: close waits out NR ("Noise reduction…"), 64 s total, JPEG+NEF downloaded, mode restored to P. |
+| 3.6 no card / locked card | ⚠ -> ✅ | 0.4.3: 502 "capture: Unspecified error" (connection stayed up). Fixed: 409 NO_CARD "No memory card in the camera. Insert a card or save to camera memory." for capture and trigger; CARD_LOCKED / STORAGE_FULL added. |
+| 9.1 record start/stop | ⚠ -> ✅ | Start 0.3 s (live view on or off). Stop: the body returns -1 to the first 1-2 stop requests while it finalises the file; the clip itself stops on the first request (ffprobe: 9.91 s for a 10 s request). Stop now retries ~15 s and succeeds on attempt 3 (~1.9 s). Status `elapsed_s` reads ~11 s (time until the body confirmed). |
+| 9.2 recording status | ✅ | `GET /recording` shows `recording` with elapsed time right after start. |
+| 9.3 card vs RAM | ✅ | D500 always records to the card; the app warns when the target is camera memory. |
+| 9.4 download after stop | ✅ | `recordings/DSC_2169.MOV`, `DSC_2171.MOV` (3840x2160, 29.97 fps, ~125 Mbit/s). |
+| 9.6 live view while recording | ✅ | 8 fps throughout. |
+| 9.5 past 29:59 / 9.7 camera stops itself | ⏭ | Not run (30 min clip; needs full card or dying battery, camera on AC). |
+| 5.3 unplug USB 10 s | ✅ | Auto-reconnected 3 s after replug, idle. |
+| 1.4 connect with camera off | ✅ | State `disconnected`; Connect 404 CAMERA_NOT_FOUND in 0.03 s. Fixed after: Connect keeps retrying until the camera appears; message mentions the power switch. |
+| 5.4 power off/on | ⚠ -> ✅ | 0.4.3: a ~10 s power cycle went unnoticed; the next capture failed with -52, then auto-reconnect in 2 s. Fixed: device-gone errors reconnect and retry once (capture only before the shutter fires); a command during an automatic reconnect waits for it. |
+| 5.5 cable pulled in live view | ✅ | Reconnected and live view resumed at 8 fps by itself. |
+| 5.5 + 6.5 cable pulled in a time-lapse | ⚠ -> ✅ | 2 s interval, 40 frames: run survived both times (40/40, 1 failed frame). 0.4.3: the 3 frames after the reconnect lost their JPEG. Retest: 40 JPEG + 40 NEF. |
+| 3.12 / 11.3 | ✅ | See the 0.4.3 retest above. |
+
+State restored: P, ISO 2500, NEF+Fine*, capture target camera memory, long-exposure NR off, photo mode.
