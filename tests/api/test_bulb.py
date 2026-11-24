@@ -374,7 +374,7 @@ async def test_routes_do_not_clash_with_capture(app: FastAPI) -> None:
     assert paths["/api/v1/capture/bracket"]["post"]["operationId"] == "start_bracket_capture"
 
 
-async def test_bulb_warning_uses_the_settable_exposure_program(
+async def test_bulb_settable_mode_leaves_no_stale_warning(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     import dataclasses
@@ -389,8 +389,8 @@ async def test_bulb_warning_uses_the_settable_exposure_program(
     fake_camera._values["expprogram"] = "A"
     r = await connected_client.post(B, json={"seconds": 2})
     j = await wait_job(connected_client, r.json()["id"])
-    (w,) = j["result"]["warnings"]
-    assert "not M" in w and "expprogram" in w and "cannot be set" not in w
+    assert j["status"] == "completed", j
+    assert j["result"]["warnings"] == []  # settable mode: the job handles it, no stale warning
 
 
 async def _nr_run(

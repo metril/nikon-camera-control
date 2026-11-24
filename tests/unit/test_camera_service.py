@@ -555,7 +555,7 @@ async def test_io_error_disconnects_and_reconnects(env: Env) -> None:
         raise CameraIOError()
 
     with pytest.raises(CameraIOError):
-        await svc.call(io)
+        await svc.call(io, retry=False)
     assert env.bus.of(EventType.CAMERA_DISCONNECTED)
     await wait_until(lambda: svc.state == S.IDLE)
     assert len(env.bus.of(EventType.CAMERA_CONNECTED)) == 2

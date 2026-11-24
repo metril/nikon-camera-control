@@ -88,7 +88,9 @@ class CameraNotConnected(AppError):
 class CameraNotFound(AppError):
     code = ErrorCode.CAMERA_NOT_FOUND
     http_status = 404
-    default_message = "No camera detected. Check the USB connection."
+    default_message = (
+        "No camera detected. Check that it is switched on and the USB cable is connected."
+    )
 
 
 class CameraPermissionDenied(AppError):

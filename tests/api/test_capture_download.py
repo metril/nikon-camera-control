@@ -191,3 +191,35 @@ async def test_unknown_target_never_deletes(
             download=True, delete_from_camera=True, filename_prefix=None
         )
     assert len(fake_camera._files[CARD_FOLDER]) == 1
+
+
+async def test_ram_numbering_restart_after_reconnect_keeps_both_files(
+    app: FastAPI, tmp_dirs, fake_camera: FakeCamera
+) -> None:
+    import asyncio
+
+    fake_camera.ram_numbering_resets = True
+    async with app.router.lifespan_context(app):
+        await _setup(app, "Internal RAM", "NEF+JPEG Fine")
+        cs = app.state.camera_service
+        svc = _svc(app, FixedRoot(tmp_dirs.output_dir))
+        for _ in range(2):
+            res = await _shot(svc)
+            assert len(res.local) == 2
+        fake_camera.unplug()
+        with pytest.raises(Exception, match="unplugged"):
+            await cs.call(lambda b: b.summary(), retry=False)
+        fake_camera.replug()
+        for _ in range(100):
+            if cs.status().connected:
+                break
+            await asyncio.sleep(0.1)
+        for _ in range(2):
+            res = await _shot(svc)
+            assert [f.name for f in res.camera_files] == ["capt0000.jpg", "capt0001.nef"] or len(
+                res.local
+            ) == 2
+            assert {p.suffix for p in res.local} == {".jpg", ".nef"}
+        await asyncio.sleep(0.3)
+    names = sorted(p.name for p in tmp_dirs.output_dir.iterdir())
+    assert len(names) == 8, names

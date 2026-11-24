@@ -22,7 +22,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | `INTERNAL_ERROR` | 500 | `AppError` | Internal error |
 | `CAMERA_NOT_CONNECTED` | 503 | `CameraNotConnected` | Camera is not connected |
-| `CAMERA_NOT_FOUND` | 404 | `CameraNotFound` | No camera detected. Check the USB connection. |
+| `CAMERA_NOT_FOUND` | 404 | `CameraNotFound` | No camera detected. Check that it is switched on and the USB cable is connected. |
 | `CAMERA_PERMISSION_DENIED` | 503 | `CameraPermissionDenied` | Camera found, but the app can't open it. |
 | `CAMERA_BUSY` | 409 | `CameraBusy` | Camera is busy with another operation |
 | `CAMERA_TIMEOUT` | 504 | `CameraTimeout` | Camera operation timed out |

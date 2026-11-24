@@ -425,6 +425,8 @@ class FakeCamera:
         }
         self._open = False
         self._counter = start_counter
+        self.ram_numbering_resets = False  # set True: reopen restarts capt0000 numbering
+        self._opened_before = False
         self._capacity_kb = capacity_kb
         self._clock = 0
         self._preview_n = 0
@@ -543,6 +545,9 @@ class FakeCamera:
         self._enter("open")
         self._open = True
         self._pv_flag = False
+        if self.ram_numbering_resets and self._opened_before:
+            self._counter = 1  # a real body restarts its RAM file numbering after a reconnect
+        self._opened_before = True
 
     def close(self) -> None:
         self._open = False

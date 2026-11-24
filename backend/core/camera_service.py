@@ -78,6 +78,7 @@ from backend.core.errors import (
     CameraBusy,
     CameraIOError,
     CameraNotConnected,
+    CameraNotFound,
     CameraOperationFailed,
     CameraTimeout,
     CardLocked,
@@ -119,6 +120,7 @@ _KEEPALIVE_FAILURES = 3
 _KEEPALIVE_TIMEOUT_S = 10.0
 _PREVIEW_TIMEOUT_S = 10.0
 _MAX_BACKOFF_S = 30.0
+_RETRY_WAIT_S = 12.0  # how long a failed command waits for the reconnect before giving up
 
 
 class Priority(enum.IntEnum):
@@ -513,6 +515,7 @@ class CameraService:
         self._zombies: list[_Worker] = []
         # Files announced outside any capture (body shutter, late second file); newest last.
         self.stray_files: collections.deque[CameraFilePath] = collections.deque(maxlen=100)
+        self.connect_hooks: list[Callable[[], None]] = []  # run on every (re)connect
         # Called on the loop with files found outside a capture (CaptureService fetches them).
         self.stray_handler: Callable[[list[CameraFilePath]], None] | None = None
         self._recover_task: asyncio.Task[None] | None = None
@@ -580,7 +583,12 @@ class CameraService:
             if w is not None and (w.inflight is not None or w.recovering):
                 self._abandon_stuck(w)
             self._release_lease()
-        await self._do_connect()
+        try:
+            await self._do_connect()
+        except CameraNotFound:
+            # Camera off or unplugged: keep looking until it shows up or the user disconnects.
+            self._start_reconnect(persistent=True)
+            raise
         return self.status()
 
     async def disconnect(self) -> CameraStatus:
@@ -802,6 +810,9 @@ class CameraService:
         self._battery = None
         self._name_cache = {}
         self._invalidate_cache()
+        self.stray_files.clear()  # RAM names (capt0000...) restart on a new connection
+        for hook in list(self.connect_hooks):
+            hook()
         try:
             exposure = await self._read_exposure(worker)  # before IDLE: nothing races the settle
             self._set_state(_S.IDLE)
@@ -865,17 +876,20 @@ class CameraService:
             worker.fail_queued(CameraNotConnected)
             worker.fail_inflight(CameraNotConnected)
             worker.submit(self._close_job, Priority.CONTROL, escalate=False)
+        self._start_reconnect()
+
+    def _start_reconnect(self, *, persistent: bool = False) -> None:
         if self._reconnect_task is None or self._reconnect_task.done():
             self._reconnect_task = asyncio.create_task(
-                self._reconnect_loop(), name="camera-reconnect"
+                self._reconnect_loop(persistent), name="camera-reconnect"
             )
 
-    async def _reconnect_loop(self) -> None:
+    async def _reconnect_loop(self, persistent: bool = False) -> None:
         attempt = 0
-        while attempt < self._config.config.camera.connect_retries:
+        while persistent or attempt < self._config.config.camera.connect_retries:
             cfg = self._config.config.camera
             await asyncio.sleep(min(cfg.reconnect_interval_s * (2**attempt), _MAX_BACKOFF_S))
-            attempt += 1
+            attempt = min(attempt + 1, 16)
             if self._state != _S.DISCONNECTED:
                 return
             try:
@@ -962,6 +976,27 @@ class CameraService:
         fn: Callable[[CameraBackend], T],
         priority: int,
         timeout: float | None,  # noqa: ASYNC109
+        retry: Callable[[], bool] | bool = True,
+    ) -> T:
+        """Run ``fn`` on the worker. A user-facing call (CONTROL/CAPTURE) that dies with a
+        device-gone error (the camera was power-cycled unnoticed) is retried once after the
+        reconnect, when ``retry`` allows it (a callable is asked after the failure)."""
+        try:
+            return await self._run_once(fn, priority, timeout)
+        except (CameraIOError, CameraNotFound) as e:
+            allowed = retry() if callable(retry) else retry
+            if priority not in (Priority.CONTROL, Priority.CAPTURE) or not allowed:
+                raise
+            if not await self._await_reconnect():
+                raise
+            log.info("retrying after reconnect: %s", e.message)
+            return await self._run_once(fn, priority, timeout)
+
+    async def _run_once(
+        self,
+        fn: Callable[[CameraBackend], T],
+        priority: int,
+        timeout: float | None,  # noqa: ASYNC109
     ) -> T:
         worker = self._worker
         if worker is None or self._state in (_S.DISCONNECTED, _S.CONNECTING):
@@ -969,10 +1004,23 @@ class CameraService:
         item = worker.submit(lambda w: fn(w.require()), priority)
         return await self._finish(worker, item, timeout)
 
+    async def _await_reconnect(self) -> bool:
+        """After a device-gone error: wait for the reconnect loop (bounded) and report
+        whether the camera is back."""
+        deadline = time.monotonic() + _RETRY_WAIT_S
+        while time.monotonic() < deadline:
+            if self._state in _LIVE_STATES:
+                return True
+            task = self._reconnect_task
+            if self._state == _S.DISCONNECTED and (task is None or task.done()):
+                return False
+            await asyncio.sleep(0.05)
+        return self._state in _LIVE_STATES
+
     async def _finish(self, worker: _Worker, item: _Item, timeout: float | None) -> Any:  # noqa: ASYNC109
         try:
             return await self._await_item(worker, item, timeout)
-        except (CameraIOError, CameraNotConnected) as e:
+        except (CameraIOError, CameraNotConnected, CameraNotFound) as e:
             if worker is self._worker:
                 self._lost(e.message)
             raise
@@ -984,6 +1032,7 @@ class CameraService:
         priority: Priority = Priority.CONTROL,
         timeout: float = 30.0,  # noqa: ASYNC109
         owner: str | None = None,
+        retry: Callable[[], bool] | bool = True,
     ) -> T:
         """Run ``fn(backend)`` on the worker thread and return its result.
 
@@ -993,7 +1042,7 @@ class CameraService:
         CameraIOError/CameraNotConnected from the backend moves the service to DISCONNECTED.
         """
         self._check_lease(priority, owner)
-        return await self._run(fn, priority, timeout)
+        return await self._run(fn, priority, timeout, retry)
 
     # settings -------------------------------------------------------------------
     def _invalidate_cache(self) -> None:
@@ -1187,11 +1236,15 @@ class CameraService:
         prior = await self.transition(_S.CAPTURING)
         self._bus.publish(EventType.CAPTURE_STARTED, {})
 
+        fired = [False]
+
         def _do(b: CameraBackend) -> list[CameraFilePath]:
             # Events left by trigger-only shots or the body's own shutter are not ours.
             late: list[CameraFilePath] = []
             drain_pending_events(b, keep=late)  # unattributed files are recorded, not lost
+            fired[0] = False
             files = [b.capture()]
+            fired[0] = True  # the shutter fired: a later link loss must not repeat the shot
             if late and self._loop is not None:
                 with contextlib.suppress(RuntimeError):
                     self._loop.call_soon_threadsafe(self._on_strays, late)
@@ -1219,7 +1272,7 @@ class CameraService:
             return dedupe_slot_copies(b, files)
 
         try:
-            files = await self._run(_do, Priority.CAPTURE, 2 * t + 1.0)
+            files = await self._run(_do, Priority.CAPTURE, 2 * t + 1.0, lambda: not fired[0])
         except CameraTimeout:
             self._ensure_recovery()  # ERROR must resolve to IDLE without user action
             raise

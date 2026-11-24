@@ -229,7 +229,7 @@ class RecordingService:
                 restore = _S.LIVEVIEW if was_lv else _S.IDLE
                 # Shielded: a cancelled request must not leave a queued movie=1 untracked.
                 issued = asyncio.ensure_future(
-                    self._camera.call(lambda b: b.set_config("movie", 1), owner=OWNER)
+                    self._camera.call(lambda b: b.set_config("movie", 1), owner=OWNER, retry=False)
                 )
                 try:
                     await asyncio.shield(issued)
@@ -355,7 +355,9 @@ class RecordingService:
                     await self._auto("max_seconds")
                     return
                 try:
-                    new = await self._camera.call(lambda b: _drain(b, 0.0), owner=OWNER)
+                    new = await self._camera.call(
+                        lambda b: _drain(b, 0.0), owner=OWNER, retry=False
+                    )
                 except CameraNotConnected:
                     continue  # state check above handles it on the next round
                 except StorageFull:
@@ -441,7 +443,9 @@ class RecordingService:
         attempts = max(1, round(STOP_WINDOW_S / self._retry_delay_s)) if self._retry_delay_s else 30
         for attempt in range(attempts):
             try:
-                await self._camera.call(lambda b: b.set_config("movie", 0), owner=OWNER)
+                await self._camera.call(
+                    lambda b: b.set_config("movie", 0), owner=OWNER, retry=False
+                )
                 a.stopped_at = self._clock()
                 if attempt:
                     log.warning("recording stopped after %d attempts", attempt + 1)
@@ -473,7 +477,9 @@ class RecordingService:
         attempts = 1 if reason == "camera_stopped" else FILE_WAIT_ATTEMPTS
         for _ in range(attempts if warning is None else 0):
             try:
-                got = await self._camera.call(lambda b: _drain(b, _EVENT_WAIT_S), owner=OWNER)
+                got = await self._camera.call(
+                    lambda b: _drain(b, _EVENT_WAIT_S), owner=OWNER, retry=False
+                )
             except AppError:
                 break
             a.clips.extend(f for f in got if f not in a.clips)

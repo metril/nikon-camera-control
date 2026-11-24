@@ -247,6 +247,8 @@ class BulbService:
                 if not files and cancel is not None:
                     raise cancel
                 result = await self._finish_files(files, req)
+                if prior_mode is not None and not prior_mode[2]:
+                    warnings = []  # the mode is settable: the job switched it and restores it
                 result["warnings"] = warnings
                 self._bus.publish(
                     EventType.CAPTURE_COMPLETE,
@@ -287,7 +289,10 @@ class BulbService:
 
     async def _set_bulb(self, value: int) -> None:
         await self._camera.call(
-            lambda b: b.set_config("bulb", value), priority=Priority.CAPTURE, owner=OWNER
+            lambda b: b.set_config("bulb", value),
+            priority=Priority.CAPTURE,
+            owner=OWNER,
+            retry=False,  # a repeated open/close after a power cycle would be wrong
         )
 
     async def _peek_files(self, run: _Run) -> bool:

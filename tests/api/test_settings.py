@@ -2,6 +2,7 @@ import httpx
 from fastapi import FastAPI
 
 from backend.camera.fake import FakeCamera
+from backend.core.errors import CameraOperationFailed
 
 S = "/api/v1/settings"
 
@@ -118,7 +119,7 @@ async def test_patch_midway_failure_reports_applied(
     connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     await connected_client.get(S)
-    fake_camera.fail_next("set_config", 1)  # first set ok? fail_next fails the NEXT call
+    fake_camera.fail_next("set_config", 1, exc=CameraOperationFailed("boom"))
     r = await connected_client.patch(S, json={"values": {"focusmode": "AF-C", "iso": "400"}})
     assert r.status_code >= 500
     d = r.json()["error"]["details"]
