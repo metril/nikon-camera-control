@@ -12,7 +12,12 @@ import pytest
 from backend.camera.fake import FakeCamera
 from backend.core.camera_service import CameraService
 from backend.core.config_store import ConfigStore
-from backend.core.errors import CameraOperationFailed, CameraTimeout, SettingNotFound
+from backend.core.errors import (
+    CameraOperationFailed,
+    CameraTimeout,
+    InvalidState,
+    SettingNotFound,
+)
 from backend.core.events import EventBus
 from backend.core.state import CameraState
 from backend.services.settings import SettingsService
@@ -183,3 +188,63 @@ async def test_stray_file_is_recorded_not_attributed_or_lost(make: Make) -> None
     fake.press_shutter()  # body shutter: FILE_ADDED queued outside any capture
     files = await svc.capture(timeout=5)
     assert len(files) == 1 and len(svc.stray_files) == 1
+
+
+# 9. second retest ------------------------------------------------------------------------
+async def test_slot2_mirror_copy_is_not_downloaded_but_split_formats_are(make: Make) -> None:
+    fake = FakeCamera(slot2_mirror=True)
+    svc = await make(fake)
+    files = await svc.capture(timeout=5)
+    assert [(f.folder, f.name) for f in files] == [
+        ("/store_00010001/DCIM/100ND500", "DSC_0001.JPG")
+    ]
+    assert "DSC_0001.JPG" in fake._files["/store_00020001/DCIM/100ND500"]  # stays on the card
+    await svc.set_setting("imagequality", "NEF (Raw)")
+    assert [f.name for f in await svc.capture(timeout=5)] == ["DSC_0002.NEF"]
+    await svc.set_setting("imagequality", "NEF+JPEG Fine")  # NEF slot 1, JPEG slot 2
+    files = await svc.capture(timeout=5)
+    assert sorted(f.name for f in files) == ["DSC_0003.JPG", "DSC_0003.NEF"]
+
+
+async def test_bulb_shutter_refuses_capture_before_firing(make: Make, bus: EventBus) -> None:
+    fake = FakeCamera(bulb_capture_hangs=True)
+    svc = await make(fake)
+    for speed in ("Bulb", "Time"):
+        fake._values["shutterspeed"] = speed
+        with pytest.raises(InvalidState) as ei:
+            await svc.capture(timeout=1)
+        assert "Choose a shutter speed, or use the Bulb capture mode." in ei.value.message
+    assert fake.calls.get("capture", 0) == 0 and svc.state == CameraState.IDLE
+
+
+async def test_capture_timeout_recovers_to_idle_without_user_action(make: Make) -> None:
+    fake = FakeCamera(bulb_capture_hangs=True)
+    svc = await make(fake, stuck_grace_s=0.1, zombie_wait_s=0.5)
+    fake.hang("capture")  # a hung shot (not refused up front)
+    with pytest.raises(CameraTimeout):
+        await svc.capture(timeout=0.1)
+    assert svc.state == CameraState.ERROR
+    await until(lambda: svc.state == CameraState.IDLE)
+    assert len(await svc.capture(timeout=5)) == 1
+
+
+async def test_watchdog_reconnects_when_error_persists_without_a_running_call(make: Make) -> None:
+    svc = await make(FakeCamera(), stuck_grace_s=0.1, zombie_wait_s=0.5)
+    svc._set_state(CameraState.ERROR)  # noqa: SLF001 - timeout whose reset never reported back
+    svc._ensure_recovery()  # noqa: SLF001
+    await until(lambda: svc.state == CameraState.IDLE)
+
+
+async def test_reconnect_announces_exposure_program_and_shutter(make: Make, bus: EventBus) -> None:
+    fake = FakeCamera(d500_names=True)
+    fake._values["shutterspeed"] = "Bulb"
+    svc = await make(fake, connect=False)
+    sub = bus.subscribe()
+    await svc.connect()
+    seen: dict[str, Any] = {}
+    deadline = time.monotonic() + 3
+    while len(seen) < 2 and time.monotonic() < deadline:
+        ev = await asyncio.wait_for(sub.__anext__(), 1)
+        if ev.type.name == "SETTING_CHANGED":
+            seen[ev.data["name"]] = ev.data["value"]
+    assert seen == {"expprogram": "M", "shutterspeed": "Bulb"}

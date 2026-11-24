@@ -68,6 +68,9 @@ def _infos(b: Any, folder: str, names: list[str]) -> list[CameraFileInfo]:
             out.append(b.file_info(folder, n))
         except FileNotFoundError_:
             continue  # deleted (e.g. on the body) between the name listing and now
+        except CameraOperationFailed as e:
+            # e.g. leftover RAM-capture entries at "/" that cannot be stat'ed: skip, never fail
+            log.warning("skipping %s/%s in listing: %s", folder, n, e.message)
     return out
 
 

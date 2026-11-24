@@ -71,6 +71,8 @@ OPS = frozenset(
 
 CARD_BASE = "/store_00010001"
 CARD_FOLDER = f"{CARD_BASE}/DCIM/100ND500"
+CARD2_BASE = "/store_00020001"
+CARD2_FOLDER = f"{CARD2_BASE}/DCIM/100ND500"
 _FOLDERS = {
     "/": ["store_00010001"],
     CARD_BASE: ["DCIM"],
@@ -332,6 +334,9 @@ class FakeCamera:
         event_chatter: bool = False,
         shutter_shift: bool = False,
         viewfinder_busy_after_capture: int = 0,
+        slot2_mirror: bool = False,
+        ram_info_fails: bool = False,
+        bulb_capture_hangs: bool = False,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
         Default False mirrors real PTP bodies, where capture() usually consumes it.
@@ -349,6 +354,11 @@ class FakeCamera:
         lands one 1/3 stop faster than requested (except 1/8000 and Bulb), as seen on a real D500.
         ``viewfinder_busy_after_capture``: after a capture, setting ``viewfinder`` raises
         CameraBusy this many times (D500 answers -110 until the capture has settled).
+        ``slot2_mirror``: second slot (``/store_00020001``) present; a single-file shot is
+        written to both slots under the same name, a NEF+JPEG shot splits (NEF slot 1, JPEG
+        slot 2). ``ram_info_fails``: file_info on RAM-capture files at "/" raises (-1).
+        ``bulb_capture_hangs``: capture() with shutterspeed Bulb/Time blocks until
+        ``release_all()``/``reset_device()``, like the real body waiting for a shutter close.
         With capturetarget "Internal RAM" files land in "/" as capt0000.jpg, capt0001.nef..."""
         self._late_second = late_second_file
         self._late_complete = False
@@ -359,6 +369,15 @@ class FakeCamera:
         self._rng = random.Random(seed)  # noqa: S311
         self._chatter = event_chatter
         self._slot2 = slot2_backup
+        self._mirror = slot2_mirror
+        self._ram_info_fails = ram_info_fails
+        self._bulb_hangs = bulb_capture_hangs
+        self._folders = {k: list(v) for k, v in _FOLDERS.items()}
+        if slot2_mirror:
+            self._folders["/"].append("store_00020001")
+            self._folders[CARD2_BASE] = ["DCIM"]
+            self._folders[f"{CARD2_BASE}/DCIM"] = ["100ND500"]
+            self._folders[CARD2_FOLDER] = []
         self._shutter_shift = shutter_shift
         self._vf_busy_after_capture = viewfinder_busy_after_capture
         self._vf_busy = 0
@@ -700,9 +719,13 @@ class FakeCamera:
             ]
         if self._slot2 and not ram:
             shots = [x for nm, f in shots for x in ((nm, f), (_backup_name(nm), f))]
+        if self._mirror and not ram and len(shots) == 1:
+            shots.append(shots[0])  # same name again, written to slot 2 below
         made: list[CameraFilePath] = [self._add_file(*shots[0], folder)]
         for nm, f in shots[1:]:
-            if self._late_second:
+            if self._mirror and not ram:
+                made.append(self._add_file(nm, f, CARD2_FOLDER))
+            elif self._late_second:
                 self._late.append((folder, nm, f))
             else:
                 made.append(self._add_file(nm, f, folder))
@@ -719,6 +742,11 @@ class FakeCamera:
 
     def capture(self) -> CameraFilePath:
         self._enter("capture")
+        if self._bulb_hangs and str(self._values.get("shutterspeed")) in ("Bulb", "Time"):
+            with self._flock:
+                ev = self._faults.hangs.setdefault("capture", threading.Event())
+            ev.wait()
+            raise CameraIOError("Capture aborted")
         return self._do_capture()
 
     def press_shutter(self) -> list[CameraFilePath]:
@@ -789,9 +817,9 @@ class FakeCamera:
     def list_folders(self, folder: str) -> list[str]:
         self._enter("list_folders")
         key = folder.rstrip("/") or "/"
-        if key not in _FOLDERS:
+        if key not in self._folders:
             raise FileNotFoundError_(f"Folder {folder!r} not found")
-        return list(_FOLDERS[key])
+        return list(self._folders[key])
 
     def _folder(self, folder: str) -> dict[str, _File]:
         key = folder.rstrip("/") or "/"
@@ -802,7 +830,7 @@ class FakeCamera:
     def list_files(self, folder: str) -> list[CameraFileInfo]:
         self._enter("list_files")
         key = folder.rstrip("/") or "/"
-        if key not in _FOLDERS and key not in self._files:
+        if key not in self._folders and key not in self._files:
             raise FileNotFoundError_(f"Folder {folder!r} not found")
         return [
             CameraFileInfo(key, n, len(f.data), f.mtime, f.mime, f.width, f.height)
@@ -812,12 +840,14 @@ class FakeCamera:
     def list_file_names(self, folder: str) -> list[str]:
         self._enter("list_files")
         key = folder.rstrip("/") or "/"
-        if key not in _FOLDERS and key not in self._files:
+        if key not in self._folders and key not in self._files:
             raise FileNotFoundError_(f"Folder {folder!r} not found")
         return sorted(self._files.get(key, {}))
 
     def file_info(self, folder: str, name: str) -> CameraFileInfo:
         self._enter("file_info")
+        if self._ram_info_fails and (folder.rstrip("/") or "/") == "/":
+            raise CameraOperationFailed(f"file_info(/{name}): Unspecified error")
         f = self._get_file(folder, name)
         key = folder.rstrip("/") or "/"
         return CameraFileInfo(key, name, len(f.data), f.mtime, f.mime, f.width, f.height)

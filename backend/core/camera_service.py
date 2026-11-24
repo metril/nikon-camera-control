@@ -392,11 +392,24 @@ _NEIGHBOUR_FIX = frozenset({"shutterspeed", "shutterspeed2"})  # known one-step 
 _COPY_SUFFIX = re.compile(r"^(.+_\d{4,})_(\d{1,3})(\.[^./]*)?$")  # DSC_0001_1.JPG
 
 
+_STORE_PATH = re.compile(r"^/(store_[^/]+)(/.*)?$", re.IGNORECASE)
+
+
+def _slot_key(f: CameraFilePath) -> tuple[str, str, str] | None:
+    """(storage root, path below it, lower-cased name) for a file under ``/store_*``."""
+    m = _STORE_PATH.match(f.folder.rstrip("/") or "/")
+    if m is None:
+        return None
+    return m.group(1).lower(), (m.group(2) or "").lower(), f.name.lower()
+
+
 def dedupe_slot_copies(b: CameraBackend, files: list[CameraFilePath]) -> list[CameraFilePath]:
-    """Drop backup-slot copies: with the second card set to backup the camera announces every
-    file twice (``DSC_0001.JPG`` and ``DSC_0001_1.JPG``, identical size). The first of an
-    identical (base name, size) pair is kept; the copy stays on the card. Best effort: a file
-    whose size cannot be read is kept."""
+    """Drop backup-slot copies. The first of each pair is kept; the copy stays on the card.
+    Two shapes are recognised: the same file announced twice in one folder (``DSC_0001.JPG``
+    and ``DSC_0001_1.JPG``, identical size), and the same name and size under different
+    ``store_*`` roots with the same relative path (slot 2 backup/mirror). Different names
+    (NEF in slot 1, JPG in slot 2) are never copies. Best effort: a file whose size cannot be
+    read is kept."""
     if len(files) < 2:
         return files
 
@@ -416,6 +429,7 @@ def dedupe_slot_copies(b: CameraBackend, files: list[CameraFilePath]) -> list[Ca
 
     kept: list[CameraFilePath] = []
     seen: dict[tuple[str, int], CameraFilePath] = {}
+    mirrors: dict[tuple[str, str], list[tuple[str, int]]] = {}  # (rel, name) -> [(root, size)]
     names = {f.name for f in files}
     for f in files:
         key_name = base(f.name)
@@ -423,6 +437,15 @@ def dedupe_slot_copies(b: CameraBackend, files: list[CameraFilePath]) -> list[Ca
         sz = size(f) if is_copy_name else None
         if sz is not None and (key_name.lower(), sz) in seen:
             continue
+        slot = _slot_key(f)
+        if slot is not None:
+            root, rel, lname = slot
+            fsz = size(f)
+            if fsz is not None:
+                prior = mirrors.setdefault((rel, lname), [])
+                if any(r != root and s == fsz for r, s in prior):
+                    continue
+                prior.append((root, fsz))
         if sz is not None:
             seen[(key_name.lower(), sz)] = f
         kept.append(f)
@@ -745,9 +768,38 @@ class CameraService:
         self._battery = None
         self._name_cache = {}
         self._invalidate_cache()
+        exposure = await self._read_exposure(worker)  # before IDLE: nothing races the settle
         self._set_state(_S.IDLE)
         self._bus.publish(EventType.CAMERA_CONNECTED, {"model": model, "serial": serial})
+        if exposure:
+            log.info("camera connected with exposure settings %s", exposure)
+            for n, v in exposure.items():
+                self._bus.publish(EventType.SETTING_CHANGED, {"name": n, "value": v})
         self._keepalive_task = asyncio.create_task(self._keepalive_loop(), name="camera-keepalive")
+
+    async def _read_exposure(self, worker: _Worker) -> dict[str, object]:
+        """Best effort: read the exposure program and shutter speed the body came back with
+        (a reconnect can revert them, e.g. to M + Bulb); the caller logs and publishes them."""
+
+        def _read(w: _Worker) -> dict[str, object]:
+            b = w.require()
+            out: dict[str, object] = {}
+            for names in (("expprogram", "autoexposuremode"), ("shutterspeed",)):
+                for n in names:
+                    try:
+                        out[n] = b.get_config(n).value
+                        break
+                    except Exception:  # noqa: BLE001, S112 - try the next alias
+                        continue
+            return out
+
+        try:
+            item = worker.submit(_read, Priority.CONTROL, escalate=False)
+            values = await self._await_item(worker, item, 5.0)
+        except Exception as e:  # noqa: BLE001 - informational only, never fails a connect
+            log.debug("could not read exposure settings after connect: %s", e)
+            return {}
+        return values
 
     def _lost(self, reason: str) -> None:
         """Link lost: DISCONNECTED + event + reconnect loop. Synchronous and idempotent."""
@@ -832,21 +884,34 @@ class CameraService:
     async def _watchdog(self, worker: _Worker) -> None:
         """After a call timed out the worker normally resets the backend once the call returns.
         If it is still stuck after the grace period, abandon it and reconnect (with backoff) on
-        a fresh worker, resetting the USB device on the way."""
+        a fresh worker, resetting the USB device on the way. If the camera is still in ERROR
+        although no call is running (the reset never reported back), reconnect as well, so a
+        timeout never leaves the camera stuck in ERROR."""
         await asyncio.sleep(self._stuck_grace_s)
-        if (
-            worker is not self._worker
-            or self._state != _S.ERROR
-            or not (worker.inflight is not None or worker.recovering)
-        ):
+        if worker is not self._worker or self._state != _S.ERROR:
             return
-        log.warning(
-            "camera call still hung after %.0fs; abandoning it and reconnecting",
-            self._stuck_grace_s,
-        )
-        self._abandon_stuck(worker)
-        self._release_lease()
-        self._lost("camera call hung")
+        if worker.inflight is not None or worker.recovering:
+            log.warning(
+                "camera call still hung after %.0fs; abandoning it and reconnecting",
+                self._stuck_grace_s,
+            )
+            self._abandon_stuck(worker)
+            self._release_lease()
+            self._lost("camera call hung")
+        else:
+            log.warning(
+                "camera still in error %.0fs after a timeout; reconnecting", self._stuck_grace_s
+            )
+            self._release_lease()
+            self._lost("camera did not recover after a timeout")
+
+    def _ensure_recovery(self) -> None:
+        """A call timed out: make sure the recovery watchdog is running (idempotent)."""
+        worker = self._worker
+        if worker is None or self._state != _S.ERROR:
+            return
+        if self._recover_task is None or self._recover_task.done():
+            self._recover_task = asyncio.create_task(self._watchdog(worker), name="camera-recover")
 
     async def _run(
         self,
@@ -1060,6 +1125,7 @@ class CameraService:
         config.camera.capture_timeout_s and bounds the capture and, separately, the drain."""
         self._check_lease(Priority.CAPTURE, owner)
         t = timeout if timeout is not None else self._config.config.camera.capture_timeout_s
+        await self._refuse_bulb_shutter()
         prior = await self.transition(_S.CAPTURING)
         self._bus.publish(EventType.CAPTURE_STARTED, {})
 
@@ -1096,6 +1162,9 @@ class CameraService:
 
         try:
             files = await self._run(_do, Priority.CAPTURE, 2 * t + 1.0)
+        except CameraTimeout:
+            self._ensure_recovery()  # ERROR must resolve to IDLE without user action
+            raise
         finally:
             if self._state == _S.CAPTURING:
                 self._try_state(prior)
@@ -1104,6 +1173,25 @@ class CameraService:
             {"files": [{"folder": f.folder, "name": f.name} for f in files]},
         )
         return files
+
+    async def _refuse_bulb_shutter(self) -> None:
+        """A normal shot with the shutter on Bulb/Time never ends on its own (the body waits
+        for a close that never comes). Refuse before firing. Best effort: an unreadable
+        shutter speed does not block the shot."""
+        if self._state not in _LIVE_STATES:
+            return  # the transition below reports the invalid state
+        try:
+            value = await self._run(
+                lambda b: b.get_config("shutterspeed").value, Priority.CAPTURE, 10.0
+            )
+        except AppError:
+            return
+        if str(value).strip().lower() in ("bulb", "time"):
+            raise InvalidState(
+                f"The shutter speed is set to {value}. Choose a shutter speed, "
+                "or use the Bulb capture mode.",
+                details={"shutterspeed": str(value)},
+            )
 
     async def preview_frame(self) -> bytes:
         """One live-view JPEG at PREVIEW priority. Coalesced: at most one pending request;

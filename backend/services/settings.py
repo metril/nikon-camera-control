@@ -91,6 +91,13 @@ _LOGICAL_OF: dict[str, str] = {
 }
 
 
+def logical_name(name: str) -> str:
+    """Alias or any body's widget name -> the logical setting name (``exposuremetermode`` ->
+    ``meteringmode``); other names are returned resolved but unchanged."""
+    w = resolve_name(name)
+    return _LOGICAL_OF.get(w, w)
+
+
 def _rank(name: str) -> int:
     """Write order of a widget name (logical or an alternative name)."""
     return _ORDER.get(name, _ORDER.get(_LOGICAL_OF.get(name, ""), len(_ORDER)))

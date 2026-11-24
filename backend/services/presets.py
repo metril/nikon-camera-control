@@ -59,7 +59,7 @@ from backend.core.errors import (
     SettingNotFound,
 )
 from backend.core.events import EventBus
-from backend.services.settings import COMMON, WRITABLE, SettingsService, resolve_name
+from backend.services.settings import COMMON, WRITABLE, SettingsService, logical_name
 from backend.services.timelapse.brackets import (
     PRESETS,
     generate_quick,
@@ -106,7 +106,7 @@ def bracket_steps(b: StepsBracketing | QuickBracketing | PresetBracketing) -> li
 def _check_settings_names(values: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for k, v in values.items():
-        w = resolve_name(k)
+        w = logical_name(k)  # camera-resolved names are stored under their logical name
         if w not in _WRITABLE:
             raise SettingNotAllowed(
                 f"Setting {k!r} cannot be stored in a preset", details={"name": k}

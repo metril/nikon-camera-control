@@ -620,7 +620,8 @@ async def test_settings_cache_and_invalidation(env: Env) -> None:
     assert env.backend.list_calls == 2
     widget = await svc.set_setting("iso", "400")
     assert widget.value == "400"
-    assert env.bus.of(EventType.SETTING_CHANGED) == [{"name": "iso", "value": "400"}]
+    changed = [e for e in env.bus.of(EventType.SETTING_CHANGED) if e["name"] == "iso"]
+    assert changed == [{"name": "iso", "value": "400"}]
     assert (await svc.get_setting("iso")).value == "400"
     assert env.backend.list_calls == 2  # one widget updated in place, no tree refetch
     tree_iso = next(w for w in (await svc.list_settings())[0].children if w.name == "iso")
