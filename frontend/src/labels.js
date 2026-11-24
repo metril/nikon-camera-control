@@ -47,6 +47,7 @@ export const jobStatus = labeller(JOB_STATUSES)
 
 export const TIMELAPSE_STATES = {
   idle: 'Idle',
+  created: 'Created',
   configured: 'Ready',
   running: 'Running',
   paused: 'Paused',
@@ -81,6 +82,7 @@ export const timelapsePauseReason = labeller(TIMELAPSE_PAUSE_REASONS)
 
 export const TIMELAPSE_WARNINGS = {
   frame_failed: 'Frame failed',
+  interval_too_short: 'The interval is shorter than one frame takes',
   camera_disconnected: 'Camera disconnected',
   restore_failed: 'Could not restore camera settings',
 }
@@ -157,7 +159,22 @@ export const VIDEO_RESOLUTIONS = {
   '1080p': '1080p',
   '720p': '720p',
 }
-export const videoCodec = labeller(VIDEO_CODECS)
+/** Encoder names as ffprobe reports them on rendered videos. */
+export const VIDEO_ENCODERS = {
+  libx264: 'H.264',
+  libx265: 'H.265',
+  'libvpx-vp9': 'VP9',
+  prores_ks: 'ProRes',
+  ...VIDEO_CODECS,
+}
+export const BRACKET_FRAMES = { middle: 'Middle', first: 'First', last: 'Last' }
+export const BRACKET_MODES = {
+  none: 'None',
+  quick: 'Quick',
+  steps: 'Custom steps',
+  preset: 'Preset',
+}
+export const videoCodec = labeller(VIDEO_ENCODERS)
 export const encoderPreset = labeller(ENCODER_PRESETS)
 export const videoQuality = labeller(VIDEO_QUALITIES)
 export const videoResolution = labeller(VIDEO_RESOLUTIONS)

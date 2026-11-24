@@ -27,6 +27,8 @@ function setup({ items = [item('one'), item('two'), item('three')], total } = {}
   })
   files.items = items
   files.total = total ?? items.length
+  vi.spyOn(files, 'loadCounts').mockResolvedValue()
+  files.counts = { photos: 2, videos: 1 }
   vi.spyOn(files, 'acquireThumbnail').mockResolvedValue({ url: 'blob:x', release })
   const toasts = useToastsStore(pinia)
   vi.spyOn(toasts, 'error')
@@ -35,11 +37,6 @@ function setup({ items = [item('one'), item('two'), item('three')], total } = {}
   return { files, toasts, pinia }
 }
 const btn = (text) => wrapper.findAll('button').find((b) => b.text().includes(text))
-const confirmClick = async (b) => {
-  await b.trigger('click')
-  await b.trigger('click')
-  await flushPromises()
-}
 
 beforeEach(() => {
   vi.stubGlobal(
@@ -63,7 +60,8 @@ describe('LocalFiles', () => {
     expect(files.load).toHaveBeenCalled()
     expect(wrapper.findAll('[data-testid=grid] li')).toHaveLength(3)
     expect(wrapper.text()).toContain('one.jpg')
-    expect(wrapper.text()).toContain('3 files')
+    expect(wrapper.text()).toContain('Photos 2')
+    expect(wrapper.text()).toContain('Videos 1')
   })
 
   it('does not fetch thumbnails for off-screen tiles (IntersectionObserver)', async () => {
@@ -101,8 +99,10 @@ describe('LocalFiles', () => {
     files.load.mockClear()
     await btn('Next').trigger('click')
     expect(files.load).toHaveBeenLastCalledWith({ page: 2 })
-    await btn('RAW').trigger('click')
-    expect(files.load).toHaveBeenLastCalledWith({ kind: 'raw', page: 1 })
+    await btn('Videos').trigger('click')
+    expect(files.load).toHaveBeenLastCalledWith({ kind: 'video', page: 1 })
+    await btn('Photos').trigger('click')
+    expect(files.load).toHaveBeenLastCalledWith({ kind: 'all', page: 1 })
     await wrapper.find('select').setValue('oldest')
     expect(files.load).toHaveBeenLastCalledWith({ sort: 'oldest', page: 1 })
   })
@@ -131,8 +131,11 @@ describe('LocalFiles', () => {
       files.items = files.items.filter((f) => f.path !== p)
     })
     await flushPromises()
-    for (const cb of wrapper.findAll('input[type=checkbox]')) await cb.setValue(true)
-    await confirmClick(btn('Delete selected'))
+    await btn('Select').trigger('click')
+    await btn('Select all').trigger('click')
+    await btn('Delete').trigger('click')
+    await btn('Delete 3 items').trigger('click')
+    await flushPromises()
     expect(files.remove).toHaveBeenCalledTimes(3)
     expect(toasts.error).toHaveBeenCalledTimes(1)
     expect(toasts.error.mock.calls[0][0]).toMatch(/2 of 3/)
@@ -144,18 +147,19 @@ describe('LocalFiles', () => {
     await flushPromises()
     await wrapper.find('button[aria-label="Open one.jpg"]').trigger('click')
     await flushPromises()
-    const title = () => document.body.textContent
-    expect(title()).toContain('a/one.jpg')
+    const pos = () =>
+      document.body.querySelector('[data-testid=lightbox-position]').textContent.trim()
+    expect(pos()).toBe('1 of 3')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     await flushPromises()
-    expect(title()).toContain('a/two.jpg')
+    expect(pos()).toBe('2 of 3')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
     await flushPromises()
-    expect(title()).toContain('a/one.jpg')
+    expect(pos()).toBe('1 of 3')
 
     const del = () =>
       [...document.body.querySelectorAll('button')].find(
-        (b) => b.textContent.trim() === 'Delete' || b.textContent.includes('Confirm?'),
+        (b) => b.textContent.includes('Delete') && b.closest('[data-testid=lightbox]'),
       )
     vi.spyOn(files, 'remove').mockRejectedValueOnce(new Error('nope'))
     del().click()
@@ -200,5 +204,68 @@ describe('LocalFiles', () => {
     expect(wrapper.text()).toContain('Could not load files')
     await btn('Retry').trigger('click')
     expect(files.load).toHaveBeenCalledTimes(3)
+  })
+
+  it('select mode: tiles toggle, Select all and Clear, delete asks inline first', async () => {
+    const { files } = setup()
+    vi.spyOn(files, 'remove').mockResolvedValue()
+    await flushPromises()
+    await btn('Select').trigger('click')
+    await wrapper.find('button[aria-label="Select one.jpg"]').trigger('click')
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('1 selected')
+    await btn('Select all').trigger('click')
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('3 selected')
+    expect(btn('Clear')).toBeTruthy()
+    await btn('Delete').trigger('click')
+    expect(files.remove).not.toHaveBeenCalled()
+    expect(btn('Delete 3 items')).toBeTruthy()
+    await btn('Keep').trigger('click')
+    expect(btn('Delete 3 items')).toBeUndefined()
+    await btn('Clear').trigger('click')
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('0 selected')
+  })
+
+  it('long-press with touch starts selecting; a mouse press does not', async () => {
+    vi.useFakeTimers()
+    setup()
+    const tile = () => wrapper.find('button[aria-label="Open one.jpg"]')
+    await tile().trigger('pointerdown', { pointerType: 'mouse' })
+    vi.advanceTimersByTime(600)
+    expect(wrapper.find('[data-testid=select-bar]').exists()).toBe(false)
+    await tile().trigger('pointerup')
+    await tile().trigger('pointerdown', { pointerType: 'touch' })
+    vi.advanceTimersByTime(600)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('1 selected')
+    vi.useRealTimers()
+  })
+
+  it('Photos hides videos on the page; tiles show kind badges', async () => {
+    setup({ items: [item('a'), item('b', { kind: 'raw' }), item('c', { kind: 'video' })] })
+    await flushPromises()
+    const badges = wrapper.findAll('[data-testid=grid] li').map((li) => li.text())
+    expect(badges.join(' ')).toMatch(/JPEG/)
+    expect(badges.join(' ')).toMatch(/RAW/)
+    expect(badges.join(' ')).toMatch(/Video/)
+    await btn('Photos').trigger('click')
+    expect(wrapper.findAll('[data-testid=grid] li')).toHaveLength(2)
+  })
+
+  it('lightbox: Escape closes, double-click zooms to 250%, filmstrip jumps', async () => {
+    setup()
+    await flushPromises()
+    await wrapper.find('button[aria-label="Open one.jpg"]').trigger('click')
+    await flushPromises()
+    const q = (s) => document.body.querySelector(s)
+    expect(q('[data-testid=lightbox-strip]').querySelectorAll('button')).toHaveLength(3)
+    q('[data-testid=lightbox-strip]').querySelectorAll('button')[2].click()
+    await flushPromises()
+    expect(q('[data-testid=lightbox-position]').textContent.trim()).toBe('3 of 3')
+    q('[data-testid=lightbox-stage]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await flushPromises()
+    expect(q('[data-testid=lightbox-zoom]').textContent).toBe('250%')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(q('[data-testid=lightbox]')).toBeNull()
   })
 })

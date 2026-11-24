@@ -1,46 +1,38 @@
 <script setup>
 import { computed } from 'vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
+import { settingName } from '@/labels'
 import { resultNow, fresh } from './useDraft'
 
 const result = resultNow
 const steps = computed(() => result.value?.resolved_steps ?? [])
+const describe = (s) =>
+  Object.entries(s.settings)
+    .map(([k, v]) => `${settingName(k)} ${v}`)
+    .join(', ')
+const delay = (ms) => (ms ? ` · after ${ms / 1000} s` : '')
 </script>
 
 <template>
-  <div v-if="result && steps.length" class="space-y-2" aria-live="polite">
-    <div class="flex items-center gap-2 text-sm">
-      <span class="font-medium">Resolved steps</span>
+  <div v-if="result && steps.length" class="grid gap-2" aria-live="polite">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-medium text-camera-muted">Each frame takes these shots</span>
       <UiBadge :tone="result.validated ? 'ok' : 'warn'">
-        {{ result.validated ? 'Validated against camera' : 'Not validated (checked on start)' }}
+        {{ result.validated ? 'Validated against camera' : 'Checked on start' }}
       </UiBadge>
-      <UiBadge v-if="!fresh" tone="info">stale</UiBadge>
+      <UiBadge v-if="!fresh">Out of date</UiBadge>
     </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-left text-sm">
-        <thead class="text-xs text-slate-400">
-          <tr>
-            <th class="pr-3">#</th>
-            <th class="pr-3">Label</th>
-            <th class="pr-3">Settings</th>
-            <th>Delay</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in steps" :key="s.index" class="border-t border-slate-700">
-            <td class="pr-3">{{ s.index + 1 }}</td>
-            <td class="pr-3">{{ s.label }}</td>
-            <td class="pr-3">
-              {{
-                Object.entries(s.settings)
-                  .map(([k, v]) => `${k}: ${v}`)
-                  .join(', ')
-              }}
-            </td>
-            <td>{{ s.delay_ms }} ms</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="flex flex-wrap gap-1.5" data-test="resolved-steps">
+      <UiBadge
+        v-for="s in steps"
+        :key="s.index"
+        class="!h-auto min-h-[22px] !whitespace-normal py-0.5"
+      >
+        <span class="tabular-nums">{{ s.index + 1 }}</span><template v-if="s.label">
+          {{ s.label }}</template
+        >
+        · {{ describe(s) }}{{ delay(s.delay_ms) }}
+      </UiBadge>
     </div>
   </div>
 </template>

@@ -31,9 +31,11 @@ describe('BracketQuick', () => {
       .findAll('button')
       .map((b) => b.text())
     expect(labels).toEqual(['1/4000', '1/250', '30', 'Bulb'])
-    expect(w.text()).not.toContain('not validated')
+    expect(w.text()).not.toContain('Not validated')
     const off = setup(false)
-    expect(off.findAll('legend').every((l) => l.text().includes('not validated'))).toBe(true)
+    const rows = off.findAll('[data-type]')
+    expect(rows).toHaveLength(4)
+    expect(rows.every((r) => r.text().includes('Not validated'))).toBe(true)
   })
 
   it('one generic toggle works for all four types and keeps order', async () => {

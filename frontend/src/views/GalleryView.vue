@@ -8,14 +8,19 @@ import Videos from '@/components/gallery/Videos.vue'
 const TABS = [
   { value: 'local', label: 'On this server' },
   { value: 'camera', label: 'On the camera card' },
-  { value: 'videos', label: 'Videos' },
+  { value: 'videos', label: 'Time-lapse videos' },
 ]
 const tab = ref('local')
 </script>
 
 <template>
   <section class="space-y-4">
-    <UiSegmented v-model="tab" :options="TABS" aria-label="Gallery source" />
+    <UiSegmented
+      v-model="tab"
+      :options="TABS"
+      aria-label="Gallery source"
+      class="w-full sm:w-auto"
+    />
     <LocalFiles v-if="tab === 'local'" />
     <CameraFiles v-else-if="tab === 'camera'" />
     <Videos v-else />

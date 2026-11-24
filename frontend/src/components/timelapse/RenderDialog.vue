@@ -7,6 +7,18 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiText from '@/components/ui/UiText.vue'
 import UiToggle from '@/components/ui/UiToggle.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import { formatDuration } from './bracketUtils'
+import { useSessionsStore } from '@/stores/sessions'
+import {
+  options,
+  jobStatus,
+  VIDEO_CODECS,
+  VIDEO_QUALITIES,
+  VIDEO_RESOLUTIONS,
+  ENCODER_PRESETS,
+  BRACKET_FRAMES,
+} from '@/labels'
 import { useVideosStore } from '@/stores/videos'
 import { useJobsStore } from '@/stores/jobs'
 import { useToastsStore } from '@/stores/toasts'
@@ -18,6 +30,7 @@ const videos = useVideosStore()
 const jobs = useJobsStore()
 const toasts = useToastsStore()
 const config = useConfigStore()
+const sessions = useSessionsStore()
 
 const form = ref({
   fps: 24,
@@ -35,25 +48,39 @@ const busy = ref(false)
 const job = computed(() => (jobId.value ? jobs.byId[jobId.value] : null))
 const running = computed(() => ['queued', 'pending', 'running'].includes(job.value?.status))
 
-const opts = (a) => a.map((v) => ({ value: v, label: v || 'default' }))
-const codecs = opts(['h264', 'h265', 'prores', 'vp9'])
-const qualities = opts(['', 'low', 'medium', 'high'])
-const presets = opts([
-  '',
-  'ultrafast',
-  'superfast',
-  'veryfast',
-  'faster',
-  'fast',
-  'medium',
-  'slow',
-  'slower',
-  'veryslow',
-])
+const codecs = options(VIDEO_CODECS)
+const qualities = options(VIDEO_QUALITIES)
+const presets = [{ value: '', label: 'Default' }, ...options(ENCODER_PRESETS)]
 // config.video.codec (ffmpeg names) -> render request codec enum
 const CODEC_MAP = { libx264: 'h264', libx265: 'h265', 'libvpx-vp9': 'vp9' }
-const resolutions = opts(['source', '2160p', '1080p', '720p'])
-const frames = opts(['middle', 'first', 'last'])
+const resolutions = options(VIDEO_RESOLUTIONS)
+const frames = options(BRACKET_FRAMES)
+
+/** Shots per frame in the session's bracketing; 1 when it was not bracketed. */
+function setSize(b) {
+  if (!b || b.mode === 'none') return 1
+  if (b.mode === 'steps') return b.steps?.length || 1
+  if (b.mode === 'quick') {
+    const lens = ['exposure', 'iso', 'aperture', 'shutter']
+      .map((k) => b[k]?.length ?? 0)
+      .filter(Boolean)
+    if (!lens.length) return 1
+    return b.combine_mode === 'paired' ? Math.max(...lens) : lens.reduce((x, y) => x + y, 0)
+  }
+  return 1
+}
+const bracketing = computed(() =>
+  props.session && sessions.detail?.id === props.session.id
+    ? sessions.detail.config?.bracketing
+    : null,
+)
+const bracketed = computed(() => !!bracketing.value && bracketing.value.mode !== 'none')
+const frameCount = computed(() =>
+  Math.round((props.session?.frames_captured ?? 0) / setSize(bracketing.value)),
+)
+const videoLength = computed(() =>
+  frameCount.value && form.value.fps > 0 ? frameCount.value / form.value.fps : null,
+)
 
 function payload() {
   const f = form.value
@@ -112,6 +139,7 @@ watch(
     if (!o) return
     if (!running.value) jobId.value = null
     applyVideoDefaults()
+    if (props.session) Promise.resolve(sessions.fetchOne(props.session.id)).catch(() => {})
   },
   { immediate: true },
 )
@@ -124,46 +152,64 @@ const num = (key, v) => (form.value[key] = v ?? NaN)
     :title="`Render video${session ? `: ${session.name}` : ''}`"
     @close="emit('close')"
   >
-    <div v-if="!job" class="grid gap-3 sm:grid-cols-2">
-      <UiNumber
-        :model-value="Number.isFinite(form.fps) ? form.fps : null"
-        label="Frame rate"
-        unit="fps"
-        :min="1"
-        :max="120"
-        @update:model-value="(v) => num('fps', v)"
-      />
+    <div v-if="!job" class="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+      <div class="grid content-start gap-2">
+        <UiNumber
+          :model-value="Number.isFinite(form.fps) ? form.fps : null"
+          label="Frame rate"
+          unit="fps"
+          :min="1"
+          :max="120"
+          @update:model-value="(v) => num('fps', v)"
+        />
+        <p class="text-xs text-camera-muted tabular-nums" data-test="render-length">
+          <template v-if="videoLength != null">
+            {{ frameCount.toLocaleString() }} frames make about {{ formatDuration(videoLength) }} of
+            video.
+          </template>
+          <template v-else>Video length depends on the frame rate.</template>
+        </p>
+      </div>
+      <UiSelect v-model="form.resolution" label="Resolution" :options="resolutions" />
       <UiSelect v-model="form.codec" label="Codec" :options="codecs" />
       <UiSelect v-model="form.quality" label="Quality" :options="qualities" />
-      <UiNumber
-        v-if="!form.quality"
-        :model-value="Number.isFinite(form.crf) ? form.crf : null"
-        label="CRF"
-        :min="0"
-        :max="51"
-        @update:model-value="(v) => num('crf', v)"
-      />
+      <div class="grid content-start gap-2">
+        <UiNumber
+          :model-value="Number.isFinite(form.crf) ? form.crf : null"
+          label="CRF"
+          :min="0"
+          :max="51"
+          :disabled="!!form.quality"
+          @update:model-value="(v) => num('crf', v)"
+        />
+        <p v-if="form.quality" class="text-xs text-camera-muted">
+          Set by the quality choice. Pick Default quality to change it.
+        </p>
+      </div>
       <UiSelect v-model="form.preset" label="Encoder preset" :options="presets" />
-      <UiSelect v-model="form.resolution" label="Resolution" :options="resolutions" />
-      <UiSelect v-model="form.bracket_frame" label="Bracket frame" :options="frames" />
-      <UiToggle v-model="form.deflicker" label="Deflicker" />
-      <UiText
-        v-model="form.output_name"
-        label="Name (optional)"
-        :maxlength="120"
-        class="sm:col-span-2"
+      <UiSelect
+        v-if="bracketed"
+        v-model="form.bracket_frame"
+        label="Bracket frame"
+        :options="frames"
       />
+      <div class="flex items-end pb-2.5">
+        <UiToggle v-model="form.deflicker" label="Deflicker" />
+      </div>
+      <div class="col-span-2 max-[560px]:col-span-1">
+        <UiText v-model="form.output_name" label="File name (optional)" :maxlength="120" />
+      </div>
     </div>
-    <div v-else class="space-y-2" aria-live="polite">
-      <UiProgress :value="job.progress" :label="job.message || job.status" />
-      <p v-if="job.status === 'completed'" class="text-sm text-emerald-400">Video rendered.</p>
-      <p v-if="job.error" class="text-sm text-red-400" role="alert">{{ job.error }}</p>
+    <div v-else class="grid gap-3" aria-live="polite">
+      <UiProgress :value="job.progress" :label="job.message || jobStatus(job.status)" />
+      <UiAlert v-if="job.status === 'completed'" tone="ok">Video rendered.</UiAlert>
+      <UiAlert v-if="job.error" tone="danger">{{ job.error }}</UiAlert>
     </div>
     <template #footer>
       <UiButton v-if="running" variant="danger" @click="cancel">Cancel render</UiButton>
       <UiButton v-else-if="job" @click="emit('close')">Close</UiButton>
       <template v-else>
-        <UiButton @click="emit('close')">Cancel</UiButton>
+        <UiButton variant="ghost" @click="emit('close')">Cancel</UiButton>
         <UiButton variant="primary" :loading="busy" :disabled="!session" @click="submit"
           >Render</UiButton
         >
