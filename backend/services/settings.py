@@ -55,6 +55,7 @@ WRITABLE: tuple[str, ...] = (
     "expprogram",
     "focusmode",
     "focusmode2",
+    "liveviewaffocus",
     "focusmetermode",
     "meteringmode",
     "drivemode",

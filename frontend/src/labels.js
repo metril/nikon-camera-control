@@ -214,6 +214,7 @@ export const SETTING_NAMES = {
   exposurecompensation: 'Exposure compensation',
   autoexposuremode: 'Exposure mode',
   focusmode: 'Focus mode',
+  liveviewaffocus: 'Live view AF mode',
   meteringmode: 'Metering',
   whitebalance: 'White balance',
   imagequality: 'Image quality',

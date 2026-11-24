@@ -249,6 +249,19 @@ def _specs() -> list[_Spec]:
         ),  # fmt: skip
         _Spec(
             "capturesettings",
+            "liveviewaffocus",
+            "Live View AF",
+            R,
+            "Single-servo AF",
+            choices=(
+                "Single-servo AF",
+                "Full-time-servo AF",
+                "Manual Focus (fixed)",
+                "Manual Focus (selection)",
+            ),
+        ),  # fmt: skip
+        _Spec(
+            "capturesettings",
             "meteringmode",
             "Metering Mode",
             R,
@@ -582,6 +595,8 @@ class FakeCamera:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
         new = self._coerce(s, value)
+        if name == "manualfocusdrive" and self._values["liveviewaffocus"] == "Full-time-servo AF":
+            raise CameraBusy("set_config(manualfocusdrive): I/O in progress")  # PTP -110
         if name == "changeafarea":  # like ptp2: "XxY" in full-sensor pixels, live view on
             m = re.fullmatch(r"(\d+)x(\d+)", str(new))
             if not self._values["viewfinder"]:

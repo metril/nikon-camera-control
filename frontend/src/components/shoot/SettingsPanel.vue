@@ -21,7 +21,10 @@ const GROUPS = [
       'meteringmode',
     ],
   },
-  { title: 'Focus', names: ['focusmode', 'focusmode2', 'focusmetermode', 'autofocusdrive'] },
+  {
+    title: 'Focus',
+    names: ['focusmode', 'focusmode2', 'liveviewaffocus', 'focusmetermode', 'autofocusdrive'],
+  },
   {
     title: 'Image',
     names: ['whitebalance', 'imagequality', 'imagesize', 'liveviewsize', 'colorspace'],

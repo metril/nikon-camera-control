@@ -327,6 +327,7 @@ async def test_stack_and_mf_refused_in_af_c_with_clear_error(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     install(app)
+    del fake_camera._specs["liveviewaffocus"]  # body without the live view AF widget
     fake_camera._values["focusmode"] = "AF-C"
     r = await connected_client.post(f"{F}/stack", json=STACK)
     assert r.status_code == 409 and "AF-S" in r.json()["error"]["message"]
@@ -385,3 +386,75 @@ async def test_full_size_not_cached_from_preview_fallback(
         assert second.json()["x"] == 5567 and second.json()["y"] == 3711
     finally:
         focus_mod._MODEL_SIZES.update(orig)
+
+
+SERVO, SINGLE = "Full-time-servo AF", "Single-servo AF"
+
+
+async def test_mf_switches_servo_and_restores_when_idle(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera._values["focusmode"] = "AF-C"  # irrelevant with liveviewaffocus
+    fake_camera._values["liveviewaffocus"] = SERVO
+    r = await connected_client.post(f"{F}/mf", json={"steps": 10})
+    assert r.status_code == 200
+    assert fake_camera._values["liveviewaffocus"] == SERVO
+
+
+async def test_mf_in_user_liveview_restores_when_liveview_stops(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera._values["liveviewaffocus"] = SERVO
+    assert (await connected_client.post("/api/v1/liveview/start")).status_code < 300
+    assert (await connected_client.post(f"{F}/mf", json={"steps": 10})).status_code == 200
+    assert (await connected_client.post(f"{F}/mf", json={"steps": -10})).status_code == 200
+    assert fake_camera._values["liveviewaffocus"] == SINGLE
+    assert (await connected_client.post("/api/v1/liveview/stop")).status_code < 300
+    for _ in range(100):
+        if fake_camera._values["liveviewaffocus"] == SERVO:
+            break
+        await asyncio.sleep(0.02)
+    assert fake_camera._values["liveviewaffocus"] == SERVO
+
+
+async def test_mf_switch_failure_is_clear(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera._values["liveviewaffocus"] = SERVO
+    fake_camera._specs["liveviewaffocus"].readonly = True
+    r = await connected_client.post(f"{F}/mf", json={"steps": 10})
+    assert r.status_code == 409 and "Live View AF" in r.json()["error"]["message"]
+
+
+async def test_stack_switches_servo_and_restores(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera._values["liveviewaffocus"] = SERVO
+    r = await connected_client.post(f"{F}/stack", json=STACK)
+    assert r.status_code < 300
+    job = await wait_job(connected_client, r.json()["id"])
+    assert job["status"] == "completed"
+    assert fake_camera._values["liveviewaffocus"] == SERVO
+
+
+async def test_stack_restores_servo_on_failure(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera._values["liveviewaffocus"] = SERVO
+    real = fake_camera.set_config
+
+    def boom(name: str, value: Any) -> None:
+        if name == "manualfocusdrive" and fake_camera._values["liveviewaffocus"] == SINGLE:
+            raise CameraOperationFailed("boom")
+        real(name, value)
+
+    fake_camera.set_config = boom  # type: ignore[method-assign]
+    r = await connected_client.post(f"{F}/stack", json=STACK)
+    job = await wait_job(connected_client, r.json()["id"])
+    assert job["status"] == "failed"
+    assert fake_camera._values["liveviewaffocus"] == SERVO

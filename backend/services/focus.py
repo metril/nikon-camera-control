@@ -20,6 +20,7 @@ from typing import Any
 
 from PIL import Image
 
+from backend.api.schemas.common import EventType
 from backend.camera.backend import ConfigWidget
 from backend.core.camera_service import CameraService, Priority
 from backend.core.clock import local_now
@@ -46,6 +47,9 @@ RETURN_TIMEOUT_S = 60.0
 DRIVE_WAIT_S = 30.0  # bound on waiting for an in-flight drive after a cancel
 _S = CameraState
 _NO_MF_DRIVE = frozenset({"AF-C", "AF-A"})
+_LVAF = "liveviewaffocus"  # live view's own focus mode widget (D500)
+_LVAF_SERVO = "Full-time-servo AF"  # manualfocusdrive fails -110 in this mode
+_LVAF_SINGLE = "Single-servo AF"
 _SIZE = re.compile(r"(\d+)x(\d+)")
 _MODEL_SIZES = {"D500": (5568, 3712)}
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -77,6 +81,8 @@ class FocusService:
         self._last_af_at: datetime | None = None
         self._range: tuple[int, int, int] | None = None
         self._size: tuple[tuple[Any, Any], tuple[int, int]] | None = None
+        self._lva_orig: str | None = None  # live view AF mode to restore after we switched it
+        self._lva_watch: asyncio.Task[None] | None = None
 
     @property
     def relative_position(self) -> int:
@@ -98,8 +104,17 @@ class FocusService:
             raise CameraBusy(details={"leased_by": st.leased_by})
 
     async def _require_drivable(self) -> None:
-        """MF drive only works in AF-S or M on the D500: in AF-C/AF-A it fails with -110 (busy)
-        after a long wait. Fail early with a clear message instead. Unreadable mode: go on."""
+        """Bodies with a live view AF mode widget (``liveviewaffocus``) drive in live view whatever
+        ``focusmode`` says, because the drive switches that widget to single-servo while it runs.
+        Others: MF drive only works in AF-S or M: in AF-C/AF-A it fails with -110 (busy) after a
+        long wait, so fail early with a clear message. Unreadable mode: go on."""
+        try:
+            await self._camera.refresh_setting(_LVAF)
+            return
+        except SettingNotFound:
+            pass
+        except AppError:
+            return
         try:
             w = await self._camera.refresh_setting("focusmode")
         except AppError:
@@ -111,6 +126,56 @@ class FocusService:
                 f"the camera is in {w.value}. Change the focus mode on the body.",
                 details={"focusmode": w.value, "needs": ["AF-S", "MF"]},
             )
+
+    def _lva_switch(self, b: Any) -> None:
+        """Camera-thread step, live view on: Full-time-servo AF makes ``manualfocusdrive`` fail
+        with -110, so switch to single-servo and remember the original for ``_restore_lva``."""
+        try:
+            cur = str(b.get_config(_LVAF).value)
+        except SettingNotFound:
+            return  # body without the widget: nothing to do
+        if cur != _LVAF_SERVO:
+            return
+        try:
+            b.set_config(_LVAF, _LVAF_SINGLE)
+        except AppError as e:
+            raise InvalidState(
+                "Manual focus needs single-servo: set Live View AF to AF-S on the camera",
+                details={"liveviewaffocus": cur},
+            ) from e
+        if self._lva_orig is None:
+            self._lva_orig = cur
+
+    async def _restore_lva(self, owner: str | None = None) -> None:
+        orig, self._lva_orig = self._lva_orig, None
+        if orig is None:
+            return
+        try:
+            await self._camera.call(
+                lambda b: b.set_config(_LVAF, orig), priority=Priority.CONTROL, owner=owner
+            )
+        except AppError as e:
+            log.warning("could not restore live view AF mode %r: %s", orig, e)
+
+    def _watch_liveview_end(self) -> None:
+        """Single MF taps in a live view the user started would toggle the mode every time, so
+        keep single-servo until live view ends (back to IDLE), then restore. A lost connection
+        just forgets it (the camera resets itself)."""
+        if self._lva_watch is not None and not self._lva_watch.done():
+            return
+        sub = self._camera.bus.subscribe()
+
+        async def watch() -> None:
+            async with sub:
+                async for ev in sub:
+                    if ev.type == EventType.CAMERA_DISCONNECTED:
+                        self._lva_orig = None
+                        return
+                    if ev.type == EventType.CAMERA_STATE and ev.data.get("state") == "idle":
+                        break
+            await self._restore_lva()
+
+        self._lva_watch = asyncio.create_task(watch(), name="focus-lva-restore")
 
     async def get_range(self) -> tuple[int, int, int]:
         """(min, max, step) of ``manualfocusdrive``; cached. Read at KEEPALIVE priority so it
@@ -211,10 +276,16 @@ class FocusService:
                         on = False
                     if not on:
                         b.set_config("viewfinder", 1)
+                    self._lva_switch(b)
                     b.set_config("manualfocusdrive", steps)
 
                 await self._drive_tracked(_drive, steps, owner)
             finally:
+                if owner is None:  # a running stack restores at its end
+                    if entered:
+                        await self._restore_lva()
+                    elif self._lva_orig is not None:
+                        self._watch_liveview_end()
                 if entered and self._camera.state == _S.LIVEVIEW:
                     with contextlib.suppress(AppError):
                         await self._camera.transition(_S.IDLE)
@@ -346,6 +417,7 @@ class FocusService:
                 lo, hi, _ = await self.get_range()
                 while return_to_start and (back := start_pos - self._pos):
                     await self.move(max(lo, min(hi, back)), owner=OWNER)
+                await self._restore_lva(OWNER)
                 state = self._camera.state
                 if prior == _S.LIVEVIEW and state == _S.IDLE:
                     await self._camera.transition(_S.LIVEVIEW)
@@ -353,3 +425,6 @@ class FocusService:
                     await self._camera.transition(_S.IDLE)
         except (AppError, TimeoutError) as e:
             log.warning("focus stack cleanup incomplete: %s", e)
+        finally:
+            if self._lva_orig is not None:  # the return moves failed or timed out
+                await self._restore_lva(OWNER)
