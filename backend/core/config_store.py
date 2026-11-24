@@ -101,6 +101,28 @@ class CameraConfig(_Section):
         description="Added to the start of every downloaded photo's name. Up to 40 characters; "
         "spaces and symbols become dashes.",
     )
+    focus_step_small: int = Field(
+        default=150,
+        ge=1,
+        le=32767,
+        title="Small focus step",
+        description="Motor steps per click; lenses differ, a full sweep on a typical zoom is "
+        "~6000-8000 steps.",
+    )
+    focus_step_large: int = Field(
+        default=1000,
+        ge=1,
+        le=32767,
+        title="Large focus step",
+        description="Motor steps per click; lenses differ, a full sweep on a typical zoom is "
+        "~6000-8000 steps.",
+    )
+
+    @model_validator(mode="after")
+    def _focus_steps(self) -> CameraConfig:
+        if self.focus_step_small > self.focus_step_large:
+            raise ValueError("focus_step_small must not be larger than focus_step_large")
+        return self
 
 
 class LiveViewConfig(_Section):
@@ -469,6 +491,17 @@ class ConfigStore:
 
     @staticmethod
     def _lenient(data: dict[str, Any], default: AppConfig) -> AppConfig:
+        cam = data.get("camera")
+        if isinstance(cam, dict):  # fix the pair here; the cross-field error would drop the section
+            small, large = cam.get("focus_step_small"), cam.get("focus_step_large")
+            if (
+                isinstance(small, int)
+                and isinstance(large, int)
+                and not isinstance(small, bool)
+                and not isinstance(large, bool)
+                and small > large
+            ):
+                cam["focus_step_large"] = small
         for _ in range(50):
             try:
                 return AppConfig.model_validate(data)
@@ -500,6 +533,26 @@ class ConfigStore:
         with self._lock:
             old = self._config
             merged = _deep_merge(old.model_dump(mode="json"), patch)
+            cam = merged.get("camera")
+            if (
+                isinstance(cam, dict)
+                and isinstance(cam.get("focus_step_small"), int)
+                and isinstance(cam.get("focus_step_large"), int)
+                and cam["focus_step_small"] > cam["focus_step_large"]
+            ):
+                msg = "focus_step_small must not be larger than focus_step_large"
+                raise ConfigInvalid(
+                    "Invalid configuration",
+                    details={
+                        "errors": [
+                            {
+                                "type": "value_error",
+                                "loc": ["camera", "focus_step_small"],
+                                "msg": msg,
+                            }
+                        ]
+                    },
+                )
             try:
                 new = AppConfig.model_validate(merged)
             except ValidationError as exc:

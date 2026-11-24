@@ -6,8 +6,10 @@ Every ``gphoto2.GPhoto2Error`` is translated to a domain exception (gphoto2 code
 
 from __future__ import annotations
 
+import contextlib
 import posixpath
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from backend.camera.backend import (
     EventType,
     FileKind,
     StorageInfo,
+    parse_property_change,
 )
 from backend.camera.usb_access import (
     DEFAULT_DEV_ROOT,
@@ -244,6 +247,9 @@ class Gphoto2Backend:
     # (bus, device) of the camera we last opened, shared by every instance so a USB reset can
     # target just that node even from a fresh, never-opened backend.
     _last_port: tuple[int, int] | None = None
+
+    # Called with the PTP property code of every DevicePropChanged event seen by wait_for_event.
+    property_listener: Callable[[int, str | None, str | None], None] | None = None
 
     def __init__(
         self,
@@ -496,6 +502,10 @@ class Gphoto2Backend:
             )
         if etype == gp.GP_EVENT_CAPTURE_COMPLETE:
             return CameraEvent(EventType.CAPTURE_COMPLETE)
+        change = parse_property_change(data)
+        if change is not None and self.property_listener is not None:
+            with contextlib.suppress(Exception):
+                self.property_listener(*change)
         return CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": etype, "data": str(data)})
 
     # -- filesystem

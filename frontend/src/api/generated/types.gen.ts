@@ -525,6 +525,18 @@ export type CameraConfig = {
      */
     filename_prefix?: string | null;
     /**
+     * Large focus step
+     *
+     * Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.
+     */
+    focus_step_large?: number;
+    /**
+     * Small focus step
+     *
+     * Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.
+     */
+    focus_step_small?: number;
+    /**
      * Keep a copy on the camera card
      *
      * Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.
@@ -590,6 +602,18 @@ export type CameraConfigPatch = {
      * Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.
      */
     filename_prefix?: string | null;
+    /**
+     * Focus Step Large
+     *
+     * Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.
+     */
+    focus_step_large?: number | null;
+    /**
+     * Focus Step Small
+     *
+     * Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.
+     */
+    focus_step_small?: number | null;
     /**
      * Keep Card Copy
      *
@@ -881,6 +905,12 @@ export type CameraStatusOut = {
      * Model
      */
     model?: string | null;
+    /**
+     * Property Events
+     *
+     * The body announces its own setting changes, so polling is unnecessary
+     */
+    property_events?: boolean;
     /**
      * Serial
      */
@@ -2730,6 +2760,12 @@ export type RecordingStatus = {
      * Active
      */
     active: boolean;
+    /**
+     * Duration S
+     *
+     * Real clip length read with ffprobe once the download finished; null if not downloaded or ffprobe is unavailable. elapsed_s is the app's own timing
+     */
+    duration_s?: number | null;
     /**
      * Elapsed S
      *
@@ -7853,7 +7889,14 @@ export type GetSettingData = {
          */
         name: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Fresh
+         *
+         * Re-read this one setting from the camera instead of the cache
+         */
+        fresh?: boolean;
+    };
     url: '/api/v1/settings/{name}';
 };
 

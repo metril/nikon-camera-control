@@ -1,6 +1,7 @@
 <script setup>
 import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useCameraStore } from '@/stores/camera'
+import { useSettingsStore } from '@/stores/settings'
 import { useShootStore } from '@/stores/shoot'
 import CameraGate from '@/components/shell/CameraGate.vue'
 import CaptureSide from '@/components/shoot/CaptureSide.vue'
@@ -14,6 +15,7 @@ const emit = defineEmits(['open-gallery', 'open-timelapse', 'open-settings'])
 const go = (tab) => emit(`open-${tab}`)
 
 const camera = useCameraStore()
+const settings = useSettingsStore()
 const shoot = useShootStore()
 const strip = ref(null)
 
@@ -38,8 +40,31 @@ function onKeydown(e) {
     strip.value?.focusCell(cell)
   }
 }
-const listen = () => document.addEventListener('keydown', onKeydown)
-const unlisten = () => document.removeEventListener('keydown', onKeydown)
+
+// Re-read the exposure strip when this view shows. Fallback for bodies that do not announce
+// changes made on the camera: also every 5 s while visible and idle, until the backend has
+// seen a property-change event from this body (then events keep the strip in sync).
+const SYNC_MS = 5000
+let syncTimer = null
+function syncExposure() {
+  if (document.hidden || !camera.connected || camera.state !== 'idle' || camera.leasedBy) return
+  settings.refreshExposure().catch(() => {})
+}
+function pollExposure() {
+  if (!camera.propertyEvents) syncExposure()
+}
+const listen = () => {
+  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('visibilitychange', syncExposure)
+  syncExposure()
+  if (!syncTimer) syncTimer = setInterval(pollExposure, SYNC_MS)
+}
+const unlisten = () => {
+  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('visibilitychange', syncExposure)
+  clearInterval(syncTimer)
+  syncTimer = null
+}
 onMounted(listen)
 onActivated(listen)
 onDeactivated(unlisten)

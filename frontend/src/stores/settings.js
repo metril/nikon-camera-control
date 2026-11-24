@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '@/api'
+import { SETTING_FOR } from '@/components/shoot/exposure'
 import { guard } from './helpers'
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -43,6 +44,24 @@ export const useSettingsStore = defineStore('settings', () => {
     await guard(lastError, () => api.refreshSettings())
     await fetchCommon()
     if (all.value.length) await fetchAll()
+  }
+
+  /**
+   * Re-read just the exposure strip's widgets from the camera (one cheap read each) for bodies
+   * that do not announce changes made on the body. Skips widgets with a write in flight.
+   */
+  async function refreshExposure() {
+    const names = Object.values(SETTING_FOR)
+      .map((cands) => cands.find((n) => common.value.some((s) => s.name === n)))
+      .filter(Boolean)
+    for (const name of names) {
+      try {
+        const out = await api.getSetting({ path: { name }, query: { fresh: true } })
+        if (!queues.has(name) && out && typeof out === 'object') patchLocal(name, out)
+      } catch {
+        return // camera busy or gone: the next tick tries again
+      }
+    }
   }
 
   /**
@@ -110,6 +129,7 @@ export const useSettingsStore = defineStore('settings', () => {
     fetchCommon,
     fetchAll,
     refreshFromCamera,
+    refreshExposure,
     set,
     onSettingChanged,
   }

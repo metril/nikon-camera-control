@@ -28,6 +28,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
+import { useConfigStore } from '@/stores/config'
 import { useFocusStore } from '@/stores/focus'
 
 let n
@@ -248,13 +249,87 @@ describe('LiveViewPanel', () => {
     await nextTick()
     await w.find('[data-testid="lv-focus-near-large"]').trigger('click')
     await w.find('[data-testid="lv-focus-far-small"]').trigger('click')
-    expect(focus.manual).toHaveBeenNthCalledWith(1, -250)
-    expect(focus.manual).toHaveBeenNthCalledWith(2, 50)
+    expect(focus.manual).toHaveBeenNthCalledWith(1, -1000)
+    expect(focus.manual).toHaveBeenNthCalledWith(2, 150)
     await w.find('[data-testid="lv-autofocus"]').trigger('click')
     await flushPromises()
     expect(focus.autofocus).toHaveBeenCalled()
     expect(focus.setPoint).not.toHaveBeenCalled()
     expect(w.find('[data-testid="lv-state"]').text()).toBe('Focus locked')
+    w.unmount()
+  })
+
+  it('focus limit: no toast, that direction disabled, re-enabled by the opposite step', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    const limitErr = Object.assign(new Error('The lens is at its closest focus'), {
+      status: 409,
+      code: 'FOCUS_LIMIT',
+    })
+    vi.spyOn(focus, 'manual').mockRejectedValueOnce(limitErr).mockResolvedValue()
+    const near = w.find('[data-testid="lv-focus-near-small"]')
+    await near.trigger('click')
+    await flushPromises()
+    expect(useToastsStore().items).toHaveLength(0)
+    expect(near.attributes('aria-disabled')).toBe('true')
+    expect(near.attributes('title')).toBe('Closest focus')
+    expect(w.find('[data-testid="lv-focus-near-large"]').attributes('aria-disabled')).toBe('true')
+    expect(w.find('[data-testid="lv-focus-far-small"]').attributes('aria-disabled')).toBeUndefined()
+    await near.trigger('click') // blocked locally
+    expect(focus.manual).toHaveBeenCalledTimes(1)
+    await w.find('[data-testid="lv-focus-far-small"]').trigger('click')
+    await flushPromises()
+    expect(near.attributes('aria-disabled')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a non-limit focus step error still toasts', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    vi.spyOn(focus, 'manual').mockRejectedValue(new Error('boom'))
+    await w.find('[data-testid="lv-focus-near-small"]').trigger('click')
+    await flushPromises()
+    expect(useToastsStore().items.at(-1).message).toBe('boom')
+    expect(
+      w.find('[data-testid="lv-focus-near-small"]').attributes('aria-disabled'),
+    ).toBeUndefined()
+    w.unmount()
+  })
+
+  it('manual mode: tap only moves the AF point, no autofocus; steps follow the config', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    useConfigStore().config = { camera: { focus_step_small: 20, focus_step_large: 300 } }
+    vi.spyOn(focus, 'manual').mockResolvedValue()
+    vi.spyOn(focus, 'autofocus').mockResolvedValue({ focused: true })
+    vi.spyOn(focus, 'setPoint').mockResolvedValue()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    await w.find('[data-testid="lv-focus-mode"]').trigger('click')
+    expect(w.find('[data-testid="lv-autofocus"]').exists()).toBe(false)
+    expect(localStorage.getItem('focusMode')).toBe('manual')
+    const ov = w.find('[data-testid="lv-overlay"]')
+    await ov.trigger('pointerdown', { clientX: 0, clientY: 0 })
+    await ov.trigger('pointerup', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    expect(focus.setPoint).toHaveBeenCalledTimes(1)
+    expect(focus.autofocus).not.toHaveBeenCalled()
+    await w.find('[data-testid="lv-focus-far-large"]').trigger('click')
+    expect(focus.manual).toHaveBeenCalledWith(300)
+    localStorage.removeItem('focusMode')
     w.unmount()
   })
 

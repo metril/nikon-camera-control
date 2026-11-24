@@ -581,3 +581,34 @@ async def test_cancelled_stack_keeps_partial_result(
     assert j["status"] == "cancelled"
     assert j["result"]["file_count"] == 1 and j["result"]["folder"]
     assert j["result"]["returned_to_start"] is True and j["result"]["net_steps"] == 0
+
+
+async def test_drive_past_end_of_travel_is_focus_limit(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    fake_camera.focus_travel = 200
+    r = await connected_client.post(f"{F}/mf", json={"steps": -50})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "FOCUS_LIMIT"
+    assert "closest" in r.json()["error"]["message"]
+    r = await connected_client.post(f"{F}/mf", json={"steps": 300})
+    assert r.status_code == 409 and "farthest" in r.json()["error"]["message"]
+
+
+async def test_drive_switches_manual_focus_liveview_af_and_restores(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    install(app)
+    manual = "Manual Focus (fixed)"
+    fake_camera._values["liveviewaffocus"] = manual
+    r = await connected_client.post(f"{F}/mf", json={"steps": 50})
+    assert r.status_code == 200
+    await _until(lambda: fake_camera._values["liveviewaffocus"] == manual)
+
+
+async def test_viewfinder_failure_is_not_focus_limit(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    fake_camera.fail_next("set_config", exc=CameraOperationFailed("Unspecified error"))
+    r = await connected_client.post(f"{F}/mf", json={"steps": 30})
+    assert r.status_code == 502 and r.json()["error"]["code"] == "CAMERA_OPERATION_FAILED"

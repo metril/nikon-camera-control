@@ -28,7 +28,9 @@ from backend.core.errors import (
     AppError,
     CameraBusy,
     CameraNotConnected,
+    CameraOperationFailed,
     FeatureUnsupported,
+    FocusLimit,
     InvalidState,
     SettingInvalid,
     SettingNotFound,
@@ -48,8 +50,12 @@ DRIVE_WAIT_S = 30.0  # bound on waiting for an in-flight drive after a cancel
 _S = CameraState
 _NO_MF_DRIVE = frozenset({"AF-C", "AF-A"})
 _LVAF = "liveviewaffocus"  # live view's own focus mode widget (D500)
-_LVAF_SERVO = "Full-time-servo AF"  # manualfocusdrive fails -110 in this mode
+_LVAF_SERVO = (
+    "Full-time-servo AF"  # manualfocusdrive fails -110 in this mode (as in Manual Focus modes)
+)
 _LVAF_SINGLE = "Single-servo AF"
+_LVAF_MANUAL = "Manual Focus"  # prefix: the D500 refuses manualfocusdrive in these modes too
+_LIMIT_HINTS = ("unspecified error", "could not complete")  # what a move past the end returns
 _RETRY_S = 0.3  # retry of a restore the camera was too busy for
 _SIZE = re.compile(r"(\d+)x(\d+)")
 _MODEL_SIZES = {"D500": (5568, 3712)}
@@ -142,7 +148,7 @@ class FocusService:
             cur = str(b.get_config(_LVAF).value)
         except SettingNotFound:
             return  # body without the widget: nothing to do
-        if cur != _LVAF_SERVO:
+        if cur != _LVAF_SERVO and not cur.startswith(_LVAF_MANUAL):
             return
         try:
             b.set_config(_LVAF, _LVAF_SINGLE)
@@ -352,7 +358,17 @@ class FocusService:
                     self._lva_switch(b)
                     b.set_config("manualfocusdrive", steps)
 
-                await self._drive_tracked(_drive, steps, owner)
+                try:
+                    await self._drive_tracked(_drive, steps, owner)
+                except CameraOperationFailed as e:
+                    if e.details.get("operation") == "set_config(manualfocusdrive)" and any(
+                        h in str(e).lower() for h in _LIMIT_HINTS
+                    ):
+                        end = "closest" if steps < 0 else "farthest"
+                        raise FocusLimit(
+                            f"The lens is at its {end} focus", details={"steps": steps}
+                        ) from e
+                    raise
             finally:
                 self._flush_lva()
                 if owner is None:  # a running stack restores at its end

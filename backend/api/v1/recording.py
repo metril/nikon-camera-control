@@ -57,6 +57,7 @@ def _out(i: RecordingInfo) -> RecordingStatus:
         warning=i.warning,
         segments=i.segments,
         note=i.note,
+        duration_s=i.duration_s,
     )
 
 

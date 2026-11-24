@@ -4,7 +4,7 @@ import { ApiError } from '@/api'
 
 vi.mock('@/api', async (orig) => {
   const mod = await orig()
-  return { ...mod, api: { setSetting: vi.fn(), listSettings: vi.fn() } }
+  return { ...mod, api: { setSetting: vi.fn(), listSettings: vi.fn(), getSetting: vi.fn() } }
 })
 import { api } from '@/api'
 import { useSettingsStore } from './settings'
@@ -105,5 +105,24 @@ describe('settings write queue', () => {
     d.reject(new ApiError({ code: 'X', message: 'x' }))
     await p
     expect(s.get('iso')).toBe(640)
+  })
+
+  it('refreshExposure re-reads only the strip widgets and skips one being written', async () => {
+    s.common = [
+      { name: 'iso', value: 100 },
+      { name: 'f-number', value: '4' },
+      { name: 'datetime', value: 1 },
+    ]
+    api.getSetting.mockImplementation(async ({ path }) => ({
+      name: path.name,
+      value: path.name === 'iso' ? 400 : '5.6',
+    }))
+    api.setSetting.mockReturnValue(new Promise(() => {}))
+    s.set('f-number', '8') // in flight
+    await s.refreshExposure()
+    expect(api.getSetting.mock.calls.map((c) => c[0].path.name).sort()).toEqual(['f-number', 'iso'])
+    expect(api.getSetting.mock.calls[0][0].query).toEqual({ fresh: true })
+    expect(s.get('iso')).toBe(400)
+    expect(s.get('f-number')).toBe('8')
   })
 })

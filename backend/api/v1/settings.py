@@ -72,8 +72,14 @@ async def update_settings(body: SettingsPatchIn, svc: SettingsDep) -> SettingsPa
 
 
 @router.get("/{name}", operation_id="get_setting", response_model=SettingOut)
-async def get_setting(name: str, svc: SettingsDep) -> SettingOut:
-    return _out(await svc.get(name))
+async def get_setting(
+    name: str,
+    svc: SettingsDep,
+    fresh: Annotated[
+        bool, Query(description="Re-read this one setting from the camera instead of the cache")
+    ] = False,
+) -> SettingOut:
+    return _out(await svc.get(name, fresh=fresh))
 
 
 @router.put("/{name}", operation_id="set_setting", response_model=SettingOut)

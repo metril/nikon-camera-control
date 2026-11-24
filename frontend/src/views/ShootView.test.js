@@ -97,4 +97,44 @@ describe('ShootView', () => {
     expect(wrapper.find('[data-test="lv"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="gate-connect"]').exists()).toBe(false)
   })
+
+  it('re-reads the exposure strip on show and every 5 s while idle, not while busy', () => {
+    vi.useFakeTimers()
+    try {
+      setup()
+      const camera = useCameraStore()
+      const st = useSettingsStore()
+      st.refreshExposure = vi.fn().mockResolvedValue()
+      camera.connected = true
+      camera.state = 'idle'
+      vi.advanceTimersByTime(5000)
+      expect(st.refreshExposure).toHaveBeenCalledTimes(1)
+      camera.state = 'capturing'
+      vi.advanceTimersByTime(5000)
+      expect(st.refreshExposure).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('skips the poll while leased and drops it once the body announces property events', () => {
+    vi.useFakeTimers()
+    try {
+      setup()
+      const camera = useCameraStore()
+      const st = useSettingsStore()
+      st.refreshExposure = vi.fn().mockResolvedValue()
+      camera.leasedBy = 'recording'
+      vi.advanceTimersByTime(5000)
+      expect(st.refreshExposure).not.toHaveBeenCalled()
+      camera.leasedBy = null
+      camera.propertyEvents = true
+      vi.advanceTimersByTime(10000)
+      expect(st.refreshExposure).not.toHaveBeenCalled()
+      document.dispatchEvent(new Event('visibilitychange')) // shown again: one refresh
+      expect(st.refreshExposure).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

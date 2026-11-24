@@ -84,6 +84,7 @@ class StubBackend:
         self.events: collections.deque[CameraEvent] = collections.deque()
         self.on_capture: list[CameraEvent] = []  # events the capture itself produces
         self.values = {"iso": "100", "aperture": "5.6"}
+        self.fail_events: Exception | None = None
 
     @property
     def is_open(self) -> bool:
@@ -138,6 +139,8 @@ class StubBackend:
         return A_NEF
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
+        if self.fail_events is not None:
+            raise self.fail_events
         if self.events:
             return self.events.popleft()
         time.sleep(min(timeout_s, 0.005))
@@ -873,3 +876,58 @@ async def test_card_check_caches_only_ok_storage(env: Env) -> None:
     assert await svc.card_problem() is None  # just-inserted card works at once
     env.backend.storage = []
     assert await svc.card_problem() is None  # OK result stays cached
+
+
+# review fixes ---------------------------------------------------------------------------
+async def test_preview_does_not_drain_events_while_recording_or_leased(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("backend.core.camera_service._PREVIEW_EVENT_S", 0.0)
+    svc = await env.make()
+    await svc.transition(S.LIVEVIEW)
+    clip = CameraEvent(CamEvent.FILE_ADDED, A_NEF)
+    env.backend.events.append(clip)
+    async with svc.lease("recording"):
+        await svc.preview_frame()
+        assert list(env.backend.events) == [clip]  # the lease holder's watcher keeps it
+    await svc.transition(S.RECORDING)
+    await svc.preview_frame()
+    assert list(env.backend.events) == [clip]
+    assert not svc.stray_files
+
+
+async def test_event_poll_does_not_count_as_activity_so_keepalive_runs(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("backend.core.camera_service._EVENT_POLL_S", 0.01)
+    await env.make(keepalive_enabled=True, keepalive_interval_s=0.1)
+    await wait_until(lambda: env.backend.battery_reads >= 2)
+
+
+async def test_event_poll_repeated_failures_are_a_lost_link(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("backend.core.camera_service._EVENT_POLL_S", 0.01)
+    svc = await env.make(connect_retries=0, reconnect_interval_s=60.0)
+    env.backend.fail_events = RuntimeError("wedged")
+    await wait_until(lambda: svc.state == S.DISCONNECTED)
+    assert env.bus.of(EventType.CAMERA_DISCONNECTED)[0]["reason"] == "event poll failed"
+
+
+async def test_connect_cancels_previous_background_tasks(env: Env) -> None:
+    svc = await env.make()
+    old_events, old_keep = svc._event_task, svc._keepalive_task  # noqa: SLF001
+    assert old_events is not None
+    svc._try_state(S.DISCONNECTED)  # noqa: SLF001 - as a connect() from ERROR would find it
+    await svc._do_connect()  # noqa: SLF001
+    assert old_events.done() and old_keep is not None and old_keep.done()
+    assert svc._event_task is not old_events  # noqa: SLF001
+
+
+async def test_refresh_setting_shared_coalesces_concurrent_and_recent_reads(env: Env) -> None:
+    svc = await env.make()
+    before = env.backend.get_calls
+    results = await asyncio.gather(*(svc.refresh_setting_shared("iso") for _ in range(4)))
+    assert sum(performed for _, performed in results) == 1
+    await svc.refresh_setting_shared("iso")  # within the TTL, nothing changed since
+    assert env.backend.get_calls == before + 1

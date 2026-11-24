@@ -845,6 +845,22 @@
             "description": "Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.",
             "title": "File name prefix"
           },
+          "focus_step_large": {
+            "default": 1000,
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Large focus step",
+            "type": "integer"
+          },
+          "focus_step_small": {
+            "default": 150,
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Small focus step",
+            "type": "integer"
+          },
           "keep_card_copy": {
             "default": true,
             "description": "Turn off to delete the card copy once the download is verified. Only applies when the camera saves to the memory card.",
@@ -951,6 +967,30 @@
             ],
             "description": "Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes.",
             "title": "Filename Prefix"
+          },
+          "focus_step_large": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "title": "Focus Step Large"
+          },
+          "focus_step_small": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motor steps per click; lenses differ, a full sweep on a typical zoom is ~6000-8000 steps.",
+            "title": "Focus Step Small"
           },
           "keep_card_copy": {
             "anyOf": [
@@ -1418,6 +1458,12 @@
               }
             ],
             "title": "Model"
+          },
+          "property_events": {
+            "default": false,
+            "description": "The body announces its own setting changes, so polling is unnecessary",
+            "title": "Property Events",
+            "type": "boolean"
           },
           "serial": {
             "anyOf": [
@@ -4459,6 +4505,19 @@
             "title": "Active",
             "type": "boolean"
           },
+          "duration_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Real clip length read with ffprobe once the download finished; null if not downloaded or ffprobe is unavailable. elapsed_s is the app's own timing",
+            "title": "Duration S"
+          },
           "elapsed_s": {
             "description": "Seconds recorded (final value once ended)",
             "minimum": 0.0,
@@ -6965,7 +7024,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.4.4"
+    "version": "0.4.5"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -14432,6 +14491,18 @@
             "schema": {
               "title": "Name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Re-read this one setting from the camera instead of the cache",
+            "in": "query",
+            "name": "fresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Re-read this one setting from the camera instead of the cache",
+              "title": "Fresh",
+              "type": "boolean"
             }
           }
         ],

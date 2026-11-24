@@ -213,6 +213,45 @@ async def test_stop_refused_for_a_while_then_succeeds_and_reports_real_duration(
     assert not done.active and done.warning is None and done.last_clip is not None
 
 
+async def test_duration_is_the_first_stop_request_not_the_final_success(rig: Rig) -> None:
+    await rig.rec.start(max_seconds=None, download_after=False)
+    rig.clock.t = 10.0
+    rig.fake.movie_stop_fails_for(0.3)  # the D500 refuses while finalising
+    rig.rec._retry_delay_s = 0.05
+
+    async def later() -> None:
+        await asyncio.sleep(0.1)
+        rig.clock.t = 11.08  # a retry succeeds a second later
+
+    task = asyncio.create_task(later())
+    done = await rig.rec.stop()
+    await task
+    assert done.elapsed_s == 10.0
+
+
+async def test_real_clip_duration_is_read_after_download(rig: Rig) -> None:
+    async def probe(_p: Path) -> float | None:
+        return 9.91
+
+    rig.rec._probe = probe
+    await rig.rec.start(max_seconds=None, download_after=True)
+    done = await rig.rec.stop()
+    assert done.duration_s is None and done.job_id
+    await until(lambda: rig.jobs.get(done.job_id).status == JobStatus.COMPLETED)
+    assert rig.rec.info().duration_s == 9.91
+
+
+async def test_missing_ffprobe_leaves_duration_unset(rig: Rig) -> None:
+    async def probe(_p: Path) -> float | None:
+        return None
+
+    rig.rec._probe = probe
+    await rig.rec.start(max_seconds=None, download_after=True)
+    done = await rig.rec.stop()
+    await until(lambda: rig.jobs.get(done.job_id).status == JobStatus.COMPLETED)
+    assert rig.rec.info().duration_s is None
+
+
 async def test_unplug_mid_recording_marks_ended_and_releases_lease(rig: Rig) -> None:
     sub = rig.bus.subscribe()
     seen: list[EventType] = []
