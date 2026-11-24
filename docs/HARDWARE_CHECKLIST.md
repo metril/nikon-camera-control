@@ -226,5 +226,7 @@ State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, focusmode2 
 | 10.5 cancel a stack | ✅ | Cancelled at shot 2/10; job result kept: 2 files, `returned_to_start: true`. |
 | Live view AF restore | ✅ | Back to Full-time-servo AF ~0.5 s after live view stops. A user's own PUT of `liveviewaffocus` while switched (even the same value) is kept, not overwritten. |
 | 11.2 set camera clock | ✅ | PUT `/camera/datetime` host mode at UTC-5: camera wall time 11:22 local; app time zone now America/New_York. |
+| 3.12 delete a card file | ✅ | DELETE `/store_00010001/DCIM/103ND500/DSC_2167.JPG` (a trigger-only test shot, approved): 200 in 0.23 s, gone from the listing, neighbours DSC_2160-2168 kept; a second DELETE gives 404 `FILE_NOT_FOUND`. The slot-2 backup copy was not touched. |
+| 11.3 clock around DST (America/New_York) | ✅ | Explicit UTC instants: 2027-03-14 06:59:30Z -> 01:59:30, 07:00:30Z -> 03:00:30 (spring forward); 2026-11-01 05:59:30Z -> 01:59:30, 06:00:30Z -> 01:00:30 (fall back). Restored to host time (12:27 local). |
 
 State restored: P, ISO 2500, NEF+Fine*, capture target Internal RAM, liveviewaffocus Full-time-servo AF, idle.
