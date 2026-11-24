@@ -22,6 +22,7 @@ from PIL import Image
 
 from backend.camera.backend import ConfigWidget
 from backend.core.camera_service import CameraService, Priority
+from backend.core.clock import local_now
 from backend.core.errors import (
     AppError,
     CameraBusy,
@@ -286,7 +287,7 @@ class FocusService:
             raise
 
     def _make_dest(self, name: str | None) -> Path:
-        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        stamp = local_now().strftime("%Y-%m-%d-%H%M%S")
         label = sanitize_name(_SAFE.sub("-", name or ""), default="").strip("_-")
         base = self._store.root() / "stacks"
         base.mkdir(parents=True, exist_ok=True)

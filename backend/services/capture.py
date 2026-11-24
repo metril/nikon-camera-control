@@ -10,7 +10,6 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from backend.api.schemas.common import EventType
@@ -22,6 +21,7 @@ from backend.core.camera_service import (
     dedupe_slot_copies,
     drain_pending_events,
 )
+from backend.core.clock import local_now
 from backend.core.errors import (
     AppError,
     CameraNotConnected,
@@ -283,7 +283,7 @@ class CaptureService:
         name_prefix: str,
         delete_from_camera: bool,
     ) -> list[Path]:
-        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-")
+        stamp = local_now().strftime("%Y-%m-%d-%H%M%S-")
         saved = 0
 
         def stored(path: Path) -> None:

@@ -216,3 +216,13 @@ def test_reset_preserves_storage_section(tmp_path: Path) -> None:
     assert new.storage.target_id == "smb-nas" and [x.id for x in new.storage.locations] == [
         "smb-nas"
     ]
+
+
+def test_timezone_validated(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "config.json")
+    assert store.config.timezone is None
+    store.update({"timezone": "America/New_York"})
+    assert store.config.timezone == "America/New_York"
+    with pytest.raises(ConfigInvalid):
+        store.update({"timezone": "Mars/Olympus"})
+    assert store.config.timezone == "America/New_York"

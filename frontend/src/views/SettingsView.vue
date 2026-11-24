@@ -53,6 +53,8 @@ const loadError = ref('')
 // Storage locations/target/backups are managed by StorageSection, not the generic form.
 const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
 // Shown in the Capture section instead of their own section.
+// Shown in Display.
+const DISPLAY_OWNED = ['timezone']
 const CAPTURE_OWNED = ['camera.keep_card_copy', 'camera.download_photos', 'camera.filename_prefix']
 const sections = computed(() =>
   buildSections(config.schema).map((s) =>
@@ -63,7 +65,12 @@ const sections = computed(() =>
 )
 const shownSections = computed(() =>
   sections.value
-    .map((s) => ({ ...s, fields: s.fields.filter((f) => !CAPTURE_OWNED.includes(s.path(f))) }))
+    .map((s) => ({
+      ...s,
+      fields: s.fields.filter(
+        (f) => !CAPTURE_OWNED.includes(s.path(f)) && !DISPLAY_OWNED.includes(s.path(f)),
+      ),
+    }))
     .filter((s) => s.fields.length || s.key === 'camera'),
 )
 const keepCardField = computed(() =>
@@ -166,6 +173,27 @@ async function resetDefaults() {
 }
 
 // Display
+const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+const zoneNames = (() => {
+  try {
+    return Intl.supportedValuesOf('timeZone')
+  } catch {
+    return []
+  }
+})()
+const zone = computed(() => getPath(draft.value, 'timezone') || '')
+const zoneOptions = computed(() => {
+  const names = new Set(zoneNames)
+  for (const z of [zone.value, browserZone]) if (z) names.add(z)
+  return [
+    { value: '', label: 'Server default' },
+    ...[...names].sort().map((z) => ({ value: z, label: z.replace(/_/g, ' ') })),
+  ]
+})
+const setZone = (v) => {
+  setPath(draft.value, 'timezone', v || null)
+  delete errors.value.timezone
+}
 const LAYOUTS = [
   { value: 'auto', label: 'Auto' },
   { value: 'desktop', label: 'Desktop' },
@@ -257,6 +285,31 @@ async function setLocation(id) {
             data-test="layout"
             @update:model-value="setLayoutPref"
           />
+        </SettingRow>
+        <SettingRow
+          title="Time zone"
+          description="Used for photo and session names and when setting the camera clock."
+          :dirty="isFieldDirty('timezone')"
+          :error="errors.timezone || ''"
+          data-field="timezone"
+        >
+          <UiSelect
+            :model-value="zone"
+            :options="zoneOptions"
+            label="Time zone"
+            data-test="timezone"
+            @update:model-value="setZone"
+          />
+          <template #note>
+            <UiButton
+              v-if="browserZone && zone !== browserZone"
+              size="sm"
+              data-test="timezone-browser"
+              @click="setZone(browserZone)"
+            >
+              Use this browser's time zone ({{ browserZone }})
+            </UiButton>
+          </template>
         </SettingRow>
         <SettingRow
           title="Keyboard hints"

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '@/api'
 import { guard } from './helpers'
+import { useConfigStore } from './config'
 
 export const useCameraAdminStore = defineStore('cameraAdmin', () => {
   const clock = ref(null) // { data: DatetimeOut, fetchedAt: ms }
@@ -17,8 +18,12 @@ export const useCameraAdminStore = defineStore('cameraAdmin', () => {
   /** Set the camera clock from this device's clock and time zone. */
   const syncClock = () =>
     guard(lastError, async () => {
+      // With an app time zone set the server picks its offset; otherwise use the browser's.
+      const zoned = !!useConfigStore().config?.timezone
       const data = await api.setCameraDatetime({
-        body: { mode: 'host', utc_offset_minutes: -new Date().getTimezoneOffset() },
+        body: zoned
+          ? { mode: 'host' }
+          : { mode: 'host', utc_offset_minutes: -new Date().getTimezoneOffset() },
       })
       clock.value = { data, fetchedAt: Date.now() }
       return data

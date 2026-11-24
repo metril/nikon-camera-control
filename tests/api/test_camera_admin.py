@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI
 
 from backend.camera.fake import FakeCamera
+from backend.core import clock
 from backend.services.camera_admin import CameraAdminService
 
 C = "/api/v1/camera"
@@ -163,3 +164,17 @@ async def test_datetime_explicit_with_offset(
         f"{C}/datetime", json={"mode": "host", "utc_offset_minutes": 9999}
     )
     assert bad.status_code == 422
+
+
+async def test_datetime_sync_uses_app_zone(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    inject_clock(app)
+    clock.set_zone("Pacific/Kiritimati")  # UTC+14
+    try:
+        r = await connected_client.put(f"{C}/datetime", json={"mode": "host"})
+        assert r.status_code == 200, r.text
+        assert r.json()["app_utc_offset_minutes"] == 840
+        assert fake_camera.get_config("datetime").value == int(NOW) + 14 * 3600
+    finally:
+        clock.set_zone(None)

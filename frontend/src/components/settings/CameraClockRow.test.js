@@ -33,3 +33,18 @@ describe('CameraClockRow', () => {
     expect(admin.syncClock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('CameraClockRow app zone', () => {
+  it('compares against the app time zone offset, not the browser', () => {
+    const { w, admin } = setup(true)
+    const now = Date.now()
+    const wall = new Date(now + 14 * 3600000).toISOString().replace('Z', '')
+    admin.clock = {
+      data: { camera_wall_time: wall, camera_time: wall, app_utc_offset_minutes: 840 },
+      fetchedAt: now,
+    }
+    return w.vm.$nextTick().then(() => {
+      expect(w.find('[data-test="clock-summary"]').text()).toContain('In sync')
+    })
+  })
+})

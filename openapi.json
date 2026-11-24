@@ -1103,6 +1103,18 @@
       },
       "CameraDateTimeOut": {
         "properties": {
+          "app_utc_offset_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC offset (minutes east) of the configured app time zone now; null when no zone is configured.",
+            "title": "App Utc Offset Minutes"
+          },
           "camera_epoch": {
             "description": "Raw epoch seconds as gphoto2 reports the clock.",
             "title": "Camera Epoch",
@@ -1878,6 +1890,18 @@
                 "type": "null"
               }
             ]
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "IANA time zone name, e.g. America/New_York. Used for photo and session names and when setting the camera clock. Empty uses the server's own zone.",
+            "title": "Timezone"
           },
           "video": {
             "anyOf": [

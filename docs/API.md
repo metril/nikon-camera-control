@@ -685,6 +685,7 @@ operation_id: `update_config`
 | `media` | MediaConfigPatch \| null | no |  |  |  |
 | `storage` | StorageConfigPatch \| null | no |  |  |  |
 | `cors_origins` | list[string] \| null | no |  |  | Other sites allowed to call the API. Leave empty to allow only this site. |
+| `timezone` | string \| null | no |  |  | IANA time zone name, e.g. America/New_York. Used for photo and session names and when setting the camera clock. Empty uses the server's own zone. |
 | `demo_camera` | boolean \| null | no |  |  | Use the simulated camera |
 
 **Responses**
@@ -2392,5 +2393,6 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | storage | `deep_verify` | boolean | `false` |  | Check every file already on the backup against its checksum on each run. |
 | storage | `sidecars` | boolean | `true` |  | Save a SHA-256 checksum file next to every photo. |
 | (root) | `cors_origins` | list[string] |  |  | Other sites allowed to call the API. Leave empty to allow only this site. |
+| (root) | `timezone` | string \| null | `null` | `maxLength=64` | IANA time zone name, e.g. America/New_York. Used for photo and session names and when setting the camera clock. Empty uses the server's own zone. |
 | (root) | `demo_camera` | boolean | `false` |  | Use the simulated camera |
 | (root) | `api_key_hash` | string \| null | `null` |  | sha256 of the API key; None = open |

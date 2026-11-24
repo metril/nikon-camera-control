@@ -24,6 +24,11 @@ class CameraDateTimeOut(BaseModel):
         description="The server's UTC offset (minutes east) at that moment; `host` mode without "
         "an explicit offset sets the camera to the server's local wall time."
     )
+    app_utc_offset_minutes: int | None = Field(
+        default=None,
+        description="UTC offset (minutes east) of the configured app time zone now; null when "
+        "no zone is configured.",
+    )
     offset_s: float = Field(
         description="camera_epoch - server epoch in seconds: clock drift when the camera was "
         "set in `host` mode without an offset."

@@ -40,6 +40,7 @@ from backend.api.schemas.sessions import (
     SessionSummary,
     SessionVideo,
 )
+from backend.core.clock import local_tz
 from backend.core.errors import InvalidState, PathNotAllowed, SessionNotFound
 from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import safe_join
@@ -66,9 +67,10 @@ _UPDATABLE = frozenset(
 
 def _session_created(name: str) -> datetime:
     """Creation time from ``YYYY-MM-DD-HHMMSS-xxxx`` or legacy ``YYYYMMDD-HHMMSS-xxxx``."""
+    tz = local_tz() or UTC
     if name[4:5] == "-":
-        return datetime.strptime(name[:17], "%Y-%m-%d-%H%M%S").replace(tzinfo=UTC)
-    return datetime.strptime(name[:15], "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+        return datetime.strptime(name[:17], "%Y-%m-%d-%H%M%S").replace(tzinfo=tz)
+    return datetime.strptime(name[:15], "%Y%m%d-%H%M%S").replace(tzinfo=tz)
 
 
 def _now() -> datetime:
@@ -190,7 +192,8 @@ class SessionStore:
     def _create(self, name: str, config: dict[str, Any], planned_frames: int) -> SessionManifest:
         now = self._clock()
         while True:
-            sid = f"{now:%Y-%m-%d-%H%M%S}-{secrets.token_hex(2)}"
+            stamp = now.astimezone(local_tz() or UTC)
+            sid = f"{stamp:%Y-%m-%d-%H%M%S}-{secrets.token_hex(2)}"
             try:
                 self.root.mkdir(parents=True, exist_ok=True)
                 (self.root / sid).mkdir()

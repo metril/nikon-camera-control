@@ -18,8 +18,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from backend.core.clock import validate_zone
 from backend.core.errors import ConfigInvalid
 from backend.core.security import ApiKeyStore
 
@@ -303,8 +304,20 @@ class AppConfig(BaseModel):
         title="Allowed web origins",
         description="Other sites allowed to call the API. Leave empty to allow only this site.",
     )
+    timezone: str | None = Field(
+        default=None,
+        title="Time zone",
+        description="IANA time zone name, e.g. America/New_York. Used for photo and session "
+        "names and when setting the camera clock. Empty uses the server's own zone.",
+        max_length=64,
+    )
     demo_camera: bool = Field(default=False, description="Use the simulated camera")
     api_key_hash: str | None = Field(default=None, description="sha256 of the API key; None = open")
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone_known(cls, v: str | None) -> str | None:
+        return validate_zone(v) if v else None
 
     def public_dump(self) -> dict[str, Any]:
         """JSON-safe dump for API output: the hash is replaced by ``api_key_set``."""

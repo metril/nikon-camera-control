@@ -15,6 +15,7 @@ const loading = ref(false)
 const TZ = /(Z|[+-]\d\d:?\d\d)$/i
 const fmt = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19)
 const browserOffset = () => -new Date().getTimezoneOffset()
+const offsetMin = (d) => d.app_utc_offset_minutes ?? browserOffset()
 
 /** Camera wall clock vs this device's wall clock, both as "naive" instants, in seconds. */
 const view = computed(() => {
@@ -22,13 +23,13 @@ const view = computed(() => {
   const { data, fetchedAt } = admin.clock
   const raw = String(data.camera_wall_time ?? data.camera_time)
   const cam = Date.parse(TZ.test(raw) ? raw : `${raw}Z`)
-  const dev = fetchedAt + browserOffset() * 60000
+  const dev = fetchedAt + offsetMin(data) * 60000
   return { camera: fmt(cam), diff: Math.round((cam - dev) / 1000) }
 })
 const summary = computed(() => {
   if (!view.value) return 'Not read yet.'
   const d = view.value.diff
-  let off = 'In sync with this device'
+  let off = 'In sync with the app clock'
   if (Math.abs(d) >= 2) {
     const a = Math.abs(d)
     const txt =
@@ -39,7 +40,7 @@ const summary = computed(() => {
           : a >= 60
             ? `${Math.round(a / 60)} min`
             : `${a} s`
-    off = `${txt} ${d > 0 ? 'ahead of' : 'behind'} this device`
+    off = `${txt} ${d > 0 ? 'ahead of' : 'behind'} the app clock`
   }
   return `${view.value.camera}. ${off}.`
 })
@@ -104,7 +105,7 @@ watch(
         data-test="clock-sync"
         @click="sync"
       >
-        Sync to this device
+        Sync clock
       </UiButton>
     </div>
   </SettingRow>

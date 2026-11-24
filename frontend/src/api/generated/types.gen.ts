@@ -675,6 +675,12 @@ export type CameraDateTimeIn = {
  */
 export type CameraDateTimeOut = {
     /**
+     * App Utc Offset Minutes
+     *
+     * UTC offset (minutes east) of the configured app time zone now; null when no zone is configured.
+     */
+    app_utc_offset_minutes?: number | null;
+    /**
      * Camera Epoch
      *
      * Raw epoch seconds as gphoto2 reports the clock.
@@ -1140,6 +1146,12 @@ export type ConfigPatch = {
     media?: MediaConfigPatch | null;
     storage?: StorageConfigPatch | null;
     timelapse?: TimelapseConfigPatch | null;
+    /**
+     * Timezone
+     *
+     * IANA time zone name, e.g. America/New_York. Used for photo and session names and when setting the camera clock. Empty uses the server's own zone.
+     */
+    timezone?: string | null;
     video?: VideoConfigPatch | null;
 };
 
