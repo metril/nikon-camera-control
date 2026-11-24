@@ -23,6 +23,9 @@ class InfoOut(BaseModel):
     auth_enabled: bool
     output_free_bytes: int | None = Field(description="Free disk space of the output dir")
     ffmpeg_available: bool
+    libgphoto2_version: str | None = Field(
+        default=None, description="libgphoto2 version in use; none for the demo camera"
+    )
     started_at: datetime = Field(
         description="UTC time this server process started; a change means it restarted"
     )

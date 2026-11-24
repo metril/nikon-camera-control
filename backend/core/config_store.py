@@ -53,6 +53,11 @@ class CameraConfig(_Section):
         le=10.0,
         description="After a capture, stop draining camera events after this quiet period",
     )
+    keep_card_copy: bool = Field(
+        default=True,
+        description="Keep a copy of each photo on the camera memory card. When off, the card "
+        "copy is deleted once the download is verified (memory card target only)",
+    )
 
 
 class LiveViewConfig(_Section):

@@ -110,6 +110,10 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         loop = asyncio.get_running_loop()
+        if not store.config.demo_camera:
+            from backend.camera.gphoto2_backend import library_version
+
+            log.info("libgphoto2 version %s", library_version())
         bus = EventBus()
         bus.bind_loop(loop)
         jobs = JobManager(bus)

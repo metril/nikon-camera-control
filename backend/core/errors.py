@@ -115,6 +115,13 @@ class CameraOperationFailed(AppError):
     default_message = "Camera operation failed"
 
 
+class DownloadFailed(CameraOperationFailed):
+    """A photo was taken but could not be copied off the camera. The technical cause is in
+    ``details`` (``cause``, ``cause_code``, ``camera_files``), never in the message."""
+
+    default_message = "The photo was taken, but it couldn't be copied from the camera."
+
+
 class ShutterOpen(CameraOperationFailed):
     """A bulb exposure could not be closed: the shutter may still be open."""
 

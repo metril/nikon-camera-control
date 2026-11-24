@@ -46,11 +46,17 @@ def _free_bytes(storage: LocationService) -> int | None:
 )
 async def get_info(request: Request, store: ConfigStoreDep) -> InfoOut:
     cfg = store.config
+    gp_version = None
+    if not cfg.demo_camera:
+        from backend.camera.gphoto2_backend import library_version
+
+        gp_version = library_version()
     return InfoOut(
         version=__version__,
         backend="demo" if cfg.demo_camera else "real",
         auth_enabled=cfg.api_key_hash is not None,
         output_free_bytes=_free_bytes(request.app.state.storage),
         ffmpeg_available=shutil.which("ffmpeg") is not None,
+        libgphoto2_version=gp_version,
         started_at=request.app.state.started_at,
     )

@@ -317,12 +317,19 @@ class FakeCamera:
         capacity_kb: int = 8192,
         emit_capture_complete: bool = False,
         capture_exits_liveview: bool = True,
+        late_second_file: bool = False,
     ) -> None:
         """``emit_capture_complete``: queue a CAPTURE_COMPLETE event after each capture.
         Default False mirrors real PTP bodies, where capture() usually consumes it.
         ``capture_exits_liveview``: a capture turns the viewfinder off (suspected real D500
         behaviour; NEEDS A REAL D500 CHECK). The fake then needs ``invalidate_preview`` +
-        re-enable before the next preview, exactly like ``Gphoto2Backend``."""
+        re-enable before the next preview, exactly like ``Gphoto2Backend``.
+        ``late_second_file``: a RAW+JPEG shot returns the first file from capture(); the second
+        one is announced by a later FILE_ADDED, on the next wait_for_event (D500 behaviour).
+        With capturetarget "Internal RAM" files land in "/" as capt0000.jpg, capt0001.nef..."""
+        self._late_second = late_second_file
+        self._late_complete = False
+        self._late: list[tuple[str, str, _File]] = []
         self._emit_complete = emit_capture_complete
         self._capture_exits_lv = capture_exits_liveview
         self._pv_flag = False  # mirrors Gphoto2Backend._viewfinder_on
@@ -583,9 +590,9 @@ class FakeCamera:
             return 0
         return max(0, self._capacity_kb - self._used_kb())
 
-    def _add_file(self, name: str, f: _File) -> CameraFilePath:
-        self._files[CARD_FOLDER][name] = f
-        path = CameraFilePath(CARD_FOLDER, name)
+    def _add_file(self, name: str, f: _File, folder: str = CARD_FOLDER) -> CameraFilePath:
+        self._files.setdefault(folder, {})[name] = f
+        path = CameraFilePath(folder, name)
         with self._cond:
             self._events.append(CameraEvent(EventType.FILE_ADDED, file=path))
             self._cond.notify_all()
@@ -612,23 +619,34 @@ class FakeCamera:
         ]
         jpg = _jpeg(lines, self._rng)
         w, h = _IMG_SIZE
-        made: list[CameraFilePath] = []
+        ram = str(v["capturetarget"]) == "Internal RAM"
+        folder = "/" if ram else CARD_FOLDER
+        stem = f"DSC_{n:04d}"
+        shots: list[tuple[str, _File]] = []
         if quality.startswith("NEF"):
-            made.append(
-                self._add_file(
-                    f"DSC_{n:04d}.NEF",
-                    _File(_nef(jpg), jpg, self._stamp(), "image/x-nikon-nef", w, h),
-                )
+            shots.append(
+                (f"{stem}.NEF", _File(_nef(jpg), jpg, self._stamp(), "image/x-nikon-nef", w, h))
             )
         if not quality.startswith("NEF") or "+" in quality:
-            made.append(
-                self._add_file(
-                    f"DSC_{n:04d}.JPG", _File(jpg, jpg, self._stamp(), "image/jpeg", w, h)
-                )
-            )
+            shots.append((f"{stem}.JPG", _File(jpg, jpg, self._stamp(), "image/jpeg", w, h)))
+        if ram:  # the camera reports the JPEG first, then the NEF
+            shots.sort(key=lambda t: not t[0].endswith("JPG"))
+            base = (n - 1) * len(shots)  # real D500: capt0000.jpg then capt0001.nef
+            shots = [
+                (f"capt{(base + i) % 10000:04d}.{nm.rsplit('.', 1)[1].lower()}", f)
+                for i, (nm, f) in enumerate(shots)
+            ]
+        made: list[CameraFilePath] = [self._add_file(*shots[0], folder)]
+        for nm, f in shots[1:]:
+            if self._late_second:
+                self._late.append((folder, nm, f))
+            else:
+                made.append(self._add_file(nm, f, folder))
         if self._capture_exits_lv:
             self._values["viewfinder"] = False
-        if self._emit_complete:
+        if self._emit_complete and self._late:
+            self._late_complete = True  # queued after the late FILE_ADDED, like the D500
+        elif self._emit_complete:
             with self._cond:
                 self._events.append(CameraEvent(EventType.CAPTURE_COMPLETE))
                 self._cond.notify_all()
@@ -680,6 +698,13 @@ class FakeCamera:
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
         self._enter("wait_for_event")
+        late, self._late = self._late, []
+        for folder, nm, f in late:
+            self._add_file(nm, f, folder)
+        if self._late_complete:
+            self._late_complete = False
+            with self._cond:
+                self._events.append(CameraEvent(EventType.CAPTURE_COMPLETE))
         with self._cond:
             if not self._events:
                 self._cond.wait_for(lambda: bool(self._events), timeout=max(0.0, timeout_s))
@@ -705,7 +730,7 @@ class FakeCamera:
     def list_files(self, folder: str) -> list[CameraFileInfo]:
         self._enter("list_files")
         key = folder.rstrip("/") or "/"
-        if key not in _FOLDERS:
+        if key not in _FOLDERS and key not in self._files:
             raise FileNotFoundError_(f"Folder {folder!r} not found")
         return [
             CameraFileInfo(key, n, len(f.data), f.mtime, f.mime, f.width, f.height)

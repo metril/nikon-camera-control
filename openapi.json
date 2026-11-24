@@ -766,6 +766,12 @@
             "title": "Event Quiet Window S",
             "type": "number"
           },
+          "keep_card_copy": {
+            "default": true,
+            "description": "Keep a copy of each photo on the camera memory card. When off, the card copy is deleted once the download is verified (memory card target only)",
+            "title": "Keep Card Copy",
+            "type": "boolean"
+          },
           "keepalive_enabled": {
             "default": true,
             "description": "Send periodic keepalives (D500 times out at 60 s)",
@@ -842,6 +848,18 @@
             ],
             "description": "After a capture, stop draining camera events after this quiet period",
             "title": "Event Quiet Window S"
+          },
+          "keep_card_copy": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep a copy of each photo on the camera memory card. When off, the card copy is deleted once the download is verified (memory card target only)",
+            "title": "Keep Card Copy"
           },
           "keepalive_enabled": {
             "anyOf": [
@@ -2418,6 +2436,18 @@
           "ffmpeg_available": {
             "title": "Ffmpeg Available",
             "type": "boolean"
+          },
+          "libgphoto2_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "libgphoto2 version in use; none for the demo camera",
+            "title": "Libgphoto2 Version"
           },
           "output_free_bytes": {
             "anyOf": [

@@ -106,6 +106,23 @@ def _deleter(f: CameraFilePath) -> Callable[[CameraBackend], None]:
     return run
 
 
+async def _verified(
+    camera: CameraService, f: CameraFilePath, local: Path, owner: str | None
+) -> bool:
+    """True if ``local`` matches the camera's size for ``f`` (non-empty when the camera does not
+    report one). Any error counts as not verified."""
+
+    def size(b: CameraBackend) -> int:
+        return next((i.size for i in b.list_files(f.folder) if i.name == f.name), 0)
+
+    try:
+        want = await camera.call(size, owner=owner)
+        have = (await asyncio.to_thread(local.stat)).st_size
+    except Exception:
+        return False
+    return have == want if want > 0 else have > 0
+
+
 async def download_files(
     camera: CameraService,
     files: Sequence[CameraFilePath],
@@ -120,7 +137,8 @@ async def download_files(
     local paths in order. Each file is written to ``.part`` then renamed atomically.
     A failed download removes its partial/placeholder files and re-raises; files already
     downloaded stay. Deleting from the camera happens only after a successful download and
-    a failed delete is logged, not raised."""
+    the local copy is first checked against the camera's file size (unverified files stay on the
+    camera), and a failed delete is logged, not raised."""
     out: list[Path] = []
     for f in files:
         final = await asyncio.to_thread(unique_path, dest_dir, f"{name_prefix}{f.name}")
@@ -141,6 +159,11 @@ async def download_files(
             raise
         out.append(final)
         if delete_from_camera:
+            if not await _verified(camera, f, final, owner):
+                log.warning(
+                    "not deleting %s/%s from camera: download not verified", f.folder, f.name
+                )
+                continue
             try:
                 await camera.call(_deleter(f), owner=owner)
             except Exception:

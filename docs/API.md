@@ -2340,6 +2340,7 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | camera | `reconnect_interval_s` | number | `2.0` | `>=0.5`, `<=60.0` | Delay between reconnects |
 | camera | `capture_timeout_s` | number | `30.0` | `>=1.0`, `<=300.0` | Capture timeout |
 | camera | `event_quiet_window_s` | number | `1.0` | `>=0.0`, `<=10.0` | After a capture, stop draining camera events after this quiet period |
+| camera | `keep_card_copy` | boolean | `true` |  | Keep a copy of each photo on the camera memory card. When off, the card copy is deleted once the download is verified (memory card target only) |
 | liveview | `target_fps` | integer | `8` | `>=1`, `<=30` | Target live view frame rate |
 | liveview | `quality` | enum("small", "medium", "large") | `"medium"` |  | Frame size preset |
 | liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Re-encode quality for streamed frames |

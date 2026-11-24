@@ -429,3 +429,80 @@ def test_invalidate_preview_makes_next_preview_reenable() -> None:
     b.invalidate_preview()
     b.capture_preview()
     assert [n for n, _ in c2.set_calls] == ["viewfinder", "viewfinder"]
+
+
+def test_read_file_falls_back_to_whole_file_when_partial_read_fails(tmp_path: Path) -> None:
+    class Info:
+        class file:  # noqa: N801
+            size = 100
+
+    class Cam:
+        def file_get_info(self, f: str, n: str, ctx: Any) -> Any:
+            return Info
+
+        def file_read(self, *a: Any) -> int:
+            raise gp.GPhoto2Error(-1)
+
+        def file_get(self, folder: str, name: str, t: int, *args: Any) -> Any:
+            class F:
+                def save(self, path: str) -> None:
+                    Path(path).write_bytes(b"whole")
+
+            return F()
+
+    dest = tmp_path / "capt0000.jpg"
+    _backend(Cam()).read_file("/", "capt0000.jpg", FileKind.NORMAL, dest)
+    assert dest.read_bytes() == b"whole" and not list(tmp_path.glob("*.part"))
+
+
+def test_read_file_error_path_has_no_double_slash(tmp_path: Path) -> None:
+    class Cam:
+        def file_get_info(self, *a: Any) -> Any:
+            raise gp.GPhoto2Error(-1)
+
+        def file_get(self, *a: Any) -> Any:
+            raise gp.GPhoto2Error(-1)
+
+    with pytest.raises(CameraOperationFailed) as ei:
+        _backend(Cam()).read_file("/", "capt0000.jpg", FileKind.NORMAL, tmp_path / "x")
+    assert "read_file(/capt0000.jpg)" in ei.value.message and "//" not in ei.value.message
+
+
+def test_partial_read_failure_midway_leaves_exact_whole_file(tmp_path: Path) -> None:
+    class Info:
+        class file:  # noqa: N801
+            size = 4000
+
+    class Cam:
+        def file_get_info(self, f: str, n: str, ctx: Any) -> Any:
+            return Info
+
+        def file_read(self, f: str, n: str, t: int, off: int, buf: memoryview, ctx: Any) -> int:
+            if off:
+                raise gp.GPhoto2Error(-1)
+            buf[:10] = b"x" * 10
+            return 10
+
+        def file_get(self, folder: str, name: str, t: int, *args: Any) -> Any:
+            class F:
+                def save(self, path: str) -> None:
+                    Path(path).write_bytes(b"whole-file")
+
+            return F()
+
+    dest = tmp_path / "a.jpg"
+    _backend(Cam()).read_file("/", "a.jpg", FileKind.NORMAL, dest)
+    assert dest.read_bytes() == b"whole-file"
+
+
+def test_fallback_failure_reports_both_causes(tmp_path: Path) -> None:
+    class Cam:
+        def file_get_info(self, *a: Any) -> Any:
+            raise gp.GPhoto2Error(-1)
+
+        def file_get(self, *a: Any) -> Any:
+            raise gp.GPhoto2Error(-1)
+
+    with pytest.raises(CameraOperationFailed) as ei:
+        _backend(Cam()).read_file("/", "a.jpg", FileKind.NORMAL, tmp_path / "x")
+    assert {"partial_read_cause", "whole_file_cause"} <= set(ei.value.details)

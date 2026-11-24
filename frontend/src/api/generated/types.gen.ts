@@ -463,6 +463,12 @@ export type CameraConfig = {
      */
     event_quiet_window_s?: number;
     /**
+     * Keep Card Copy
+     *
+     * Keep a copy of each photo on the camera memory card. When off, the card copy is deleted once the download is verified (memory card target only)
+     */
+    keep_card_copy?: boolean;
+    /**
      * Keepalive Enabled
      *
      * Send periodic keepalives (D500 times out at 60 s)
@@ -510,6 +516,12 @@ export type CameraConfigPatch = {
      * After a capture, stop draining camera events after this quiet period
      */
     event_quiet_window_s?: number | null;
+    /**
+     * Keep Card Copy
+     *
+     * Keep a copy of each photo on the camera memory card. When off, the card copy is deleted once the download is verified (memory card target only)
+     */
+    keep_card_copy?: boolean | null;
     /**
      * Keepalive Enabled
      *
@@ -1506,6 +1518,12 @@ export type InfoOut = {
      * Ffmpeg Available
      */
     ffmpeg_available: boolean;
+    /**
+     * Libgphoto2 Version
+     *
+     * libgphoto2 version in use; none for the demo camera
+     */
+    libgphoto2_version?: string | null;
     /**
      * Output Free Bytes
      *

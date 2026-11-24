@@ -6,6 +6,7 @@ Every ``gphoto2.GPhoto2Error`` is translated to a domain exception (gphoto2 code
 
 from __future__ import annotations
 
+import posixpath
 from pathlib import Path
 from typing import Any
 
@@ -397,7 +398,7 @@ class Gphoto2Backend:
             FeatureUnsupported,
             CameraOperationFailed,
         ) as e:
-            log.info("viewfinder_not_cleared", reason=e.message)
+            log.info("viewfinder_not_cleared", reason=str(e))
         finally:
             self._viewfinder_on = False
 
@@ -409,7 +410,7 @@ class Gphoto2Backend:
         try:
             self.set_config("viewfinder", 1)
         except (SettingNotFound, SettingNotAllowed, SettingInvalid, FeatureUnsupported) as e:
-            log.info("viewfinder_not_set", reason=e.message)
+            log.info("viewfinder_not_set", reason=str(e))
         self._viewfinder_on = True
 
     def wait_for_event(self, timeout_s: float) -> CameraEvent:
@@ -468,13 +469,26 @@ class Gphoto2Backend:
         tmp = dest.with_name(dest.name + ".part")
         try:
             if kind is FileKind.NORMAL:
-                self._read_chunked(cam, folder, name, ftype, tmp)
+                try:
+                    self._read_chunked(cam, folder, name, ftype, tmp)
+                except gp.GPhoto2Error as e:
+                    # Partial reads fail on some targets (D500 "Internal RAM" files); the whole-file
+                    # call works there.
+                    log.info("partial_read_unsupported", folder=folder, name=name, reason=str(e))
+                    tmp.unlink(missing_ok=True)
+                    try:
+                        cam.file_get(folder, name, ftype).save(str(tmp))
+                    except gp.GPhoto2Error as e2:
+                        err = translate_error(e2, f"read_file({posixpath.join(folder, name)})")
+                        err.details["partial_read_cause"] = str(e)
+                        err.details["whole_file_cause"] = str(e2)
+                        raise err from e2
             else:  # previews/EXIF are small; let libgphoto2 build them
                 cam.file_get(folder, name, ftype).save(str(tmp))
             tmp.replace(dest)
-        except gp.GPhoto2Error as e:
+        except gp.GPhoto2Error as e:  # not reached by the fallback's own failure (AppError)
             tmp.unlink(missing_ok=True)
-            raise translate_error(e, f"read_file({folder}/{name})") from e
+            raise translate_error(e, f"read_file({posixpath.join(folder, name)})") from e
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
@@ -501,7 +515,7 @@ class Gphoto2Backend:
         try:
             cam.file_delete(folder, name, self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"delete_file({folder}/{name})") from e
+            raise translate_error(e, f"delete_file({posixpath.join(folder, name)})") from e
 
     def storage_info(self) -> list[StorageInfo]:
         cam = self._cam()
@@ -532,4 +546,18 @@ class Gphoto2Backend:
         return out
 
 
-__all__ = ["Gphoto2Backend", "coerce_config_value", "translate_error", "widget_to_config"]
+def library_version() -> str:
+    """Version of the libgphoto2 the bindings are linked against (e.g. "2.5.34")."""
+    try:
+        return str(gp.gp_library_version(gp.GP_VERSION_SHORT)[0])
+    except Exception:
+        return "unknown"
+
+
+__all__ = [
+    "Gphoto2Backend",
+    "library_version",
+    "coerce_config_value",
+    "translate_error",
+    "widget_to_config",
+]
