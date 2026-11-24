@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { sortValues, toggleValue, parseNumeric, quickShots, formatBytes, formatDuration } from './bracketUtils'
+import {
+  sortValues,
+  toggleValue,
+  parseNumeric,
+  quickShots,
+  formatBytes,
+  formatDuration,
+} from './bracketUtils'
 
 describe('bracketUtils', () => {
   it('orders shutter speeds by real duration, Bulb last', () => {

@@ -38,6 +38,8 @@ from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import download_files
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from backend.api.schemas.camera_files import CameraFileEntry, DownloadAllRequest
 
 log = logging.getLogger(__name__)
@@ -301,16 +303,31 @@ class CameraFilesService:
             c.files[folder] = infos
         return infos
 
-    async def _walk(self, folder: str, recursive: bool, depth: int = 0) -> list[CameraFileInfo]:
+    async def _walk(
+        self,
+        folder: str,
+        recursive: bool,
+        depth: int = 0,
+        on_found: Callable[[int], None] | None = None,
+        found: list[int] | None = None,
+    ) -> list[CameraFileInfo]:
         # One camera call per folder so keepalive/live view interleave. Errors propagate.
+        found = found if found is not None else [0]
         out = list(await self._folder_files(folder))
+        found[0] += len(out)
+        if on_found is not None:
+            on_found(found[0])
         if recursive and depth < _MAX_DEPTH:
             for name in await self.list_folders(folder):
-                out += await self._walk(join_camera_path(folder, name), True, depth + 1)
+                out += await self._walk(
+                    join_camera_path(folder, name), True, depth + 1, on_found, found
+                )
         return out
 
-    async def list_infos(self, folder: str, recursive: bool) -> list[CameraFileInfo]:
-        infos = await self._walk(folder, recursive)
+    async def list_infos(
+        self, folder: str, recursive: bool, on_found: Callable[[int], None] | None = None
+    ) -> list[CameraFileInfo]:
+        infos = await self._walk(folder, recursive, on_found=on_found)
         infos.sort(key=lambda i: (i.folder, i.name))
         return infos
 
@@ -389,9 +406,13 @@ class CameraFilesService:
         # Trade-off: a capture/timelapse may interleave between files (each file is one
         # worker call), and a lease holder makes individual files fail with CameraBusy.
         # Files go strictly one at a time: concurrency over a single USB link buys nothing.
-        ctx.report(0.0, "Listing files")
+        ctx.report(None, "Listing files")
         self.invalidate()
-        infos = await self.list_infos(req.folder or "/", True)
+        infos = await self.list_infos(
+            req.folder or "/",
+            True,
+            lambda n: ctx.report(None, f"Listing files ({n} files so far)"),
+        )
         ledger = self._ledger
         await ledger.load()
         dest = self._store.root() / "camera"
@@ -402,6 +423,19 @@ class CameraFilesService:
         got: list[str] = []
         n_failed = 0
         await asyncio.to_thread(dest.mkdir, parents=True, exist_ok=True)
+
+        def _result() -> dict[str, Any]:
+            return {
+                "folder": req.folder or "/",
+                "total": len(infos),
+                "downloaded": downloaded,
+                "skipped": skipped,
+                "failed": n_failed,
+                "downloaded_names": got,
+                "failed_names": failed,
+                "cancelled": ctx.cancelled,
+            }
+
         try:
             for idx, info in enumerate(todo, start=1):
                 if ctx.cancelled:
@@ -410,14 +444,29 @@ class CameraFilesService:
                     (idx - 1) / len(todo),
                     f"{info.name} ({idx}/{len(todo)}); {downloaded} done, {n_failed} failed",
                 )
-                try:
-                    await download_files(
+                # Shielded: a cancel waits for the in-flight file (its worker thread cannot be
+                # interrupted) so its .part is renamed or removed by download_files, never leaked.
+                task = asyncio.ensure_future(
+                    download_files(
                         self._camera,
                         [CameraFilePath(info.folder, info.name)],
                         dest,
                         delete_from_camera=req.delete_after,
                         on_stored=self._store.stored,
                     )
+                )
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    await asyncio.gather(task, return_exceptions=True)
+                    if not task.cancelled() and task.exception() is None:
+                        downloaded += 1
+                        if len(got) < _NAME_CAP:
+                            got.append(info.name)
+                        await ledger.add(info)
+                    ctx._cancel_requested = True
+                    ctx.set_partial_result(_result())
+                    raise
                 except CameraNotConnected:
                     raise
                 except AppError as exc:
@@ -433,16 +482,7 @@ class CameraFilesService:
         finally:
             if req.delete_after:
                 self.invalidate()
-        return {
-            "folder": req.folder or "/",
-            "total": len(infos),
-            "downloaded": downloaded,
-            "skipped": skipped,
-            "failed": n_failed,
-            "downloaded_names": got,
-            "failed_names": failed,
-            "cancelled": ctx.cancelled,
-        }
+        return _result()
 
 
 def _rm(path: Path) -> None:

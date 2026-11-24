@@ -28,7 +28,13 @@ from backend.services.focus import FocusService
 
 def build_focus_service(s: State) -> FocusService:
     capture = s.services.get("capture", lambda: build_capture_service(s))
-    return FocusService(s.camera_service, capture, s.job_manager, s.storage)
+    return FocusService(
+        s.camera_service,
+        capture,
+        s.job_manager,
+        s.storage,
+        default_prefix=lambda: s.config_store.config.camera.filename_prefix,
+    )
 
 
 get_focus = service_dep("focus", build_focus_service)

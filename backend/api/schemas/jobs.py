@@ -14,7 +14,9 @@ class JobOut(BaseModel):
     id: str
     kind: str
     status: JobStatus
-    progress: float = Field(ge=0.0, le=1.0)
+    progress: float | None = Field(
+        ge=0.0, le=1.0, description="0..1, or null while the total is unknown"
+    )
     message: str = ""
     result: dict[str, Any] | None = None
     error: str | None = None

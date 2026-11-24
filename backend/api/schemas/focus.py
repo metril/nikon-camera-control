@@ -63,6 +63,12 @@ class StackRequest(BaseModel):
     settle_ms: int = Field(default=500, ge=0, le=60_000, description="Wait after each move")
     return_to_start: bool = True
     name: str | None = Field(default=None, max_length=40, description="Folder name suffix")
+    filename_prefix: str | None = Field(
+        default=None,
+        max_length=40,
+        description="Prefix for file names; unsafe characters become -. Defaults to the "
+        "File name prefix setting",
+    )
 
 
 class AfPointRequest(BaseModel):

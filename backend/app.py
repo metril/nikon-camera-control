@@ -23,6 +23,7 @@ from backend.api.v1.sessions import build_sessions_service
 from backend.camera.backend import CameraBackend
 from backend.core import paths
 from backend.core.camera_service import CameraService
+from backend.core.clock import set_zone
 from backend.core.config_store import AppConfig, ConfigStore
 from backend.core.events import EventBus
 from backend.core.jobs import JobManager, JobStatus
@@ -208,9 +209,12 @@ def create_app(
             task.add_done_callback(bg.discard)
 
         def on_config(new: AppConfig, old: AppConfig) -> None:
+            if new.timezone != old.timezone:
+                set_zone(new.timezone)
             if new.demo_camera != old.demo_camera:
                 loop.call_soon_threadsafe(spawn, service.disconnect(), "demo-switch-disconnect")
 
+        set_zone(store.config.timezone)
         unsubscribe = store.subscribe(on_config)
 
         async def initial_connect() -> None:
@@ -224,6 +228,7 @@ def create_app(
         try:
             yield
         finally:
+            set_zone(None)
             unsubscribe()
             for task in list(bg):
                 task.cancel()

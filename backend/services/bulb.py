@@ -15,7 +15,6 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,7 @@ from backend.api.schemas.exposure import BulbRequest, BulbStatus
 from backend.camera.backend import CameraBackend, CameraFilePath
 from backend.camera.backend import EventType as CamEventType
 from backend.core.camera_service import CameraService, Priority, drain_pending_events
+from backend.core.clock import local_now
 from backend.core.errors import (
     AppError,
     CameraBusy,
@@ -358,7 +358,7 @@ class BulbService:
             )
         local: list[Path] = []
         if req.download:
-            stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-")
+            stamp = local_now().strftime("%Y-%m-%d-%H%M%S-")
             prefix = sanitize_prefix(req.filename_prefix or self._default_prefix())
             try:
                 local = await download_files(

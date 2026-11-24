@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from backend.api.schemas.camera_admin import CameraDateTimeOut, CaptureTargetOut
 from backend.api.schemas.common import EventType
 from backend.camera.backend import CameraBackend, ConfigType, ConfigWidget
+from backend.core import clock as app_clock
 from backend.core.camera_service import CameraService, Priority
 from backend.core.errors import (
     FeatureUnsupported,
@@ -104,6 +105,7 @@ class CameraAdminService:
             camera_wall_time=wall,
             host_time=datetime.fromtimestamp(host, UTC),
             host_utc_offset_minutes=round(self._offset(host) / 60),
+            app_utc_offset_minutes=app_clock.utc_offset_minutes(host),
             offset_s=round(epoch - host, 3),
         )
 
@@ -120,12 +122,16 @@ class CameraAdminService:
     ) -> CameraDateTimeOut:
         """Set the clock to ``explicit`` (an instant; naive = UTC) or, when None, to the host
         clock sampled at the write, showing wall time in ``utc_offset_minutes`` east of UTC
-        (None: the server's local zone)."""
+        (None: the app time zone, else the server's local zone)."""
         fixed: float | None = None
         if explicit is not None:
             if explicit.tzinfo is None:
                 explicit = explicit.replace(tzinfo=UTC)
             fixed = explicit.timestamp()
+        if utc_offset_minutes is None:  # default: the configured app zone, else the server's
+            utc_offset_minutes = app_clock.utc_offset_minutes(
+                fixed if fixed is not None else self._clock()
+            )
         off = None if utc_offset_minutes is None else utc_offset_minutes * 60
 
         def write(b: CameraBackend) -> CameraDateTimeOut:

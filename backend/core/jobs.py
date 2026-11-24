@@ -41,7 +41,9 @@ class Job(BaseModel):
     id: str
     kind: str  # e.g. "video", "download_all", "focus_stack"
     status: JobStatus = JobStatus.QUEUED
-    progress: float = Field(default=0.0, ge=0.0, le=1.0)
+    progress: float | None = Field(
+        default=0.0, ge=0.0, le=1.0, description="0..1, or null while the total is unknown"
+    )
     message: str = ""
     result: dict[str, Any] | None = None
     error: str | None = None
@@ -58,20 +60,27 @@ class JobContext:
         self._manager = manager
         self._job = job
         self._cancel_requested = False
+        self._partial_result: dict[str, Any] | None = None
         self._last_emit = float("-inf")
 
     @property
     def job_id(self) -> str:
         return self._job.id
 
-    def report(self, progress: float, message: str = "") -> None:
-        """Update progress (clamped to 0..1) and publish JOB_PROGRESS (throttled)."""
-        progress = min(1.0, max(0.0, progress))
+    def set_partial_result(self, result: dict[str, Any]) -> None:
+        """Result kept on the job if it ends cancelled or failed (what was done so far)."""
+        self._partial_result = result
+
+    def report(self, progress: float | None, message: str = "") -> None:
+        """Update progress (clamped to 0..1; None = total unknown) and publish JOB_PROGRESS
+        (throttled)."""
+        if progress is not None:
+            progress = min(1.0, max(0.0, progress))
         self._job.progress = progress
         if message:
             self._job.message = message
         now = self._manager._clock()
-        if progress < 1.0 and now - self._last_emit < _PROGRESS_INTERVAL:
+        if (progress is None or progress < 1.0) and now - self._last_emit < _PROGRESS_INTERVAL:
             return
         self._last_emit = now
         self._manager._publish(EventType.JOB_PROGRESS, self._job)
@@ -177,6 +186,8 @@ class JobManager:
             job.started = datetime.now(UTC)
             result = await factory(ctx)
         except asyncio.CancelledError:
+            if ctx._partial_result is not None and job.status not in _FINISHED:
+                job.result = ctx._partial_result
             self._finish(job, JobStatus.CANCELLED, EventType.JOB_CANCELLED)
         except AppError as exc:
             if job.status not in _FINISHED:

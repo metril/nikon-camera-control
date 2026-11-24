@@ -40,6 +40,7 @@ from backend.api.schemas.sessions import (
     SessionSummary,
     SessionVideo,
 )
+from backend.core.clock import local_tz
 from backend.core.errors import InvalidState, PathNotAllowed, SessionNotFound
 from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import safe_join
@@ -67,8 +68,12 @@ _UPDATABLE = frozenset(
 def _session_created(name: str) -> datetime:
     """Creation time from ``YYYY-MM-DD-HHMMSS-xxxx`` or legacy ``YYYYMMDD-HHMMSS-xxxx``."""
     if name[4:5] == "-":
-        return datetime.strptime(name[:17], "%Y-%m-%d-%H%M%S").replace(tzinfo=UTC)
-    return datetime.strptime(name[:15], "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+        naive = datetime.strptime(name[:17], "%Y-%m-%d-%H%M%S")
+    else:
+        naive = datetime.strptime(name[:15], "%Y%m%d-%H%M%S")
+    # Interpreted in the configured zone (server local zone when unset).
+    tz = local_tz()
+    return naive.replace(tzinfo=tz) if tz else naive.astimezone()
 
 
 def _now() -> datetime:
@@ -190,7 +195,8 @@ class SessionStore:
     def _create(self, name: str, config: dict[str, Any], planned_frames: int) -> SessionManifest:
         now = self._clock()
         while True:
-            sid = f"{now:%Y-%m-%d-%H%M%S}-{secrets.token_hex(2)}"
+            stamp = now.astimezone(local_tz())
+            sid = f"{stamp:%Y-%m-%d-%H%M%S}-{secrets.token_hex(2)}"
             try:
                 self.root.mkdir(parents=True, exist_ok=True)
                 (self.root / sid).mkdir()
@@ -260,10 +266,7 @@ class SessionStore:
                 out.append(self.summarize(m, corrupt=corrupt))
 
         def _key(s: SessionSummary) -> tuple[datetime, str]:
-            try:
-                return _session_created(s.id), s.id
-            except ValueError:
-                return s.created, s.id
+            return s.created, s.id
 
         out.sort(key=_key, reverse=True)
         return out

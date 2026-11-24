@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from backend.camera.fake import CARD_FOLDER, FakeCamera
 from backend.core.errors import CameraOperationFailed
+from backend.services.camera_files import CameraFilesService
 
 F = "/api/v1/camera/files"
 J = "/api/v1/jobs"
@@ -231,6 +232,28 @@ async def test_download_all_cancel_midway(
     ledger = ledger_file.read_text().splitlines() if ledger_file.exists() else []
     assert len(ledger) < 4
     assert j["message"]
+    done = (await c.get(f"{J}/{jid}")).json()
+    assert done["result"]["cancelled"] is True and 1 <= done["result"]["downloaded"] < 4
+    assert not list((app.state.storage.root() / "camera").glob("*.part*"))
+
+
+async def test_download_all_listing_progress_unknown(
+    app: FastAPI, connected_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    seen: list[Any] = []
+    orig = CameraFilesService.list_infos
+
+    async def spy(self: Any, folder: str, recursive: bool, on_found: Any = None) -> Any:
+        res = await orig(self, folder, recursive, on_found)
+        seen.append([j.progress for j in app.state.job_manager.list()])
+        return res
+
+    monkeypatch.setattr(CameraFilesService, "list_infos", spy)
+    jid = (await c.post(f"{F}/download-all", json={})).json()["id"]
+    await _wait_job(c, jid, _finished)
+    assert seen and seen[0] == [None]
 
 
 async def test_download_all_exclusive_conflict(

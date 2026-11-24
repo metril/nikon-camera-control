@@ -31,6 +31,7 @@ def install(app: FastAPI, sleeps: list[float] | None = None) -> FocusService:
             st.job_manager,
             st.storage,
             sleep=sleep,
+            default_prefix=lambda: st.config_store.config.camera.filename_prefix,
         ),
     )
 
@@ -139,6 +140,31 @@ async def test_stack_happy_path(
     assert sleeps == [0.1] * 3
     st = app.state.camera_service.status()
     assert st.leased_by is None and st.state == "idle" and not fake_camera.viewfinder_on
+
+
+async def test_stack_filename_prefix(
+    app: FastAPI, connected_client: httpx.AsyncClient, tmp_dirs: Any
+) -> None:
+    install(app)
+    body = STACK | {"filename_prefix": "my bug!"}
+    r = await connected_client.post(f"{F}/stack", json=body)
+    j = await wait_job(connected_client, r.json()["id"])
+    assert j["status"] == "completed", j
+    names = [p.name for p in (Path(tmp_dirs.output_dir) / j["result"]["folder"]).iterdir()]
+    assert names and all(n.startswith("my-bug-") for n in names)
+    assert any(n.startswith("my-bug-001-") for n in names)
+
+
+async def test_stack_default_prefix_from_config(
+    app: FastAPI, connected_client: httpx.AsyncClient, tmp_dirs: Any
+) -> None:
+    install(app)
+    await connected_client.patch("/api/v1/config", json={"camera": {"filename_prefix": "cfg"}})
+    r = await connected_client.post(f"{F}/stack", json=STACK)
+    j = await wait_job(connected_client, r.json()["id"])
+    assert j["status"] == "completed", j
+    names = [p.name for p in (Path(tmp_dirs.output_dir) / j["result"]["folder"]).iterdir()]
+    assert names and all(n.startswith("cfg-001-") or n.startswith("cfg-0") for n in names)
 
 
 async def test_stack_far_to_near_no_return(

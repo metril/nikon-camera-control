@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,7 @@ from backend.api.schemas.common import EventType
 from backend.api.schemas.exposure import BracketRequest, BracketShot
 from backend.api.schemas.timelapse import BracketStep, TimelapseSetup
 from backend.core.camera_service import CameraService
+from backend.core.clock import local_now
 from backend.core.config_store import ConfigStore
 from backend.core.errors import CameraBusy, CameraNotConnected, ConfigInvalid
 from backend.core.events import EventBus
@@ -86,7 +86,7 @@ class BracketCaptureService:
         self, ctx: JobContext, req: BracketRequest, steps: list[BracketStep], held: HeldContext
     ) -> dict[str, Any]:
         out_root = self._capture.output_dir
-        dest = out_root / "brackets" / datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")
+        dest = out_root / "brackets" / local_now().strftime("%Y-%m-%d-%H%M%S-%f")
         prefix = sanitize_prefix(req.filename_prefix or self._config.config.camera.filename_prefix)
         shots: list[BracketShot] = []
         try:

@@ -22,6 +22,7 @@ from PIL import Image
 
 from backend.camera.backend import ConfigWidget
 from backend.core.camera_service import CameraService, Priority
+from backend.core.clock import local_now
 from backend.core.errors import (
     AppError,
     CameraBusy,
@@ -34,7 +35,7 @@ from backend.core.errors import (
 from backend.core.jobs import HeldContext, Job, JobContext, JobManager
 from backend.core.state import CameraState
 from backend.core.storage_root import StorageRoot, as_root
-from backend.services.capture import CaptureService
+from backend.services.capture import CaptureService, sanitize_prefix
 from backend.services.storage import sanitize_name
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,9 @@ class FocusService:
         *,
         sleep: Sleep = asyncio.sleep,
         return_timeout_s: float = RETURN_TIMEOUT_S,
+        default_prefix: Callable[[], str | None] = lambda: None,
     ) -> None:
+        self._default_prefix = default_prefix
         self._camera = camera
         self._capture = capture
         self._jobs = jobs
@@ -250,7 +253,9 @@ class FocusService:
         settle_ms: int,
         return_to_start: bool,
         name: str | None,
+        filename_prefix: str | None = None,
     ) -> Job:
+        prefix = sanitize_prefix(filename_prefix or self._default_prefix())
         self._require_free(None)
         self._store.root()  # NoTargetError (409) before any camera work
         sign = 1 if direction == "near_to_far" else -1
@@ -266,7 +271,7 @@ class FocusService:
         async def factory(ctx: JobContext) -> dict[str, Any]:
             try:
                 return await self._run_stack(
-                    ctx, delta, shots, settle_ms / 1000, return_to_start, name
+                    ctx, delta, shots, settle_ms / 1000, return_to_start, name, prefix
                 )
             finally:
                 await held.release()
@@ -282,7 +287,7 @@ class FocusService:
             raise
 
     def _make_dest(self, name: str | None) -> Path:
-        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        stamp = local_now().strftime("%Y-%m-%d-%H%M%S")
         label = sanitize_name(_SAFE.sub("-", name or ""), default="").strip("_-")
         base = self._store.root() / "stacks"
         base.mkdir(parents=True, exist_ok=True)
@@ -304,6 +309,7 @@ class FocusService:
         settle_s: float,
         return_to_start: bool,
         name: str | None,
+        prefix: str = "",
     ) -> dict[str, Any]:
         prior = self._camera.state
         start_pos = self._pos
@@ -316,7 +322,7 @@ class FocusService:
                     break
                 ctx.report(i / shots, f"Shot {i + 1}/{shots}")
                 paths = await self._capture.capture_to(
-                    dest, owner=OWNER, name_prefix=f"{i + 1:03d}-"
+                    dest, owner=OWNER, name_prefix=f"{prefix}{i + 1:03d}-"
                 )
                 files += len(paths)
                 if i < shots - 1:

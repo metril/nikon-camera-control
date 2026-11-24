@@ -35,6 +35,7 @@ const schema = {
     camera: { $ref: '#/$defs/Camera' },
     video: { $ref: '#/$defs/Video' },
     cors_origins: { type: 'array', items: { type: 'string' }, title: 'Cors origins' },
+    timezone: { anyOf: [{ type: 'string', maxLength: 64 }, { type: 'null' }], title: 'Time zone' },
     demo_camera: { type: 'boolean' },
     api_key_set: { type: 'boolean', readOnly: true },
   },
@@ -43,6 +44,7 @@ const cfg = () => ({
   camera: { download_photos: true, filename_prefix: null, keep_card_copy: true },
   video: { crf: 23, codec: 'a' },
   cors_origins: [],
+  timezone: null,
   demo_camera: false,
   api_key_set: false,
 })
@@ -86,6 +88,15 @@ describe('SettingsView', () => {
     expect(w.find('[data-test="ffmpeg"]').text()).toBe('Available')
     expect(w.find('[data-test="libgphoto2"]').text()).toBe('2.5.31')
     expect(w.find('[data-test="key-status"]').text()).toBe('Not set')
+  })
+
+  it('saves the time zone and offers the browser zone', async () => {
+    const { w, config } = await setup()
+    config.patch = vi.fn(async () => config.config)
+    await w.find('[data-test="timezone"] select').setValue('Europe/Paris')
+    await w.find('[data-test="save"]').trigger('click')
+    expect(config.patch).toHaveBeenCalledWith({ timezone: 'Europe/Paris' })
+    expect(w.find('[data-field="timezone"]').text()).toContain('photo and session names')
   })
 
   it('shows the prefix example and saves it', async () => {

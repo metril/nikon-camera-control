@@ -1103,6 +1103,18 @@
       },
       "CameraDateTimeOut": {
         "properties": {
+          "app_utc_offset_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC offset (minutes east) of the configured app time zone now; null when no zone is configured.",
+            "title": "App Utc Offset Minutes"
+          },
           "camera_epoch": {
             "description": "Raw epoch seconds as gphoto2 reports the clock.",
             "title": "Camera Epoch",
@@ -1878,6 +1890,18 @@
                 "type": "null"
               }
             ]
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "IANA time zone name, e.g. America/New_York. Used for photo and session names and when setting the camera clock. Empty uses the server's own zone.",
+            "title": "Timezone"
           },
           "video": {
             "anyOf": [
@@ -2746,10 +2770,18 @@
             "type": "string"
           },
           "progress": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Progress",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0..1, or null while the total is unknown",
+            "title": "Progress"
           },
           "result": {
             "anyOf": [
@@ -5631,6 +5663,19 @@
             "title": "Direction",
             "type": "string"
           },
+          "filename_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Prefix for file names; unsafe characters become -. Defaults to the File name prefix setting",
+            "title": "Filename Prefix"
+          },
           "name": {
             "anyOf": [
               {
@@ -6920,7 +6965,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.4.1"
+    "version": "0.4.2"
   },
   "openapi": "3.1.0",
   "paths": {

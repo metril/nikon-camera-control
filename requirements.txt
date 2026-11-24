@@ -7,3 +7,4 @@ pillow==13.0.0
 websockets==17.4
 structlog==26.1.0
 httpx==0.28.1  # Docker healthcheck
+tzdata==2025.2  # IANA zones for the time zone setting (slim image has none)
