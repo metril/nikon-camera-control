@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from backend.camera.backend import ConfigWidget
 from backend.core.camera_service import CameraService, Priority
@@ -26,6 +29,7 @@ from backend.core.errors import (
     FeatureUnsupported,
     InvalidState,
     SettingInvalid,
+    SettingNotFound,
 )
 from backend.core.jobs import HeldContext, Job, JobContext, JobManager
 from backend.core.state import CameraState
@@ -124,6 +128,26 @@ class FocusService:
             )
         self._last_af_at = datetime.now(UTC)
         return True
+
+    async def set_af_point(self, x: float, y: float) -> tuple[int, int]:
+        """Move the AF point to normalized (x, y) of the live view frame via ``changeafarea``
+        (text "XxY" in live view frame pixels). Needs live view; the frame size is read from a
+        fresh preview frame. Returns the pixel point sent."""
+        self._require_free(None)
+        if self._camera.state != _S.LIVEVIEW:
+            raise InvalidState("Live view must be on to move the AF point")
+        with Image.open(io.BytesIO(await self._camera.preview_frame())) as im:
+            w, h = im.size
+        px, py = min(w - 1, int(x * w)), min(h - 1, int(y * h))
+        async with self._lock:
+            try:
+                await self._camera.call(
+                    lambda b: b.set_config("changeafarea", f"{px}x{py}"),
+                    priority=Priority.CONTROL,
+                )
+            except SettingNotFound:
+                raise FeatureUnsupported("This camera cannot move the AF point") from None
+        return px, py
 
     async def move(self, steps: int, *, owner: str | None = None) -> int:
         """Drive focus by ``steps`` (signed); returns the new relative position."""

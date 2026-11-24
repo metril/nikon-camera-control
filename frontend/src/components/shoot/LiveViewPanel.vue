@@ -396,7 +396,7 @@ watch([lastShotPath, () => tools.value.onion], ([path, on], [, wasOn]) => {
 
 // ---- Focus: tapping sets the focus point and runs autofocus; the pill drives manual steps.
 const frameFocused = () => camera.connected && !!hasFrame.value
-async function runAutofocus() {
+async function runAutofocus(move = false) {
   if (!camera.connected) return
   clearTimeout(lockTimer)
   const { w, h } = frameSize.value
@@ -404,6 +404,7 @@ async function runAutofocus() {
   focusState.value = 'moving'
   afBusy.value = true
   try {
+    if (move) await focus.setPoint(focusPt.value.x / (w || 1), focusPt.value.y / (h || 1))
     const r = await focus.autofocus()
     if (r?.focused === false) {
       focusState.value = 'idle'
@@ -459,7 +460,7 @@ function onPointerUp(e) {
   down = null
   if (tap && frameFocused()) {
     focusPt.value = framePoint(e)
-    runAutofocus()
+    runAutofocus(true)
   }
 }
 function onPointerCancel() {
@@ -658,7 +659,7 @@ onUnmounted(() => {
           :disabled="!camera.connected"
           :busy="afBusy"
           @step="focusStep"
-          @autofocus="runAutofocus"
+          @autofocus="runAutofocus()"
         />
       </div>
       <div v-if="!showPlaceholder && tools.hist" class="lv-histwrap">

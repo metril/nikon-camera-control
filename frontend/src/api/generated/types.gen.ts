@@ -5,6 +5,46 @@ export type ClientOptions = {
 };
 
 /**
+ * AfPointRequest
+ */
+export type AfPointRequest = {
+    /**
+     * X
+     *
+     * Horizontal position in the frame (0 = left)
+     */
+    x: number;
+    /**
+     * Y
+     *
+     * Vertical position in the frame (0 = top)
+     */
+    y: number;
+};
+
+/**
+ * AfPointResult
+ */
+export type AfPointResult = {
+    /**
+     * Ok
+     */
+    ok?: true;
+    /**
+     * X
+     *
+     * Camera live view pixel X that was sent
+     */
+    x: number;
+    /**
+     * Y
+     *
+     * Camera live view pixel Y that was sent
+     */
+    y: number;
+};
+
+/**
  * ApiKeyDeletedOut
  */
 export type ApiKeyDeletedOut = {
@@ -5773,6 +5813,51 @@ export type ManualFocusResponses = {
 };
 
 export type ManualFocusResponse = ManualFocusResponses[keyof ManualFocusResponses];
+
+export type SetAfPointData = {
+    body: AfPointRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/focus/point';
+};
+
+export type SetAfPointErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SetAfPointError = SetAfPointErrors[keyof SetAfPointErrors];
+
+export type SetAfPointResponses = {
+    /**
+     * Successful Response
+     */
+    200: AfPointResult;
+};
+
+export type SetAfPointResponse = SetAfPointResponses[keyof SetAfPointResponses];
 
 export type ResetFocusPositionData = {
     body?: never;

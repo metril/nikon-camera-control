@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import io
 import random
+import re
 import threading
 import time
 from collections import deque
@@ -121,6 +122,7 @@ def _specs() -> list[_Spec]:
             range=ConfigRange(-1000, 1000, 1),
         ),  # fmt: skip
         _Spec("actions", "movie", "Record a movie", T, False),
+        _Spec("actions", "changeafarea", "Set Nikon Autofocus area", ConfigType.TEXT, "0x0"),
         _Spec("settings", "datetime", "Camera Date and Time", ConfigType.DATE, int(_BASE_TIME)),
         _Spec(
             "settings",
@@ -580,6 +582,12 @@ class FakeCamera:
             self._vf_busy -= 1
             raise CameraBusy("set_config(viewfinder): I/O in progress")
         new = self._coerce(s, value)
+        if name == "changeafarea":  # like ptp2: "XxY" inside the live view frame, live view on
+            m = re.fullmatch(r"(\d+)x(\d+)", str(new))
+            if not self._values["viewfinder"]:
+                raise CameraOperationFailed("Camera is not in live view")
+            if not m or int(m[1]) >= _IMG_SIZE[0] or int(m[2]) >= _IMG_SIZE[1]:
+                raise SettingInvalid(f"Invalid AF area {new!r}", details={"name": name})
         if self._shutter_shift and name == "shutterspeed" and new not in ("Bulb", "1/8000"):
             i = s.choices.index(str(new))
             new = s.choices[min(i + 1, len(s.choices) - 1)]

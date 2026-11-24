@@ -122,6 +122,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | GET | `/api/v1/focus` | `get_focus` | Get Focus Status |
 | POST | `/api/v1/focus/af` | `autofocus` | Autofocus |
+| POST | `/api/v1/focus/point` | `set_af_point` | Set Af Point |
 | POST | `/api/v1/focus/mf` | `manual_focus` | Manual Focus |
 | POST | `/api/v1/focus/reset` | `reset_focus_position` | Reset Focus Position |
 | POST | `/api/v1/focus/stack` | `start_focus_stack` | Start Focus Stack |
@@ -913,6 +914,31 @@ operation_id: `autofocus`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `AutofocusResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/focus/point`
+
+operation_id: `set_af_point`
+
+Move the camera's AF point (``changeafarea``) to a normalized live view position.
+
+**Request body** (`application/json`): `AfPointRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `x` | number | yes |  | `>=0.0`, `<=1.0` | Horizontal position in the frame (0 = left) |
+| `y` | number | yes |  | `>=0.0`, `<=1.0` | Vertical position in the frame (0 = top) |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AfPointResult` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |

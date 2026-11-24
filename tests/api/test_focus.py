@@ -57,6 +57,7 @@ async def test_routes(app: FastAPI) -> None:
         ("get", F): "get_focus",
         ("post", f"{F}/af"): "autofocus",
         ("post", f"{F}/mf"): "manual_focus",
+        ("post", f"{F}/point"): "set_af_point",
         ("post", f"{F}/reset"): "reset_focus_position",
         ("post", f"{F}/stack"): "start_focus_stack",
     }
@@ -306,3 +307,33 @@ async def test_stack_and_mf_refused_in_af_c_with_clear_error(
     r = await connected_client.post(f"{F}/mf", json={"steps": 3})
     assert r.status_code == 409
     assert (await connected_client.get("/api/v1/camera")).json()["leased_by"] is None
+
+
+async def test_af_point_maps_normalized_to_frame_pixels(
+    connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    c = connected_client
+    assert (await c.post("/api/v1/liveview/start")).status_code < 300
+    r = await c.post(f"{F}/point", json={"x": 0.5, "y": 0.25})
+    assert r.status_code == 200 and r.json() == {"ok": True, "x": 160, "y": 53}
+    assert fake_camera._values["changeafarea"] == "160x53"
+    r = await c.post(f"{F}/point", json={"x": 1, "y": 1})
+    assert r.json()["x"] == 319 and r.json()["y"] == 212
+
+
+async def test_af_point_needs_liveview_and_valid_range(
+    connected_client: httpx.AsyncClient,
+) -> None:
+    c = connected_client
+    assert (await c.post(f"{F}/point", json={"x": 0.5, "y": 0.5})).status_code == 409
+    assert (await c.post(f"{F}/point", json={"x": 1.5, "y": 0.5})).status_code == 422
+
+
+async def test_af_point_unsupported_without_widget(
+    connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    c = connected_client
+    await c.post("/api/v1/liveview/start")
+    del fake_camera._specs["changeafarea"]
+    r = await c.post(f"{F}/point", json={"x": 0.5, "y": 0.5})
+    assert r.status_code == 501
