@@ -80,9 +80,9 @@ function bump(dir) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-1">
-    <label v-if="label" :for="id" class="text-xs text-camera-muted">{{ label }}</label>
-    <div class="flex items-center gap-2">
+  <div class="flex flex-col gap-1.5">
+    <label v-if="label" :for="id" class="text-xs font-medium text-camera-muted">{{ label }}</label>
+    <div class="relative">
       <input
         :id="id"
         type="text"
@@ -91,7 +91,8 @@ function bump(dir) {
         :disabled="disabled"
         :aria-valuemin="min"
         :aria-valuemax="max"
-        class="min-w-0 flex-1 rounded-md border border-camera-border bg-camera-bg px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+        class="ui-num h-[var(--ctl)] w-full min-w-0 rounded-control border border-camera-border bg-camera-bg pl-3 text-sm tabular-nums text-camera-text hover:border-[#4a4a4a] disabled:cursor-not-allowed disabled:opacity-[.45]"
+        :class="unit ? 'pr-11' : 'pr-3'"
         @input="onInput"
         @change="commit"
         @blur="commit"
@@ -99,7 +100,24 @@ function bump(dir) {
         @keydown.up.prevent="bump(1)"
         @keydown.down.prevent="bump(-1)"
       />
-      <span v-if="unit" class="text-xs text-camera-muted">{{ unit }}</span>
+      <span
+        v-if="unit"
+        class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-camera-muted"
+        >{{ unit }}</span
+      >
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Text input today; hide native spinners in case the type ever becomes number */
+.ui-num::-webkit-outer-spin-button,
+.ui-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.ui-num {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+</style>

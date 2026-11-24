@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { uid } from './uid'
+import UiIcon from './UiIcon.vue'
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps({
@@ -8,6 +9,8 @@ const props = defineProps({
   title: { type: String, default: '' },
   /** Additive: false hides the close button and ignores Esc (e.g. mandatory prompts). */
   closable: { type: Boolean, default: true },
+  /** 'center' (default) or 'side' (right-hand sheet, full height). */
+  variant: { type: String, default: 'center' },
 })
 const emit = defineEmits(['close'])
 
@@ -70,7 +73,8 @@ onBeforeUnmount(() => opener?.focus?.())
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      class="fixed inset-0 z-50 flex bg-black/70"
+      :class="variant === 'side' ? 'justify-end' : 'items-center justify-center p-4'"
       @mousedown.self="closable && emit('close')"
     >
       <div
@@ -80,7 +84,12 @@ onBeforeUnmount(() => opener?.focus?.())
         aria-modal="true"
         :aria-labelledby="title ? titleId : undefined"
         tabindex="-1"
-        class="flex max-h-full w-full max-w-lg flex-col rounded-lg border border-camera-border bg-camera-surface shadow-xl"
+        class="flex flex-col border border-camera-border bg-camera-surface shadow-xl"
+        :class="
+          variant === 'side'
+            ? 'h-full w-full max-w-md border-y-0 border-r-0'
+            : 'max-h-full w-full max-w-lg rounded-card'
+        "
         @keydown="onKeydown"
       >
         <header
@@ -91,13 +100,13 @@ onBeforeUnmount(() => opener?.focus?.())
             v-if="closable"
             type="button"
             aria-label="Close"
-            class="rounded px-2 text-xl leading-none text-camera-muted hover:text-camera-text"
+            class="inline-flex h-8 w-8 items-center justify-center rounded text-camera-muted hover:text-camera-text"
             @click="emit('close')"
           >
-            &times;
+            <UiIcon name="X" :size="18" />
           </button>
         </header>
-        <div class="overflow-y-auto p-4"><slot /></div>
+        <div class="flex-1 overflow-y-auto p-4"><slot /></div>
         <footer
           v-if="$slots.footer"
           class="flex flex-wrap justify-end gap-2 border-t border-camera-border px-4 py-3"
