@@ -981,6 +981,8 @@ class CameraService:
         """Run ``fn`` on the worker. A user-facing call (CONTROL/CAPTURE) that dies with a
         device-gone error (the camera was power-cycled unnoticed) is retried once after the
         reconnect, when ``retry`` allows it (a callable is asked after the failure)."""
+        if priority in (Priority.CONTROL, Priority.CAPTURE) and self._reconnecting():
+            await self._await_reconnect()  # automatic reconnect in progress: wait, else fail below
         try:
             return await self._run_once(fn, priority, timeout)
         except (CameraIOError, CameraNotFound) as e:
@@ -1003,6 +1005,11 @@ class CameraService:
             raise CameraNotConnected()
         item = worker.submit(lambda w: fn(w.require()), priority)
         return await self._finish(worker, item, timeout)
+
+    def _reconnecting(self) -> bool:
+        """Disconnected with the automatic reconnect loop running (not a user Disconnect)."""
+        task = self._reconnect_task
+        return self._state == _S.DISCONNECTED and task is not None and not task.done()
 
     async def _await_reconnect(self) -> bool:
         """After a device-gone error: wait for the reconnect loop (bounded) and report

@@ -577,6 +577,28 @@ async def test_explicit_disconnect_stops_reconnect(env: Env) -> None:
     assert env.factory_calls == calls and svc.state == S.DISCONNECTED
 
 
+async def test_call_during_auto_reconnect_waits_then_runs(env: Env) -> None:
+    svc = await env.make(connect_retries=50, reconnect_interval_s=0.05)
+
+    def io(_b: CameraBackend) -> None:
+        raise CameraIOError()
+
+    env.backend.fail_open = CameraNotFound()
+    with pytest.raises(CameraIOError):
+        await svc.call(io, retry=False)
+    await wait_until(lambda: svc.state == S.DISCONNECTED and env.factory_calls >= 2)
+    env.backend.fail_open = None
+    assert await svc.call(lambda _b: 7) == 7
+    assert svc.state in (S.IDLE, S.BUSY)
+
+
+async def test_call_after_user_disconnect_fails_immediately(env: Env) -> None:
+    svc = await env.make()
+    await svc.disconnect()
+    with pytest.raises(CameraNotConnected):
+        await asyncio.wait_for(svc.call(lambda _b: 7), 1)
+
+
 # 7. lease ------------------------------------------------------------------------------
 async def test_lease_rules(env: Env) -> None:
     svc = await env.make()
