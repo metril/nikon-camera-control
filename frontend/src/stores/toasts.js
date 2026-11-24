@@ -34,6 +34,8 @@ export const useToastsStore = defineStore('toasts', () => {
       code: e?.code ?? null,
       status: e?.status ?? null,
       requestId: e?.requestId ?? null,
+      reported: e?.details?.prohibit ?? e?.details?.camera_message ?? null,
+      manual: e?.details?.nikon_manual ?? null,
     })
   }
 

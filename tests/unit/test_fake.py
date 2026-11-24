@@ -335,3 +335,19 @@ def test_capture_keeps_liveview_when_option_off() -> None:
     c.capture_preview()
     c.capture()
     assert c.viewfinder_on
+
+
+def test_fake_refusal_reports_prohibit_and_context_text() -> None:
+    from backend.camera.fake import FakeCamera
+    from backend.core.errors import CameraOperationFailed
+
+    cam = FakeCamera()
+    cam.open()
+    cam.refuse("liveview", "Battery exhausted")
+    assert "Battery exhausted" in str(cam.get_config("liveviewprohibit").value)
+    with pytest.raises(CameraOperationFailed) as ei:
+        cam.set_config("viewfinder", True)
+    assert ei.value.details["prohibit"] == "Battery exhausted"
+    assert "nikon_manual" in ei.value.details
+    cam.refuse("liveview")
+    cam.set_config("viewfinder", True)

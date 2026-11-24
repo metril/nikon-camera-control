@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import gphoto2 as gp
@@ -59,7 +60,11 @@ def test_open_raises_permission_error_only_when_node_unreadable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(gphoto2_backend.gp, "Camera", _FailingCamera)
-    monkeypatch.setattr(gphoto2_backend.gp, "Context", lambda: object())
+    monkeypatch.setattr(
+        gphoto2_backend.gp,
+        "Context",
+        lambda: SimpleNamespace(set_error_func=lambda *a: None, set_message_func=lambda *a: None),
+    )
     sysfs, devfs = _usb(tmp_path, "04b0", 3, 9, 0o000)
     with pytest.raises(CameraPermissionDenied) as exc:
         Gphoto2Backend(sysfs, devfs).open()

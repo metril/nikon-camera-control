@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import posixpath
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +28,11 @@ from backend.camera.backend import (
     FileKind,
     StorageInfo,
     parse_property_change,
+)
+from backend.camera.camera_text import (
+    apply_prohibit,
+    camera_details,
+    prohibit_reasons,
 )
 from backend.camera.usb_access import (
     DEFAULT_DEV_ROOT,
@@ -55,6 +61,11 @@ from backend.core.errors import (
 log = structlog.get_logger(__name__)
 
 _CHUNK = 1024 * 1024
+# Config widget that tells why a start is refused -> (widget, what was refused).
+_REFUSALS = {
+    "viewfinder": ("liveviewprohibit", "live view"),
+    "movie": ("movieprohibit", "movie recording"),
+}
 _VIEWFINDER_RETRY_S = (0.1, 0.25, 0.5, 1.0)
 
 _IO_CODES = {
@@ -98,7 +109,9 @@ def gp_code(exc: BaseException) -> int | None:
     return code if isinstance(code, int) else None
 
 
-def translate_error(exc: BaseException, op: str) -> AppError:
+def translate_error(
+    exc: BaseException, op: str, camera_messages: list[str] | None = None
+) -> AppError:
     """Map a GPhoto2Error to the matching domain exception, keeping the gphoto2 code.
 
     Only genuine link loss (``_IO_CODES``) becomes CameraIOError; everything else is a
@@ -110,14 +123,16 @@ def translate_error(exc: BaseException, op: str) -> AppError:
     except Exception:  # noqa: BLE001 - message lookup must never mask the real error
         text = str(exc)
     details: dict[str, Any] = {"gphoto2_code": code, "gphoto2_message": text, "operation": op}
-    msg = f"{op}: {text}"
+    extra = camera_details(camera_messages or [])
+    details.update(extra)
+    # libgphoto2 reports the reason through the context; the return code is often just -1.
+    msg = f"{op}: {extra.get('camera_message', text)}"
     if code == gp.GP_ERROR_MODEL_NOT_FOUND:
         return CameraNotFound(details=details)
     if code == gp.GP_ERROR_CAMERA_BUSY:
         return CameraBusy(msg, details=details)
     if code == gp.GP_ERROR_IO_USB_CLAIM:
-        # Usually another process (gvfs/gphoto2 CLI) holds the device.
-        return CameraBusy(f"{msg} (device claimed by another process?)", details=details)
+        return CameraBusy(msg, details=details)
     if code == gp.GP_ERROR_TIMEOUT:
         return CameraTimeout(msg, details=details)
     if code in (gp.GP_ERROR_FILE_NOT_FOUND, gp.GP_ERROR_DIRECTORY_NOT_FOUND):
@@ -263,6 +278,8 @@ class Gphoto2Backend:
         self._model = ""
         self._viewfinder_on = False
         self._sleep = time.sleep
+        self._msgs: list[str] = []
+        self._msg_lock = threading.Lock()
 
     # -- lifecycle
 
@@ -270,17 +287,35 @@ class Gphoto2Backend:
     def is_open(self) -> bool:
         return self._camera is not None
 
+    def _on_context_text(self, _ctx: Any, text: Any, _data: Any = None) -> None:
+        """libgphoto2 context error/message callback: keep the camera-reported reason."""
+        t = str(text).strip()
+        if t:
+            with self._msg_lock:
+                self._msgs.append(t)
+
+    def _take_msgs(self) -> list[str]:
+        with self._msg_lock:
+            msgs, self._msgs = self._msgs, []
+        return list(dict.fromkeys(msgs))
+
+    def _translate(self, exc: BaseException, op: str) -> AppError:
+        return translate_error(exc, op, self._take_msgs())
+
     def open(self) -> None:
         if self._camera is not None:
             self.close()
+        self._take_msgs()
         camera = gp.Camera()
         ctx = gp.Context()
+        ctx.set_error_func(self._on_context_text, None)
+        ctx.set_message_func(self._on_context_text, None)
         try:
             camera.init(ctx)
             model = camera.get_abilities().model
         except gp.GPhoto2Error as e:
             self._exit_quietly(camera, ctx)
-            err = translate_error(e, "open")
+            err = self._translate(e, "open")
             if isinstance(err, CameraNotFound | CameraIOError | CameraOperationFailed):
                 problem = find_unopenable_nikon(self._sysfs_root, self._dev_root)
                 if problem is not None:
@@ -321,6 +356,7 @@ class Gphoto2Backend:
     def _cam(self) -> Any:
         if self._camera is None:
             raise CameraNotConnected()
+        self._take_msgs()  # messages belong to the call that is starting now
         return self._camera
 
     # -- info
@@ -330,7 +366,7 @@ class Gphoto2Backend:
         try:
             s = cam.get_summary(self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, "summary") from e
+            raise self._translate(e, "summary") from e
         return str(getattr(s, "text", None) or s)
 
     def model(self) -> str:
@@ -344,7 +380,7 @@ class Gphoto2Backend:
         try:
             root = cam.get_config(self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, "list_config") from e
+            raise self._translate(e, "list_config") from e
         top = widget_to_config(root)
         return list(top.children)
 
@@ -360,7 +396,7 @@ class Gphoto2Backend:
                 gp.GP_ERROR_NOT_SUPPORTED,
                 gp.GP_ERROR_DIRECTORY_NOT_FOUND,
             ):
-                raise translate_error(e, f"get_config({name})") from e
+                raise self._translate(e, f"get_config({name})") from e
         if widget is None:  # driver lacks get_single_config or name unknown: full tree
             try:
                 root = cam.get_config(self._ctx)
@@ -370,11 +406,11 @@ class Gphoto2Backend:
                     raise SettingNotFound(
                         f"Setting '{name}' not found", details={"name": name}
                     ) from e
-                raise translate_error(e, f"get_config({name})") from e
+                raise self._translate(e, f"get_config({name})") from e
         try:
             return widget, widget_to_config(widget, self._parent_path(widget))
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"get_config({name})") from e
+            raise self._translate(e, f"get_config({name})") from e
 
     @staticmethod
     def _parent_path(widget: Any) -> str:
@@ -409,7 +445,24 @@ class Gphoto2Backend:
                 root.get_child_by_name(name).set_value(coerced)
                 cam.set_config(root, self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"set_config({name})") from e
+            err = self._translate(e, f"set_config({name})")
+            if name in _REFUSALS and coerced and not isinstance(err, CameraBusy):
+                self._explain_refusal(err, name)
+            raise err from e
+
+    def _explain_refusal(self, err: AppError, name: str) -> None:
+        """After a failed live view start / movie start, add what the camera's read-only prohibit
+        widget reports, verbatim. Silent when the widget is missing or lists nothing."""
+        widget, what = _REFUSALS[name]
+        try:
+            value = self._lookup(widget)[1].value
+        except Exception as e:  # noqa: BLE001 - diagnostics must never mask the real error
+            log.info("prohibit_unreadable", widget=widget, reason=str(e))
+            return
+        raw, reasons = prohibit_reasons(value)
+        if (msg := apply_prohibit(err.details, what, raw, reasons)) is not None:
+            err.message = msg
+            err.args = (msg,)
 
     # -- capture
 
@@ -418,7 +471,7 @@ class Gphoto2Backend:
         try:
             p = cam.capture(gp.GP_CAPTURE_IMAGE, self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, "capture") from e
+            raise self._translate(e, "capture") from e
         return CameraFilePath(folder=p.folder, name=p.name)
 
     def trigger(self) -> None:
@@ -426,7 +479,7 @@ class Gphoto2Backend:
         try:
             cam.trigger_capture(self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, "trigger") from e
+            raise self._translate(e, "trigger") from e
 
     def capture_preview(self) -> bytes:
         cam = self._cam()
@@ -437,7 +490,7 @@ class Gphoto2Backend:
             return bytes(f.get_data_and_size())
         except gp.GPhoto2Error as e:
             self._viewfinder_on = False  # re-enable (with retry) on the next frame
-            raise translate_error(e, "capture_preview") from e
+            raise self._translate(e, "capture_preview") from e
         except AppError:
             self._viewfinder_on = False
             raise
@@ -491,7 +544,7 @@ class Gphoto2Backend:
         except gp.GPhoto2Error as e:
             if gp_code(e) == gp.GP_ERROR_TIMEOUT:
                 return CameraEvent(EventType.TIMEOUT)
-            raise translate_error(e, "wait_for_event") from e
+            raise self._translate(e, "wait_for_event") from e
         if etype == gp.GP_EVENT_TIMEOUT:
             return CameraEvent(EventType.TIMEOUT)
         if etype == gp.GP_EVENT_FILE_ADDED:
@@ -515,21 +568,21 @@ class Gphoto2Backend:
         try:
             return [str(n) for n, _ in cam.folder_list_folders(folder, self._ctx)]
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"list_folders({folder})") from e
+            raise self._translate(e, f"list_folders({folder})") from e
 
     def list_file_names(self, folder: str) -> list[str]:
         cam = self._cam()
         try:
             return [str(n) for n, _ in cam.folder_list_files(folder, self._ctx)]
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"list_files({folder})") from e
+            raise self._translate(e, f"list_files({folder})") from e
 
     def file_info(self, folder: str, name: str) -> CameraFileInfo:
         cam = self._cam()
         try:
             f = cam.file_get_info(folder, name, self._ctx).file
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"file_info({posixpath.join(folder, name)})") from e
+            raise self._translate(e, f"file_info({posixpath.join(folder, name)})") from e
         return CameraFileInfo(
             folder=folder,
             name=name,
@@ -559,7 +612,7 @@ class Gphoto2Backend:
                     try:
                         cam.file_get(folder, name, ftype).save(str(tmp))
                     except gp.GPhoto2Error as e2:
-                        err = translate_error(e2, f"read_file({posixpath.join(folder, name)})")
+                        err = self._translate(e2, f"read_file({posixpath.join(folder, name)})")
                         err.details["partial_read_cause"] = str(e)
                         err.details["whole_file_cause"] = str(e2)
                         raise err from e2
@@ -568,7 +621,7 @@ class Gphoto2Backend:
             tmp.replace(dest)
         except gp.GPhoto2Error as e:  # not reached by the fallback's own failure (AppError)
             tmp.unlink(missing_ok=True)
-            raise translate_error(e, f"read_file({posixpath.join(folder, name)})") from e
+            raise self._translate(e, f"read_file({posixpath.join(folder, name)})") from e
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
@@ -595,14 +648,14 @@ class Gphoto2Backend:
         try:
             cam.file_delete(folder, name, self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, f"delete_file({posixpath.join(folder, name)})") from e
+            raise self._translate(e, f"delete_file({posixpath.join(folder, name)})") from e
 
     def storage_info(self) -> list[StorageInfo]:
         cam = self._cam()
         try:
             infos = cam.get_storageinfo(self._ctx)
         except gp.GPhoto2Error as e:
-            raise translate_error(e, "storage_info") from e
+            raise self._translate(e, "storage_info") from e
         out: list[StorageInfo] = []
         for si in infos:
             fields = si.fields
