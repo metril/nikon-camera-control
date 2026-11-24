@@ -7,9 +7,10 @@ const toasts = useToastsStore()
 const shown = computed(() => toasts.items)
 const dismiss = (id) => toasts.dismiss(id)
 const TONES = {
-  error: 'border-red-500/60 bg-red-950/90 text-red-100',
-  success: 'border-green-500/60 bg-green-950/90 text-green-100',
-  info: 'border-camera-border bg-camera-surface text-camera-text',
+  error: 'border-camera-danger/50 bg-[#1f1313] text-camera-text',
+  warn: 'border-camera-warn/40 bg-[#1c190f] text-camera-text',
+  success: 'border-camera-ok/40 bg-[#101c14] text-camera-text',
+  info: 'border-camera-border bg-camera-raised text-camera-text',
 }
 const detail = (t) =>
   [t.code && `Code: ${t.code}`, t.requestId && `Request: ${t.requestId}`]

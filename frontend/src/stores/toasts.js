@@ -25,6 +25,7 @@ export const useToastsStore = defineStore('toasts', () => {
   }
   const success = (message, ms = 3000) => push('success', message, ms)
   const info = (message, ms = 4000) => push('info', message, ms)
+  const warn = (message, ms = 6000) => push('warn', message, ms)
   /** Errors are sticky (dismissed by the user); an ApiError keeps code, status and requestId. */
   function error(e) {
     if (typeof e === 'string') return push('error', e, 0)
@@ -36,5 +37,5 @@ export const useToastsStore = defineStore('toasts', () => {
     })
   }
 
-  return { items, push, success, info, error, dismiss }
+  return { items, push, success, info, warn, error, dismiss }
 })

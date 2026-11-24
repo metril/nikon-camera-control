@@ -22,12 +22,12 @@ function onChange(e) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-1">
-    <label v-if="label" :for="id" class="text-xs text-camera-muted">{{ label }}</label>
+  <div class="flex flex-col gap-1.5">
+    <label v-if="label" :for="id" class="text-xs font-medium text-camera-muted">{{ label }}</label>
     <select
       :id="id"
       :disabled="disabled"
-      class="rounded-md border border-camera-border bg-camera-bg px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+      class="ui-select h-[var(--ctl)] w-full min-w-0 appearance-none rounded-control border border-camera-border bg-camera-bg pl-3 pr-9 text-sm text-camera-text hover:border-[#4a4a4a] disabled:cursor-not-allowed disabled:opacity-[.45]"
       @change="onChange"
     >
       <option
@@ -41,3 +41,11 @@ function onChange(e) {
     </select>
   </div>
 </template>
+
+<style scoped>
+.ui-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+</style>
