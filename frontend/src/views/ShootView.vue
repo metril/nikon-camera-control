@@ -242,6 +242,9 @@ html[data-layout='touch'] .strip-area :deep(.cell .v) {
     top: 76px;
     max-height: calc(100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 32px);
     overflow-y: auto;
+    /* overflow-y makes this a scroll container on both axes; room for the ghost buttons' -10px bleed */
+    padding-inline: 10px;
+    margin-inline: -10px;
   }
 }
 </style>
