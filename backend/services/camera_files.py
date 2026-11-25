@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -26,16 +27,19 @@ from backend.camera.backend import CameraFileInfo, CameraFilePath, FileKind
 from backend.core.camera_service import CameraService, Priority
 from backend.core.errors import (
     AppError,
+    CameraBusy,
     CameraNotConnected,
     CameraOperationFailed,
     FileNotFoundError_,
     NoTargetError,
     PathNotAllowed,
+    UnsupportedMedia,
 )
 from backend.core.events import EventBus, Subscription
 from backend.core.jobs import Job, JobContext, JobManager
 from backend.core.storage_root import StorageRoot, as_root
 from backend.services.storage import download_files
+from backend.services.thumbnails import render_preview
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -50,6 +54,11 @@ _INFO_TIMEOUT_S = 30.0  # per info batch (_INFO_BATCH files, about 1.5 s on a D5
 _INFO_BATCH = 50  # file infos fetched per camera call (about 1.5 s on a D500)
 _READ_TIMEOUT_S = 600.0
 _TMP_MAX_AGE_S = 3600.0  # single-file download temp dirs older than this are removed
+PREVIEW_SIZE = 2560  # long edge of the screen-sized preview
+PREVIEW_QUALITY = 85
+PREVIEW_MAX_ENTRIES = 300
+PREVIEW_MAX_BYTES = 500 * 1024 * 1024
+_PREVIEW_PRUNE_EVERY = 20
 _NAME_CAP = 50  # max file names echoed in a job result
 _INVALIDATING = frozenset(
     {
@@ -245,6 +254,10 @@ class CameraFilesService:
         self._store = as_root(store)
         self._ledgers: dict[Path, DownloadLedger] = {}
         self._cache = _Cache()
+        self._preview_locks: dict[str, asyncio.Lock] = {}
+        self._previews_made = 0
+        self._pruned_dirs: set[Path] = set()
+        self._fallback_previews: Path | None = None
         self._sub: Subscription | None = None
         self._task: asyncio.Task[None] | None = None
 
@@ -473,10 +486,75 @@ class CameraFilesService:
         try:
             await self._camera.call(
                 lambda b: b.read_file(folder, name, FileKind.PREVIEW, dest),
-                priority=Priority.PREVIEW,  # lowest: never ahead of live view frames
+                priority=Priority.PREVIEW,  # small reads share live view's FIFO
                 timeout=_READ_TIMEOUT_S,
             )
             return await asyncio.to_thread(dest.read_bytes)
+        finally:
+            await asyncio.to_thread(_rm, tmp_dir)
+
+    async def preview_file(self, folder: str, name: str) -> Path:
+        """Cached screen-sized JPEG of a card image or RAW (single flight per file).
+
+        The full-file read runs at BACKGROUND priority (behind live view frames) and is
+        refused with CameraBusy while another owner holds the camera lease, unless the preview
+        is already cached. Raises UnsupportedMedia for videos and others.
+        """
+        if file_type(name) not in ("jpeg", "raw"):
+            raise UnsupportedMedia("No preview can be generated for this file type")
+        info = await self._camera.call(
+            lambda b: b.file_info(folder, name), priority=Priority.PREVIEW, timeout=_INFO_TIMEOUT_S
+        )
+        key = hashlib.sha1(  # noqa: S324 - cache key only
+            f"{folder}|{name}|{info.size}|{info.mtime}|{PREVIEW_SIZE}".encode(),
+            usedforsecurity=False,
+        ).hexdigest()
+        cache = self._preview_dir()
+        dest = cache / f"{key}.jpg"
+        if cache not in self._pruned_dirs:
+            self._pruned_dirs.add(cache)
+            await asyncio.to_thread(_prune_previews, cache, PREVIEW_MAX_ENTRIES)
+        if await asyncio.to_thread(_touch_if_exists, dest):
+            return dest
+        holder = self._camera.status().leased_by
+        if holder is not None:
+            raise CameraBusy(
+                f"Camera is busy ({holder}); the full-size preview is not read from the card "
+                "until it is free",
+                details={"leased_by": holder},
+            )
+        lock = self._preview_locks.setdefault(key, asyncio.Lock())
+        try:
+            async with lock:
+                if not await asyncio.to_thread(dest.exists):
+                    await self._render_preview(folder, name, dest)
+                    self._previews_made += 1
+                    if self._previews_made % _PREVIEW_PRUNE_EVERY == 0:
+                        await asyncio.to_thread(_prune_previews, cache, PREVIEW_MAX_ENTRIES)
+        finally:
+            self._preview_locks.pop(key, None)
+        return dest
+
+    def _preview_dir(self) -> Path:
+        """On the storage target's cache; without a target, a private (0700) per-process temp
+        dir (rebuildable)."""
+        try:
+            return self._store.cache() / "previews"
+        except NoTargetError:
+            if self._fallback_previews is None or not self._fallback_previews.is_dir():
+                self._fallback_previews = Path(tempfile.mkdtemp(prefix="ncc-previews-"))
+            return self._fallback_previews
+
+    async def _render_preview(self, folder: str, name: str, dest: Path) -> None:
+        tmp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="ncc-preview-"))
+        src = tmp_dir / name
+        try:
+            await self._camera.call(
+                lambda b: b.read_file(folder, name, FileKind.NORMAL, src),
+                priority=Priority.BACKGROUND,  # strictly behind live view frames
+                timeout=_READ_TIMEOUT_S,
+            )
+            await asyncio.to_thread(render_preview, src, dest, PREVIEW_SIZE, PREVIEW_QUALITY)
         finally:
             await asyncio.to_thread(_rm, tmp_dir)
 
@@ -502,11 +580,17 @@ class CameraFilesService:
         # Files go strictly one at a time: concurrency over a single USB link buys nothing.
         ctx.report(None, "Listing files")
         self.invalidate()
-        infos = await self.list_infos(
-            req.folder or "/",
-            True,
-            lambda n: ctx.report(None, f"Listing files ({n} files so far)"),
-        )
+        if req.file is not None:
+            one = await self.list_infos(req.file.folder, False, lambda n: None)
+            infos = [i for i in one if i.name == req.file.name]
+            if not infos:
+                raise FileNotFoundError_()
+        else:
+            infos = await self.list_infos(
+                req.folder or "/",
+                True,
+                lambda n: ctx.report(None, f"Listing files ({n} files so far)"),
+            )
         ledger = self._ledger
         await ledger.load()
         dest = self._store.root() / "camera"
@@ -520,7 +604,7 @@ class CameraFilesService:
 
         def _result() -> dict[str, Any]:
             return {
-                "folder": req.folder or "/",
+                "folder": req.file.folder if req.file is not None else (req.folder or "/"),
                 "total": len(infos),
                 "downloaded": downloaded,
                 "skipped": skipped,
@@ -577,6 +661,32 @@ class CameraFilesService:
             if req.delete_after:
                 self.invalidate()
         return _result()
+
+
+def _touch_if_exists(path: Path) -> bool:
+    """Cache hit: refresh the mtime so pruning is least-recently-used."""
+    try:
+        os.utime(path)
+    except OSError:
+        return False
+    return True
+
+
+def _prune_previews(cache: Path, keep: int, max_bytes: int = PREVIEW_MAX_BYTES) -> None:
+    """Drop the least recently used previews beyond ``keep`` files or ``max_bytes`` in total."""
+    try:
+        entries = [(e.stat(), e.path) for e in os.scandir(cache) if e.name.endswith(".jpg")]
+    except OSError:
+        return
+    entries.sort(key=lambda t: t[0].st_mtime)
+    count, total = len(entries), sum(st.st_size for st, _ in entries)
+    for st, path in entries:
+        if count <= keep and total <= max_bytes:
+            break
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+        count -= 1
+        total -= st.st_size
 
 
 def _rm(path: Path) -> None:

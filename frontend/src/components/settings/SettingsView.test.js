@@ -265,8 +265,12 @@ describe('SettingsView', () => {
       expect.arrayContaining(['display', 'capture', 'storage', 'api-key', 'about']),
     )
     await w.find('[data-chip="storage"]').trigger('click')
-    expect(scroll).toHaveBeenCalledTimes(1)
-    expect(scroll.mock.contexts[0].dataset.section).toBe('storage')
+    // the section scrolls into view, and the chip row keeps the chosen chip visible
+    expect(scroll.mock.contexts.map((el) => el.dataset.section || el.dataset.chip)).toEqual([
+      'storage',
+      'storage',
+    ])
+    expect(scroll.mock.contexts[1].dataset.chip).toBe('storage')
   })
 
   it('follows a #/settings?section= deep link', async () => {

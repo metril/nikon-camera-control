@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.5.2
+# Nikon Camera Control API 0.5.3
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -79,6 +79,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/camera/folders` | `list_camera_folders` | List Camera Folders |
 | GET | `/api/v1/camera/files` | `list_camera_files` | List Camera Files |
 | GET | `/api/v1/camera/thumbnail` | `get_camera_thumbnail` | Get Camera Thumbnail |
+| GET | `/api/v1/camera/preview` | `get_camera_preview` | Get Camera Preview |
 | POST | `/api/v1/camera/files/download-all` | `download_all_camera_files` | Download All Camera Files |
 | GET | `/api/v1/camera/files/{folder}/{name}` | `download_camera_file` | Download Camera File |
 | DELETE | `/api/v1/camera/files/{folder}/{name}` | `delete_camera_file` | Delete Camera File |
@@ -497,6 +498,37 @@ operation_id: `get_camera_thumbnail`
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
+### `GET /api/v1/camera/preview`
+
+operation_id: `get_camera_preview`
+
+JPEG as rendered from the card file (RAW: its embedded preview); 415 for videos.
+
+``size`` and ``mtime`` (from the listing) are cache-busters only: the body reuses file
+names. 409 while another owner holds the camera lease and the preview is not cached.
+A client that goes away cancels the render (a still-queued camera read never runs).
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `folder` | query | string | yes |  |  |  |
+| `name` | query | string | yes |  |  |  |
+| `size` | query | integer \| null | no |  |  |  |
+| `mtime` | query | number \| null | no |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Screen-sized JPEG (long edge 2560 px) of the file | `image/jpeg`: `string(binary)` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ### `POST /api/v1/camera/files/download-all`
 
 operation_id: `download_all_camera_files`
@@ -505,6 +537,7 @@ operation_id: `download_all_camera_files`
 
 | Field | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
+| `file` | CameraFileRef \| null | no |  |  | Download only this file (folder is then ignored) |
 | `folder` | string \| null | no |  |  | Camera folder to download (recursively); null = whole card |
 | `delete_after` | boolean | no | `false` |  | Delete each file from the card after |
 | `only_new` | boolean | no | `true` |  | Skip files already downloaded earlier |

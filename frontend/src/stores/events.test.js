@@ -11,6 +11,9 @@ import { useConfigStore } from './config'
 import { useToastsStore } from './toasts'
 import { useRecordingStore } from './recording'
 import { usePresetsStore } from './presets'
+import { clearCameraPreviews } from '@/components/gallery/cameraPreviews'
+
+vi.mock('@/components/gallery/cameraPreviews', () => ({ clearCameraPreviews: vi.fn() }))
 
 const stub = (store, ...names) =>
   names.forEach((n) => vi.spyOn(store, n).mockImplementation(() => {}))
@@ -44,6 +47,14 @@ describe('event dispatcher', () => {
     expect(useRecordingStore().onStopped).toHaveBeenCalledWith({ reason: 'user' })
     ev.dispatch({ type: 'config_changed', data: { config: {}, restart_required: ['x'] } })
     expect(useConfigStore().onChanged).toHaveBeenCalled()
+  })
+
+  it('drops cached card previews when the camera goes away or the card changes', () => {
+    clearCameraPreviews.mockClear()
+    ev.dispatch({ type: 'storage_changed', data: { cards: 1 } })
+    expect(clearCameraPreviews).toHaveBeenCalledTimes(1)
+    ev.dispatch({ type: 'camera_disconnected', data: {} })
+    expect(clearCameraPreviews).toHaveBeenCalledTimes(2)
   })
 
   it('routes every job_* and timelapse_* event', () => {

@@ -268,6 +268,46 @@ async def test_priority_order_and_fifo(env: Env) -> None:
     assert order == ["control1", "control2", "capture", "keepalive", "preview"]
 
 
+async def test_background_runs_after_live_view_frames(env: Env) -> None:
+    svc = await env.make()
+    order: list[str] = []
+
+    def rec(tag: str) -> Callable[[CameraBackend], str]:
+        def _f(_b: CameraBackend) -> str:
+            order.append(tag)
+            return tag
+
+        return _f
+
+    blocker = asyncio.create_task(svc.call(hang, timeout=5))
+    await wait_until(env.backend.entered.is_set)
+    bg = asyncio.create_task(svc.call(rec("bg"), priority=Priority.BACKGROUND))
+    await asyncio.sleep(0)
+    frame = asyncio.create_task(svc.call(rec("frame"), priority=Priority.PREVIEW))
+    await asyncio.sleep(0)
+    env.backend.release.set()
+    await blocker
+    await asyncio.gather(bg, frame)
+    assert order == ["frame", "bg"]
+
+
+async def test_cancelled_queued_call_never_executes(env: Env) -> None:
+    svc = await env.make()
+    ran: list[str] = []
+    blocker = asyncio.create_task(svc.call(hang, timeout=5))
+    await wait_until(env.backend.entered.is_set)
+    queued = asyncio.create_task(svc.call(lambda _b: ran.append("x"), priority=Priority.BACKGROUND))
+    await asyncio.sleep(0.05)
+    queued.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await queued
+    env.backend.release.set()
+    await blocker
+    assert await svc.call(lambda _b: ran.append("after")) is None
+    assert ran == ["after"]
+    assert svc.state != S.ERROR
+
+
 async def test_exception_propagates(env: Env) -> None:
     svc = await env.make()
 

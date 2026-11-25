@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import CameraFiles from './CameraFiles.vue'
@@ -13,6 +13,7 @@ vi.mock('@/api', async (orig) => ({
   api: {
     downloadCameraFile: vi.fn().mockResolvedValue(new Blob(['x'])),
     getCameraThumbnail: vi.fn().mockResolvedValue(new Blob(['t'])),
+    getCameraPreview: vi.fn().mockResolvedValue(new Blob(['p'])),
   },
   downloadBlob: vi.fn(),
 }))
@@ -58,6 +59,186 @@ function setup({ connected = true, leasedBy = null, noTarget = false } = {}) {
 }
 const btn = (text) => wrapper.findAll('button').find((b) => b.text().includes(text))
 afterEach(() => wrapper?.unmount())
+
+const FILES = ['A', 'B', 'C'].map((n, i) => ({
+  folder: '/100NCD',
+  name: `${n}.JPG`,
+  size: 1000 + i,
+  mtime: 1700000000 + i,
+  type: 'jpeg',
+  downloaded: false,
+}))
+const lightbox = () => document.body.querySelector('[data-testid=lightbox]')
+const position = () =>
+  document.body.querySelector('[data-testid=lightbox-position]').textContent.trim()
+
+describe('CameraFiles viewer', () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
+  })
+  function withFiles() {
+    const ctx = setup()
+    ctx.cf.items = FILES.slice(0, 2)
+    ctx.cf.total = 3
+    ctx.cf.query = { ...ctx.cf.query, page: 1, limit: 2 }
+    ctx.cf.peekPage = vi.fn(async () => ({ items: FILES.slice(2), total: 3, page: 2, limit: 2 }))
+    return ctx
+  }
+
+  it('opens from the thumbnail and the file name, with file info and a position', async () => {
+    withFiles()
+    await flushPromises()
+    await wrapper.findAll('[data-testid=card-thumb]')[1].trigger('click')
+    await flushPromises()
+    expect(lightbox()).not.toBeNull()
+    expect(position()).toBe('2 of 3')
+    expect(lightbox().textContent).toContain('B.JPG')
+    document.body.querySelector('[aria-label="Close viewer"]').click()
+    await flushPromises()
+    expect(lightbox()).toBeNull()
+    await wrapper.findAll('[data-testid=card-file-open]')[0].trigger('click')
+    await flushPromises()
+    expect(position()).toBe('1 of 3')
+  })
+
+  it('next at the end of the page loads the next page from the listing', async () => {
+    const { cf } = withFiles()
+    await flushPromises()
+    await wrapper.findAll('[data-testid=card-thumb]')[1].trigger('click')
+    await flushPromises()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await flushPromises()
+    expect(cf.peekPage).toHaveBeenCalledWith(2)
+    expect(position()).toBe('3 of 3')
+    expect(lightbox().textContent).toContain('C.JPG')
+  })
+
+  it('Download to storage starts a single-file job; Save to this device downloads in the browser', async () => {
+    const { cf } = withFiles()
+    cf.downloadAll = vi.fn().mockResolvedValue({ id: 'j1', status: 'queued', kind: 'download_all' })
+    cf.download = vi.fn().mockResolvedValue()
+    await flushPromises()
+    await wrapper.findAll('[data-testid=card-thumb]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector('[data-testid=viewer-to-storage]').click()
+    await flushPromises()
+    expect(cf.downloadAll).toHaveBeenCalledWith(
+      expect.objectContaining({ file: { folder: '/100NCD', name: 'A.JPG' }, only_new: false }),
+    )
+    document.body.querySelector('[aria-label="Save to this device"]').click()
+    await flushPromises()
+    expect(cf.download).toHaveBeenCalledWith('/100NCD', 'A.JPG')
+  })
+
+  it('deleting in the viewer confirms in-page, removes the file and moves on', async () => {
+    const { cf } = withFiles()
+    cf.remove = vi.fn(async (folder, name) => {
+      cf.items = cf.items.filter((f) => f.name !== name)
+    })
+    await flushPromises()
+    await wrapper.findAll('[data-testid=card-thumb]')[0].trigger('click')
+    await flushPromises()
+    const del = () =>
+      [...lightbox().querySelectorAll('button')].find((b) => b.textContent.includes('Delete'))
+    del().click()
+    await flushPromises()
+    expect(cf.remove).not.toHaveBeenCalled()
+    ;[...lightbox().querySelectorAll('button')]
+      .find((b) => b.textContent.includes('Delete?'))
+      .click()
+    await flushPromises()
+    expect(cf.remove).toHaveBeenCalledWith('/100NCD', 'A.JPG')
+    expect(lightbox().textContent).toContain('B.JPG')
+  })
+})
+
+describe('CameraFiles viewer after a delete', () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
+  })
+  const NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+  // a server whose paging shifts when a file is deleted, like the real listing
+  function withServer(startPage) {
+    const server = NAMES.map((n, i) => ({ ...FILES[0], name: `${n}.JPG`, size: 10 + i, mtime: i }))
+    const ctx = setup()
+    const limit = 2
+    const page = (p) => ({
+      items: server.slice((p - 1) * limit, p * limit),
+      total: server.length,
+      page: p,
+      limit,
+    })
+    ctx.cf.items = page(startPage).items
+    ctx.cf.total = server.length
+    ctx.cf.query = { ...ctx.cf.query, page: startPage, limit }
+    ctx.cf.peekPage = vi.fn(async (p) => page(p))
+    ctx.cf.remove = vi.fn(async (folder, name) => {
+      server.splice(
+        server.findIndex((f) => f.name === name),
+        1,
+      )
+      ctx.cf.items = ctx.cf.items.filter((f) => f.name !== name)
+      ctx.cf.total = server.length
+    })
+    return ctx
+  }
+  const del = async () => {
+    ;[...lightbox().querySelectorAll('button')]
+      .find((b) => b.textContent.includes('Delete'))
+      .click()
+    await flushPromises()
+    ;[...lightbox().querySelectorAll('button')]
+      .find((b) => b.textContent.includes('Delete?'))
+      .click()
+    await flushPromises()
+  }
+  const key = (k) => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: k }))
+    return flushPromises()
+  }
+  const shown = () => lightbox().textContent
+
+  it('next page after a delete does not skip a file', async () => {
+    withServer(1)
+    await flushPromises()
+    await wrapper.findAll('[data-testid=card-thumb]')[0].trigger('click') // A
+    await flushPromises()
+    await key('ArrowRight') // B
+    await del() // B deleted: A C D E F G on the server
+    expect(shown()).toContain('C.JPG')
+    expect(position()).toBe('2 of 6')
+    await key('ArrowRight')
+    expect(shown()).toContain('D.JPG')
+    await key('ArrowRight')
+    expect(shown()).toContain('E.JPG')
+    await key('ArrowRight')
+    expect(shown()).toContain('F.JPG')
+    await key('ArrowRight')
+    expect(shown()).toContain('G.JPG')
+    expect(position()).toBe('6 of 6')
+  })
+
+  it('previous page after a delete shows each file once and keeps the counter right', async () => {
+    withServer(3) // E F
+    await flushPromises()
+    await wrapper.findAll('[data-testid=card-thumb]')[1].trigger('click') // F
+    await flushPromises()
+    await del() // F deleted: A B C D E G, G is shown
+    expect(shown()).toContain('G.JPG')
+    expect(position()).toBe('6 of 6')
+    const seen = []
+    for (let i = 0; i < 5; i++) {
+      await key('ArrowLeft')
+      seen.push(position())
+    }
+    expect(seen).toEqual(['5 of 6', '4 of 6', '3 of 6', '2 of 6', '1 of 6'])
+    expect(shown()).toContain('A.JPG')
+    await key('ArrowRight')
+    expect(shown()).toContain('B.JPG')
+  })
+})
 
 describe('CameraFiles', () => {
   it('shows the running file count while a cold listing loads', async () => {

@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.services.camera_files import validate_camera_folder
+from backend.services.camera_files import validate_camera_folder, validate_camera_name
 
 CameraFileOrder = Literal["newest", "oldest", "name"]
 
@@ -30,7 +30,25 @@ class CameraFileEntry(BaseModel):
     downloaded: bool = Field(description="Already in the download ledger (same size and mtime)")
 
 
+class CameraFileRef(BaseModel):
+    folder: str
+    name: str
+
+    @field_validator("folder")
+    @classmethod
+    def _folder(cls, v: str) -> str:
+        return validate_camera_folder(v)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        return validate_camera_name(v)
+
+
 class DownloadAllRequest(BaseModel):
+    file: CameraFileRef | None = Field(
+        default=None, description="Download only this file (folder is then ignored)"
+    )
     folder: str | None = Field(
         default=None, description="Camera folder to download (recursively); null = whole card"
     )

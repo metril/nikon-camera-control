@@ -19,6 +19,7 @@ import { usePresetsStore } from './presets'
 import { useStorageStore } from './storage'
 import { useCameraFilesStore } from './cameraFiles'
 import { clearCameraThumbs } from '@/components/gallery/cameraThumbs'
+import { clearCameraPreviews } from '@/components/gallery/cameraPreviews'
 
 /** Background refresh: failures land in the store's lastError; nothing to await or throw. */
 const bg = (p) => p?.catch?.(() => {})
@@ -56,7 +57,11 @@ export const useEventsStore = defineStore('events', () => {
         useFocusStore().clear()
         useCameraAdminStore().reset()
         clearCameraThumbs()
+        clearCameraPreviews()
         return
+      case 'storage_changed': // a card swap reuses DSC names
+        clearCameraThumbs()
+        return clearCameraPreviews()
       case 'battery':
         return camera.onBattery(data)
       case 'setting_changed':

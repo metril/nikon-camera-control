@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { api, downloadBlob } from '@/api'
 import { guard } from './helpers'
 import { clearCameraThumbs } from '@/components/gallery/cameraThumbs'
+import { clearCameraPreviews } from '@/components/gallery/cameraPreviews'
 
 export const useCameraFilesStore = defineStore('cameraFiles', () => {
   const folders = ref([])
@@ -43,6 +44,9 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
       }
     }
   }
+  /** One page of the current listing without touching the list on screen (the viewer pages ahead). */
+  const peekPage = (page) =>
+    guard(lastError, () => api.listCameraFiles({ query: { ...query.value, page } }))
   /** card_listing event: running file count of a cold walk of the card. */
   function onListing(data) {
     const q = query.value
@@ -53,7 +57,10 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
   const downloadAll = (body = {}) =>
     guard(lastError, async () => {
       const job = await api.downloadAllCameraFiles({ body })
-      if (body.delete_after) clearCameraThumbs() // card swaps reuse DSC names
+      if (body.delete_after) {
+        clearCameraThumbs() // card swaps reuse DSC names
+        clearCameraPreviews()
+      }
       return job
     })
   /** Save one card file locally (blob fetch so the API key header is sent). */
@@ -66,7 +73,9 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
   async function remove(folder, name) {
     await guard(lastError, () => api.deleteCameraFile({ path: { folder, name } }))
     items.value = items.value.filter((f) => !(f.folder === folder && f.name === name))
+    total.value = Math.max(0, total.value - 1)
     clearCameraThumbs()
+    clearCameraPreviews()
   }
 
   return {
@@ -80,6 +89,7 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
     onListing,
     loadFolders,
     loadFiles,
+    peekPage,
     downloadAll,
     download,
     remove,

@@ -1336,6 +1336,10 @@ export type DownloadAllRequest = {
      */
     delete_after?: boolean;
     /**
+     * Download only this file (folder is then ignored)
+     */
+    file?: CameraFileRef | null;
+    /**
      * Folder
      *
      * Camera folder to download (recursively); null = whole card
@@ -4948,6 +4952,68 @@ export type ListCameraFoldersResponses = {
 };
 
 export type ListCameraFoldersResponse = ListCameraFoldersResponses[keyof ListCameraFoldersResponses];
+
+export type GetCameraPreviewData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Folder
+         */
+        folder: string;
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Size
+         */
+        size?: number | null;
+        /**
+         * Mtime
+         */
+        mtime?: number | null;
+    };
+    url: '/api/v1/camera/preview';
+};
+
+export type GetCameraPreviewErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetCameraPreviewError = GetCameraPreviewErrors[keyof GetCameraPreviewErrors];
+
+export type GetCameraPreviewResponses = {
+    /**
+     * Screen-sized JPEG (long edge 2560 px) of the file
+     */
+    200: Blob | File;
+};
+
+export type GetCameraPreviewResponse = GetCameraPreviewResponses[keyof GetCameraPreviewResponses];
 
 export type GetCameraStorageData = {
     body?: never;

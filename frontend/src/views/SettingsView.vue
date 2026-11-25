@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
 import { useStorageStore } from '@/stores/storage'
@@ -185,7 +185,30 @@ watch(
 const goSection = (id) => {
   pendingSection = id
   scrollToSection()
+  chipsEl.value
+    ?.querySelector(`[data-chip="${CSS.escape(id)}"]`)
+    ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
 }
+// Narrow screens scroll the chip row: fade whichever edge has more chips behind it.
+const chipsEl = ref(null)
+const fadeL = ref(false)
+const fadeR = ref(false)
+const fadeT = ref(false)
+const fadeB = ref(false)
+function updateFade() {
+  const e = chipsEl.value
+  if (!e) return
+  fadeL.value = e.scrollLeft > 2
+  fadeR.value = e.scrollLeft + e.clientWidth < e.scrollWidth - 2
+  // wide screens: the list is a column that scrolls vertically
+  fadeT.value = e.scrollTop > 2
+  fadeB.value = e.scrollTop + e.clientHeight < e.scrollHeight - 2
+}
+onMounted(() => {
+  window.addEventListener('resize', updateFade)
+  nextTick(updateFade)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', updateFade))
 const index = computed(() => [
   { id: 'display', label: 'Display' },
   { id: 'capture', label: 'Capture' },
@@ -322,14 +345,18 @@ async function setLocation(id) {
 </script>
 
 <template>
-  <div ref="root" class="mx-auto flex max-w-[760px] flex-col gap-4">
+  <!-- Wide screens: section list in a sticky left column; narrow: a scrolling chip row -->
+  <div ref="root" class="settings-layout">
     <h2 class="text-xl font-semibold">Settings</h2>
 
     <nav
       v-if="config.config && sections.length"
+      ref="chipsEl"
       class="chips"
+      :class="{ 'fade-l': fadeL, 'fade-r': fadeR, 'fade-t': fadeT, 'fade-b': fadeB }"
       aria-label="Settings sections"
       data-test="section-index"
+      @scroll.passive="updateFade"
     >
       <button
         v-for="i in index"
@@ -342,302 +369,396 @@ async function setLocation(id) {
       </button>
     </nav>
 
-    <UiAlert
-      v-if="config.restartRequired.length"
-      tone="warn"
-      title="Restart required"
-      data-test="restart"
-    >
-      Changes to {{ titled(config.restartRequired) }} take effect after the app restarts.
-      <template #action>
-        <UiButton size="sm" data-test="dismiss-restart" @click="config.dismissRestart()">
-          Dismiss
-        </UiButton>
-      </template>
-    </UiAlert>
-
-    <UiEmpty v-if="loadError" title="Settings could not be loaded" :hint="loadError">
-      <template #actions><UiButton variant="primary" @click="load">Retry</UiButton></template>
-    </UiEmpty>
-
-    <template v-else-if="config.config && sections.length">
-      <SettingsSection title="Display" data-section="display">
-        <SettingRow
-          title="Layout"
-          description="Auto picks the touch layout on touch screens. Saved in this browser only."
-        >
-          <UiSegmented
-            :model-value="layoutPref"
-            :options="LAYOUTS"
-            aria-label="Layout"
-            data-test="layout"
-            @update:model-value="setLayoutPref"
-          />
-        </SettingRow>
-        <SettingRow
-          title="Time zone"
-          description="Used for photo and session names and when setting the camera clock."
-          :dirty="isFieldDirty('timezone')"
-          :error="errors.timezone || ''"
-          data-field="timezone"
-        >
-          <UiSelect
-            :model-value="zone"
-            :options="zoneOptions"
-            label="Time zone"
-            data-test="timezone"
-            @update:model-value="setZone"
-          />
-          <template #note>
-            <UiButton
-              v-if="browserZone && zone !== browserZone"
-              size="sm"
-              data-test="timezone-browser"
-              @click="setZone(browserZone)"
-            >
-              Use this browser's time zone ({{ browserZone }})
-            </UiButton>
-          </template>
-        </SettingRow>
-        <SettingRow
-          v-if="!isTouch"
-          title="Keyboard hints"
-          description="Show shortcut hints such as Space to capture."
-          natural
-        >
-          <UiToggle
-            :model-value="hints"
-            aria-label="Keyboard hints"
-            data-test="hints"
-            @update:model-value="setHints"
-          />
-        </SettingRow>
-      </SettingsSection>
-
-      <SettingsSection title="Capture" data-section="capture">
-        <SettingRow
-          title="Camera saves to"
-          description="Memory card is the safest. Camera memory is faster but keeps no copy on the card."
-        >
-          <UiSelect
-            :model-value="admin.target?.value"
-            :options="targetOptions"
-            label="Camera saves to"
-            :disabled="!downloads || !!targetReason || savingTarget || !targetOptions.length"
-            data-test="camera-target"
-            @update:model-value="setCameraTarget"
-          />
-          <template #note>
-            <span v-if="!downloads" data-test="target-locked">
-              Locked to memory card while downloads are off, so photos aren't lost.
-            </span>
-            <span v-else-if="targetReason" data-test="target-reason">{{ targetReason }}</span>
-          </template>
-        </SettingRow>
-        <SettingRow
-          title="Download photos"
-          description="Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner."
-          :dirty="isFieldDirty('camera.download_photos')"
-          natural
-          data-field="download_photos"
-        >
-          <UiToggle
-            :model-value="downloads"
-            aria-label="Download photos"
-            data-test="download-photos"
-            @update:model-value="setDownloads"
-          />
-        </SettingRow>
-        <SettingRow
-          title="Download to storage"
-          description="Every photo is copied here, whichever option the camera uses."
-        >
-          <UiSelect
-            :model-value="storage.targetId"
-            :options="locationOptions"
-            label="Download to storage"
-            :disabled="!downloads || savingLocation || !locationOptions.length"
-            data-test="photo-location"
-            @update:model-value="setLocation"
-          />
-          <template #note>
-            <span v-if="!locationOptions.length" data-test="location-reason">
-              Mount a drive or share below to choose it.
-            </span>
-          </template>
-        </SettingRow>
-        <SettingRow
-          title="File name prefix"
-          description="Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes."
-          :dirty="isFieldDirty('camera.filename_prefix')"
-          :error="errors['camera.filename_prefix'] || ''"
-          data-field="filename_prefix"
-        >
-          <UiText
-            :model-value="prefix"
-            label="File name prefix"
-            placeholder="e.g. wedding"
-            :maxlength="40"
-            :disabled="!downloads"
-            data-test="filename-prefix"
-            @update:model-value="setPath(draft, 'camera.filename_prefix', $event || null)"
-          />
-          <template #note>
-            <span v-if="!downloads" data-test="prefix-unused">
-              Not used while photos stay on the card.
-            </span>
-            <span v-else data-test="prefix-example">
-              Saved as
-              <span class="font-mono"
-                ><span class="text-camera-accent">{{ example[0] }}</span
-                >{{ example[1] }}</span
-              >
-            </span>
-          </template>
-        </SettingRow>
-        <SchemaField
-          v-if="keepCardField"
-          :field="keepCardField"
-          :class="{ 'pointer-events-none opacity-[.45]': !downloads }"
-          :aria-disabled="!downloads || undefined"
-          :model-value="getPath(draft, 'camera.keep_card_copy')"
-          :dirty="isFieldDirty('camera.keep_card_copy')"
-          :error="errors['camera.keep_card_copy'] || ''"
-          @update:model-value="setPath(draft, 'camera.keep_card_copy', $event)"
-        />
-      </SettingsSection>
-
-      <StorageSection data-section="storage">
-        <template v-if="storageSection?.fields.length" #extra>
-          <SchemaField
-            v-for="f in storageSection.fields"
-            :key="storageSection.path(f)"
-            :field="f"
-            :model-value="value(storageSection, f)"
-            :dirty="isFieldDirty(storageSection.path(f))"
-            :error="errors[storageSection.path(f)] || ''"
-            @update:model-value="setValue(storageSection, f, $event)"
-          />
-        </template>
-      </StorageSection>
-
-      <SettingsSection
-        v-for="s in shownSections"
-        :key="s.key"
-        :title="s.title"
-        :subtitle="s.description"
-        :data-section="s.key"
-      >
-        <SchemaField
-          v-for="f in s.fields"
-          :key="s.path(f)"
-          :field="f"
-          :model-value="value(s, f)"
-          :dirty="isFieldDirty(s.path(f))"
-          :error="errors[s.path(f)] || ''"
-          @update:model-value="setValue(s, f, $event)"
-        />
-        <CameraClockRow v-if="s.key === 'camera'" />
-      </SettingsSection>
-
-      <details
-        v-if="advancedGroups.length"
-        class="adv rounded-card border border-camera-border bg-camera-surface"
-        data-section="advanced"
-        data-test="advanced"
-        :open="advancedOpen || advancedBad"
-        @toggle="advancedOpen = $event.target.open"
-      >
-        <summary class="adv-sum">
-          <span class="text-sm font-semibold">Advanced</span>
-          <span class="text-xs text-camera-muted">Timeouts, keep-alive, ffmpeg and encoding</span>
-        </summary>
-        <div class="grid gap-5 px-4 pb-4">
-          <section v-for="g in advancedGroups" :key="g.key">
-            <h3 class="eyebrow mb-2">{{ g.title }}</h3>
-            <SchemaField
-              v-for="f in g.fields"
-              :key="g.path(f)"
-              :field="f"
-              :model-value="value(g, f)"
-              :dirty="isFieldDirty(g.path(f))"
-              :error="errors[g.path(f)] || ''"
-              @update:model-value="setValue(g, f, $event)"
-            />
-          </section>
-        </div>
-      </details>
-
-      <DemoCameraSection
-        :model-value="!!draft.demo_camera"
-        :dirty="isFieldDirty('demo_camera')"
-        @update:model-value="draft.demo_camera = $event"
-      />
-      <ApiKeySection data-section="api-key" />
-
+    <div class="settings-main">
       <UiAlert
-        v-if="config.resetChanged?.length"
-        tone="info"
-        title="Reset changed"
-        data-test="reset-changed"
+        v-if="config.restartRequired.length"
+        tone="warn"
+        title="Restart required"
+        data-test="restart"
       >
-        {{ titled(config.resetChanged) }}
+        Changes to {{ titled(config.restartRequired) }} take effect after the app restarts.
+        <template #action>
+          <UiButton size="sm" data-test="dismiss-restart" @click="config.dismissRestart()">
+            Dismiss
+          </UiButton>
+        </template>
       </UiAlert>
 
-      <div class="flex flex-wrap items-center gap-3">
-        <UiConfirmButton
-          variant="danger"
-          size="sm"
-          confirm-text="Reset everything?"
-          :loading="resetting"
-          data-test="reset"
-          @confirm="resetDefaults"
+      <UiEmpty v-if="loadError" title="Settings could not be loaded" :hint="loadError">
+        <template #actions><UiButton variant="primary" @click="load">Retry</UiButton></template>
+      </UiEmpty>
+
+      <template v-else-if="config.config && sections.length">
+        <SettingsSection title="Display" data-section="display">
+          <SettingRow
+            title="Layout"
+            description="Auto picks the touch layout on touch screens. Saved in this browser only."
+          >
+            <UiSegmented
+              :model-value="layoutPref"
+              :options="LAYOUTS"
+              aria-label="Layout"
+              data-test="layout"
+              @update:model-value="setLayoutPref"
+            />
+          </SettingRow>
+          <SettingRow
+            title="Time zone"
+            description="Used for photo and session names and when setting the camera clock."
+            :dirty="isFieldDirty('timezone')"
+            :error="errors.timezone || ''"
+            data-field="timezone"
+          >
+            <UiSelect
+              :model-value="zone"
+              :options="zoneOptions"
+              label="Time zone"
+              data-test="timezone"
+              @update:model-value="setZone"
+            />
+            <template #note>
+              <UiButton
+                v-if="browserZone && zone !== browserZone"
+                size="sm"
+                data-test="timezone-browser"
+                @click="setZone(browserZone)"
+              >
+                Use this browser's time zone ({{ browserZone }})
+              </UiButton>
+            </template>
+          </SettingRow>
+          <SettingRow
+            v-if="!isTouch"
+            title="Keyboard hints"
+            description="Show shortcut hints such as Space to capture."
+            natural
+          >
+            <UiToggle
+              :model-value="hints"
+              aria-label="Keyboard hints"
+              data-test="hints"
+              @update:model-value="setHints"
+            />
+          </SettingRow>
+        </SettingsSection>
+
+        <SettingsSection title="Capture" data-section="capture">
+          <SettingRow
+            title="Camera saves to"
+            description="Memory card is the safest. Camera memory is faster but keeps no copy on the card."
+          >
+            <UiSelect
+              :model-value="admin.target?.value"
+              :options="targetOptions"
+              label="Camera saves to"
+              :disabled="!downloads || !!targetReason || savingTarget || !targetOptions.length"
+              data-test="camera-target"
+              @update:model-value="setCameraTarget"
+            />
+            <template #note>
+              <span v-if="!downloads" data-test="target-locked">
+                Locked to memory card while downloads are off, so photos aren't lost.
+              </span>
+              <span v-else-if="targetReason" data-test="target-reason">{{ targetReason }}</span>
+            </template>
+          </SettingRow>
+          <SettingRow
+            title="Download photos"
+            description="Turn off to only fire the shutter. Photos stay on the camera's card and Shoot is ready for the next shot sooner."
+            :dirty="isFieldDirty('camera.download_photos')"
+            natural
+            data-field="download_photos"
+          >
+            <UiToggle
+              :model-value="downloads"
+              aria-label="Download photos"
+              data-test="download-photos"
+              @update:model-value="setDownloads"
+            />
+          </SettingRow>
+          <SettingRow
+            title="Download to storage"
+            description="Every photo is copied here, whichever option the camera uses."
+          >
+            <UiSelect
+              :model-value="storage.targetId"
+              :options="locationOptions"
+              label="Download to storage"
+              :disabled="!downloads || savingLocation || !locationOptions.length"
+              data-test="photo-location"
+              @update:model-value="setLocation"
+            />
+            <template #note>
+              <span v-if="!locationOptions.length" data-test="location-reason">
+                Mount a drive or share below to choose it.
+              </span>
+            </template>
+          </SettingRow>
+          <SettingRow
+            title="File name prefix"
+            description="Added to the start of every downloaded photo's name. Up to 40 characters; spaces and symbols become dashes."
+            :dirty="isFieldDirty('camera.filename_prefix')"
+            :error="errors['camera.filename_prefix'] || ''"
+            data-field="filename_prefix"
+          >
+            <UiText
+              :model-value="prefix"
+              label="File name prefix"
+              placeholder="e.g. wedding"
+              :maxlength="40"
+              :disabled="!downloads"
+              data-test="filename-prefix"
+              @update:model-value="setPath(draft, 'camera.filename_prefix', $event || null)"
+            />
+            <template #note>
+              <span v-if="!downloads" data-test="prefix-unused">
+                Not used while photos stay on the card.
+              </span>
+              <span v-else data-test="prefix-example">
+                Saved as
+                <span class="font-mono"
+                  ><span class="text-camera-accent">{{ example[0] }}</span
+                  >{{ example[1] }}</span
+                >
+              </span>
+            </template>
+          </SettingRow>
+          <SchemaField
+            v-if="keepCardField"
+            :field="keepCardField"
+            :class="{ 'pointer-events-none opacity-[.45]': !downloads }"
+            :aria-disabled="!downloads || undefined"
+            :model-value="getPath(draft, 'camera.keep_card_copy')"
+            :dirty="isFieldDirty('camera.keep_card_copy')"
+            :error="errors['camera.keep_card_copy'] || ''"
+            @update:model-value="setPath(draft, 'camera.keep_card_copy', $event)"
+          />
+        </SettingsSection>
+
+        <StorageSection data-section="storage">
+          <template v-if="storageSection?.fields.length" #extra>
+            <SchemaField
+              v-for="f in storageSection.fields"
+              :key="storageSection.path(f)"
+              :field="f"
+              :model-value="value(storageSection, f)"
+              :dirty="isFieldDirty(storageSection.path(f))"
+              :error="errors[storageSection.path(f)] || ''"
+              @update:model-value="setValue(storageSection, f, $event)"
+            />
+          </template>
+        </StorageSection>
+
+        <SettingsSection
+          v-for="s in shownSections"
+          :key="s.key"
+          :title="s.title"
+          :subtitle="s.description"
+          :data-section="s.key"
         >
-          Reset to defaults
-        </UiConfirmButton>
-        <p class="min-w-0 flex-1 text-xs text-camera-muted">
-          Restores every setting, including the demo camera switch.
-        </p>
+          <SchemaField
+            v-for="f in s.fields"
+            :key="s.path(f)"
+            :field="f"
+            :model-value="value(s, f)"
+            :dirty="isFieldDirty(s.path(f))"
+            :error="errors[s.path(f)] || ''"
+            @update:model-value="setValue(s, f, $event)"
+          />
+          <CameraClockRow v-if="s.key === 'camera'" />
+        </SettingsSection>
+
+        <details
+          v-if="advancedGroups.length"
+          class="adv rounded-card border border-camera-border bg-camera-surface"
+          data-section="advanced"
+          data-test="advanced"
+          :open="advancedOpen || advancedBad"
+          @toggle="advancedOpen = $event.target.open"
+        >
+          <summary class="adv-sum">
+            <span class="text-sm font-semibold">Advanced</span>
+            <span class="text-xs text-camera-muted">Timeouts, keep-alive, ffmpeg and encoding</span>
+          </summary>
+          <div class="grid gap-5 px-4 pb-4">
+            <section v-for="g in advancedGroups" :key="g.key">
+              <h3 class="eyebrow mb-2">{{ g.title }}</h3>
+              <SchemaField
+                v-for="f in g.fields"
+                :key="g.path(f)"
+                :field="f"
+                :model-value="value(g, f)"
+                :dirty="isFieldDirty(g.path(f))"
+                :error="errors[g.path(f)] || ''"
+                @update:model-value="setValue(g, f, $event)"
+              />
+            </section>
+          </div>
+        </details>
+
+        <DemoCameraSection
+          :model-value="!!draft.demo_camera"
+          :dirty="isFieldDirty('demo_camera')"
+          @update:model-value="draft.demo_camera = $event"
+        />
+        <ApiKeySection data-section="api-key" />
+
+        <UiAlert
+          v-if="config.resetChanged?.length"
+          tone="info"
+          title="Reset changed"
+          data-test="reset-changed"
+        >
+          {{ titled(config.resetChanged) }}
+        </UiAlert>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <UiConfirmButton
+            variant="danger"
+            size="sm"
+            confirm-text="Reset everything?"
+            :loading="resetting"
+            data-test="reset"
+            @confirm="resetDefaults"
+          >
+            Reset to defaults
+          </UiConfirmButton>
+          <p class="min-w-0 flex-1 text-xs text-camera-muted">
+            Restores every setting, including the demo camera switch.
+          </p>
+        </div>
+      </template>
+      <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings…</p>
+
+      <AboutSection data-section="about" />
+
+      <div
+        v-if="config.config && isDirty"
+        class="sticky bottom-[var(--nav,0px)] z-[15] flex flex-wrap items-center gap-3 rounded-t-card border border-b-0 border-camera-border bg-camera-raised px-4 py-2 shadow-[0_-8px_24px_rgba(0,0,0,.4)] max-[420px]:gap-2"
+        data-test="savebar"
+      >
+        <span class="whitespace-nowrap text-sm tabular-nums" aria-live="polite">
+          {{ dirty.length }} unsaved change{{ dirty.length === 1 ? '' : 's' }}
+        </span>
+        <span class="flex-1 max-[420px]:hidden" />
+        <UiButton
+          variant="ghost"
+          size="sm"
+          :disabled="saving"
+          class="max-[420px]:flex-1"
+          data-test="discard"
+          @click="discard"
+        >
+          Discard
+        </UiButton>
+        <UiButton
+          variant="primary"
+          size="sm"
+          :loading="saving"
+          class="max-[420px]:flex-1"
+          data-test="save"
+          @click="save"
+        >
+          Save changes
+        </UiButton>
       </div>
-    </template>
-    <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings…</p>
-
-    <AboutSection data-section="about" />
-
-    <div
-      v-if="config.config && isDirty"
-      class="sticky bottom-[var(--nav,0px)] z-[15] flex flex-wrap items-center gap-3 rounded-t-card border border-b-0 border-camera-border bg-camera-raised px-4 py-2 shadow-[0_-8px_24px_rgba(0,0,0,.4)] max-[420px]:gap-2"
-      data-test="savebar"
-    >
-      <span class="whitespace-nowrap text-sm tabular-nums" aria-live="polite">
-        {{ dirty.length }} unsaved change{{ dirty.length === 1 ? '' : 's' }}
-      </span>
-      <span class="flex-1 max-[420px]:hidden" />
-      <UiButton
-        variant="ghost"
-        size="sm"
-        :disabled="saving"
-        class="max-[420px]:flex-1"
-        data-test="discard"
-        @click="discard"
-      >
-        Discard
-      </UiButton>
-      <UiButton
-        variant="primary"
-        size="sm"
-        :loading="saving"
-        class="max-[420px]:flex-1"
-        data-test="save"
-        @click="save"
-      >
-        Save changes
-      </UiButton>
     </div>
   </div>
 </template>
 
 <style scoped>
+.settings-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-inline: auto;
+  max-width: 760px;
+}
+.settings-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.chips.fade-r {
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+.chips.fade-l {
+  mask-image: linear-gradient(to right, transparent, #000 40px);
+}
+.chips.fade-l.fade-r {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 40px,
+    #000 calc(100% - 40px),
+    transparent
+  );
+}
+/* Wide screens: every section visible in a sticky left column */
+@media (min-width: 1000px) {
+  .settings-layout {
+    display: grid;
+    grid-template-columns: 168px minmax(0, 760px);
+    grid-template-rows: auto 1fr;
+    gap: 16px 24px;
+    max-width: calc(168px + 24px + 760px);
+    align-items: start;
+  }
+  .settings-layout > h2 {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .settings-layout > .settings-main {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .settings-layout > .chips {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    /* the list scrolls on its own when taller than the screen (13 sections on a 600 px kiosk) */
+    max-height: calc(100dvh - 59px - var(--nav, 0px) - 16px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: none;
+    mask-image: none;
+  }
+  .settings-layout > .chips button {
+    height: auto;
+    min-height: var(--ctl-sm);
+    padding: 0 12px;
+    border: 0;
+    border-radius: theme('borderRadius.control');
+    background: none;
+    color: theme('colors.camera.muted');
+    text-align: left;
+  }
+  .settings-layout > .chips.fade-b {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+  }
+  .settings-layout > .chips.fade-t {
+    mask-image: linear-gradient(to bottom, transparent, #000 40px);
+  }
+  .settings-layout > .chips.fade-t.fade-b {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 40px,
+      #000 calc(100% - 40px),
+      transparent
+    );
+  }
+  .settings-layout > .chips button:hover {
+    background: theme('colors.camera.hover');
+    color: theme('colors.camera.text');
+  }
+}
 .chips {
   position: sticky;
   top: calc(env(safe-area-inset-top, 0px) + 59px);

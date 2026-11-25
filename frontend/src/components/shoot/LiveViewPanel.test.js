@@ -419,8 +419,8 @@ describe('LiveViewPanel', () => {
       const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
       const s = await started(w)
       s.handlers.onFrame(new ArrayBuffer(4))
-      await new Promise((r) => setTimeout(r, 100))
-      expect(ctx.clearRect).toHaveBeenCalled() // overlays did render
+      // wait for the frame to be drawn (a fixed sleep flaked under parallel load)
+      await vi.waitFor(() => expect(ctx.clearRect).toHaveBeenCalled()) // overlays did render
       expect(ctx.getImageData).not.toHaveBeenCalled()
       lv.tools = { ...lv.tools, hist: true }
       s.handlers.onFrame(new ArrayBuffer(4))

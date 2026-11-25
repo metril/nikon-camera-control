@@ -186,14 +186,14 @@ describe('AppHeader and camera chip', () => {
     w.unmount()
   })
 
-  it('switches the layout from the header on desktop; the toggle is gone in touch layout', async () => {
+  it('switches the layout from the header; the toggle stays in touch layout', async () => {
     const p = pinia()
     useCameraStore().fetchStorage = vi.fn(async () => {})
     const w = mountHeader(p)
     await w.find('[data-test="layout-touch"]').trigger('click')
     expect(document.documentElement.dataset.layout).toBe('touch')
     await nextTick()
-    expect(w.find('[data-test="layout-desktop"]').exists()).toBe(false)
+    expect(w.find('[data-test="layout-desktop"]').exists()).toBe(true)
     useLayoutMode().setPref('desktop')
     await nextTick()
     expect(w.find('[data-test="layout-touch"]').exists()).toBe(true)
