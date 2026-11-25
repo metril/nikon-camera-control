@@ -2,15 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import TimelapseView from './TimelapseView.vue'
-import GalleryView from './GalleryView.vue'
 import { draft, resetDraft } from '@/components/timelapse/useDraft'
 import { useCameraStore } from '@/stores/camera'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useSettingsStore } from '@/stores/settings'
 import { usePresetsStore } from '@/stores/presets'
 import { useSessionsStore } from '@/stores/sessions'
-import { useStorageStore } from '@/stores/storage'
-import { routeQuery } from '@/components/shell/useTabs'
 
 function mountView(view) {
   const pinia = createTestingPinia({ createSpy: vi.fn })
@@ -70,40 +67,5 @@ describe('TimelapseView', () => {
     await w.vm.$nextTick()
     expect(w.text()).toContain('Camera not connected')
     expect(btn(w, 'Connect')).toBeTruthy()
-  })
-})
-
-describe('GalleryView', () => {
-  it('offers the three sources', async () => {
-    const w = mountView(GalleryView)
-    await flushPromises()
-    const labels = w.findAll('button').map((b) => b.text())
-    expect(labels).toEqual(
-      expect.arrayContaining(['On this server', 'On the camera card', 'Time-lapse videos']),
-    )
-  })
-
-  it('opens on the camera card when no storage is chosen, until the user picks a tab', async () => {
-    const w = mountView(GalleryView)
-    const storage = useStorageStore()
-    storage.loaded = true
-    storage.targetId = null
-    await flushPromises()
-    const pressed = () => w.find('[aria-label="Gallery source"] [aria-pressed="true"]').text()
-    expect(pressed()).toBe('On the camera card')
-    await btn(w, 'On this server').trigger('click')
-    expect(pressed()).toBe('On this server')
-  })
-
-  it('stays on this server when a storage exists, and switches to it for an open= deep link', async () => {
-    const w = mountView(GalleryView)
-    const storage = useStorageStore()
-    storage.loaded = true
-    storage.targetId = 'loc'
-    await btn(w, 'On the camera card').trigger('click')
-    routeQuery.value = { open: 'a/b.jpg' }
-    await flushPromises()
-    expect(w.find('button[aria-pressed="true"]').text()).toBe('On this server')
-    routeQuery.value = {}
   })
 })

@@ -137,6 +137,17 @@ class BackupStatusData(_Payload):
     backup_id: str | None = None
 
 
+class StorageChangedData(_Payload):
+    cards: int = Field(description="Cards the camera now reports")
+
+
+class CardListingData(_Payload):
+    folder: str
+    recursive: bool
+    count: int = Field(description="Files found so far while reading the card")
+    done: bool = Field(description="True once the walk finished or failed")
+
+
 class ErrorData(_Payload):
     code: str
     message: str
@@ -287,6 +298,16 @@ class BackupStatusEvent(_EventBase):
     data: BackupStatusData
 
 
+class StorageChangedEvent(_EventBase):
+    type: Literal[EventType.STORAGE_CHANGED] = EventType.STORAGE_CHANGED
+    data: StorageChangedData
+
+
+class CardListingEvent(_EventBase):
+    type: Literal[EventType.CARD_LISTING] = EventType.CARD_LISTING
+    data: CardListingData
+
+
 class ErrorEvent(_EventBase):
     type: Literal[EventType.ERROR] = EventType.ERROR
     data: ErrorData
@@ -321,6 +342,8 @@ TypedEvent = Annotated[
     | PresetsChangedEvent
     | LocationsChangedEvent
     | BackupStatusEvent
+    | StorageChangedEvent
+    | CardListingEvent
     | ErrorEvent,
     Field(discriminator="type"),
 ]
@@ -354,5 +377,7 @@ EVENT_MODELS: dict[EventType, type[BaseModel]] = {
     EventType.PRESETS_CHANGED: PresetsChangedEvent,
     EventType.LOCATIONS_CHANGED: LocationsChangedEvent,
     EventType.BACKUP_STATUS: BackupStatusEvent,
+    EventType.STORAGE_CHANGED: StorageChangedEvent,
+    EventType.CARD_LISTING: CardListingEvent,
     EventType.ERROR: ErrorEvent,
 }

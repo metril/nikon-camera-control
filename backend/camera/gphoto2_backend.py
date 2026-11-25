@@ -27,6 +27,7 @@ from backend.camera.backend import (
     EventType,
     FileKind,
     StorageInfo,
+    is_store_event,
     parse_property_change,
 )
 from backend.camera.camera_text import (
@@ -266,6 +267,7 @@ class Gphoto2Backend:
 
     # Called with the PTP property code of every DevicePropChanged event seen by wait_for_event.
     property_listener: Callable[[int, str | None, str | None], None] | None = None
+    store_listener: Callable[[], None] | None = None
 
     def __init__(
         self,
@@ -566,6 +568,9 @@ class Gphoto2Backend:
             )
         if etype == gp.GP_EVENT_CAPTURE_COMPLETE:
             return CameraEvent(EventType.CAPTURE_COMPLETE)
+        if is_store_event(data) and self.store_listener is not None:
+            with contextlib.suppress(Exception):
+                self.store_listener()
         change = parse_property_change(data)
         if change is not None and self.property_listener is not None:
             with contextlib.suppress(Exception):

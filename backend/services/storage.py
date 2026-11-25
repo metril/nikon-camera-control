@@ -202,6 +202,26 @@ async def download_files(
     the local copy is first checked against the camera's file size (unverified files stay on the
     camera), and a failed delete is logged, not raised."""
     out: list[Path] = []
+    try:
+        await _download_each(
+            camera, files, dest_dir, owner, delete_from_camera, name_prefix, on_stored, out
+        )
+    finally:
+        if delete_from_camera:  # a card walk between the capture and this delete cached the file
+            camera.card_files_changed()
+    return out
+
+
+async def _download_each(
+    camera: CameraService,
+    files: Sequence[CameraFilePath],
+    dest_dir: Path,
+    owner: str | None,
+    delete_from_camera: bool,
+    name_prefix: str,
+    on_stored: Callable[[Path], None] | None,
+    out: list[Path],
+) -> None:
     for f in files:
         final, part = await asyncio.to_thread(reserve_part, dest_dir, f"{name_prefix}{f.name}")
         try:
@@ -228,7 +248,6 @@ async def download_files(
                 await camera.call(_deleter(f), owner=owner)
             except Exception:
                 log.warning("could not delete %s/%s from camera", f.folder, f.name, exc_info=True)
-    return out
 
 
 STALE_PART_AGE_S = 3600.0

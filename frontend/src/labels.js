@@ -265,3 +265,6 @@ export function sampleName(prefix, d = new Date()) {
     `${stamp}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-DSC_2161.JPG`,
   ]
 }
+
+/** Display name of a storage location (its volume label, else its name). */
+export const storageName = (loc) => loc?.label || loc?.name || 'Storage'

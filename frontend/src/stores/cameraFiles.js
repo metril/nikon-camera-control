@@ -8,9 +8,10 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
   const folders = ref([])
   const items = ref([])
   const total = ref(0)
-  const query = ref({ folder: '/', recursive: false, page: 1, limit: 50 })
+  const query = ref({ folder: '/', recursive: false, page: 1, limit: 50, order: 'newest' })
   const loading = ref(false)
   const lastError = ref(null)
+  const listing = ref(null) // { count, done } while the card is being read
 
   let foldersSeq = 0
   let filesSeq = 0
@@ -25,6 +26,7 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
   async function loadFiles(params = {}) {
     query.value = { ...query.value, ...params }
     loading.value = true
+    listing.value = null
     const seq = ++filesSeq
     try {
       return await guard(lastError, async () => {
@@ -35,8 +37,17 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
         return page
       })
     } finally {
-      if (seq === filesSeq) loading.value = false
+      if (seq === filesSeq) {
+        loading.value = false
+        listing.value = null
+      }
     }
+  }
+  /** card_listing event: running file count of a cold walk of the card. */
+  function onListing(data) {
+    const q = query.value
+    if (loading.value && !data.done && data.folder === q.folder && data.recursive === q.recursive)
+      listing.value = { count: data.count, done: false }
   }
   /** Returns the download job (progress arrives via the jobs store). */
   const downloadAll = (body = {}) =>
@@ -65,6 +76,8 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
     query,
     loading,
     lastError,
+    listing,
+    onListing,
     loadFolders,
     loadFiles,
     downloadAll,

@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from backend.api.schemas.common import EventType
 from backend.camera.fake import CARD_FOLDER, FakeCamera
 from backend.core.errors import CameraOperationFailed
 from backend.services.camera_files import CameraFilesService
@@ -75,13 +76,13 @@ async def test_listing_is_cached_and_invalidated_on_capture(
     c = connected_client
     await _shoot(c, app, "JPEG Fine")
     await c.get(F, params={"folder": CARD_FOLDER})
-    n = fake_camera.calls["list_files"]
+    n = _n(fake_camera)
     await c.get(F, params={"folder": CARD_FOLDER})
-    assert fake_camera.calls["list_files"] == n  # served from cache
+    assert _n(fake_camera) == n  # served from cache
     await app.state.camera_service.capture()
     await asyncio.sleep(0.05)  # event delivery
     r = await c.get(F, params={"folder": CARD_FOLDER})
-    assert r.json()["total"] == 2 and fake_camera.calls["list_files"] == n + 1
+    assert r.json()["total"] == 2 and _n(fake_camera) == n + 1
 
 
 async def test_listing_error_surfaces_not_partial(
@@ -382,3 +383,363 @@ async def test_camera_thumbnail_serves_preview_jpeg(
         "/api/v1/camera/thumbnail", params={"folder": f["folder"], "name": "nope.jpg"}
     )
     assert r.status_code == 404
+
+
+# ---- whole-walk cache, single flight, progress, order ------------------------------------
+R = {"folder": "/", "recursive": "true"}
+
+
+def _svc(app: FastAPI) -> CameraFilesService:
+    return app.state.services._services["camera_files"]  # type: ignore[no-any-return]
+
+
+def _n(fake: FakeCamera) -> int:
+    return int(fake.calls.get("list_files", 0))
+
+
+async def _warm(c: httpx.AsyncClient) -> None:
+    """Build the lazily created service (any camera-files request does)."""
+    await c.get(F, params={"folder": CARD_FOLDER})
+
+
+async def _walk_calls(fake_camera: FakeCamera, c: httpx.AsyncClient) -> int:
+    n = _n(fake_camera)
+    await c.get(F, params=R)
+    return _n(fake_camera) - n
+
+
+async def test_recursive_listing_served_from_cache_for_every_page(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 3)
+    assert await _walk_calls(fake_camera, c) > 0  # cold
+    before = dict(fake_camera.calls)
+    for p in (1, 2, 3):
+        await c.get(F, params={**R, "limit": 1, "page": p})
+    assert dict(fake_camera.calls) == before  # no camera call at all
+
+
+async def test_downloaded_flag_stays_live_without_rewalk(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine")
+    first = (await c.get(F, params=R)).json()["items"][0]
+    assert first["downloaded"] is False
+    await _warm(connected_client)
+    svc = _svc(app)
+    from backend.camera.backend import CameraFileInfo
+
+    await svc._ledger.add(
+        CameraFileInfo(first["folder"], first["name"], first["size"], first["mtime"])
+    )
+    n = _n(fake_camera)
+    assert (await c.get(F, params=R)).json()["items"][0]["downloaded"] is True
+    assert _n(fake_camera) == n
+
+
+@pytest.mark.parametrize("trigger", ["capture", "delete", "storage", "disconnect", "connect"])
+async def test_walk_cache_invalidated(
+    trigger: str, app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine")
+    await c.get(F, params=R)
+    assert await _walk_calls(fake_camera, c) == 0
+    cam = app.state.camera_service
+    if trigger == "capture":
+        await cam.capture()
+    elif trigger == "delete":
+        name = (await c.get(F, params=R)).json()["items"][0]["name"]
+        await c.delete(f"{F}{CARD_FOLDER}/{name}")
+    elif trigger == "storage":
+        app.state.event_bus.publish(EventType.STORAGE_CHANGED, {"cards": 1})
+    elif trigger == "disconnect":
+        app.state.event_bus.publish(EventType.CAMERA_DISCONNECTED, {"reason": "x"})
+    else:
+        app.state.event_bus.publish(EventType.CAMERA_CONNECTED, {})
+    await asyncio.sleep(0.05)
+    assert await _walk_calls(fake_camera, c) > 0
+
+
+async def test_storage_endpoint_publishes_change_on_card_swap(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await c.get("/api/v1/camera/storage")
+    sub = app.state.event_bus.subscribe()
+    await c.get("/api/v1/camera/storage")  # unchanged: silent
+    fake_camera._capacity_kb += 1024
+    await c.get("/api/v1/camera/storage")
+    ev = await asyncio.wait_for(sub.__anext__(), 1)
+    assert ev.type == EventType.STORAGE_CHANGED
+
+
+async def test_download_all_with_delete_after_invalidates(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    await c.get(F, params=R)
+    jid = (await c.post(f"{F}/download-all", json={"delete_after": True})).json()["id"]
+    await _wait_job(c, jid, _finished)
+    assert (await c.get(F, params=R)).json()["total"] == 0
+
+
+async def test_concurrent_cold_walks_are_single_flight(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    await _warm(connected_client)
+    _svc(app).invalidate()
+    n = _n(fake_camera)
+    rs = await asyncio.gather(*(c.get(F, params=R) for _ in range(5)))
+    assert all(r.json()["total"] == 2 for r in rs)
+    one_walk = _n(fake_camera) - n
+    _svc(app).invalidate()
+    n = _n(fake_camera)
+    await c.get(F, params=R)
+    assert one_walk == _n(fake_camera) - n  # five callers cost one walk
+
+
+async def test_cold_walk_publishes_progress_event(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    await _warm(connected_client)
+    _svc(app).invalidate()
+    sub = app.state.event_bus.subscribe()
+    await c.get(F, params=R)
+    evs = [e for e in await _collect(sub) if e.type == EventType.CARD_LISTING]
+    assert evs and evs[-1].data == {"folder": "/", "recursive": True, "count": 2, "done": True}
+
+
+async def _collect(sub: Any) -> list[Any]:
+    out = []
+    while True:
+        try:
+            out.append(await asyncio.wait_for(sub.__anext__(), 0.1))
+        except TimeoutError:
+            return out
+
+
+async def test_order_param(app: FastAPI, connected_client: httpx.AsyncClient) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 3)
+    await _warm(connected_client)
+    svc = _svc(app)
+    from backend.camera.backend import CameraFileInfo
+
+    base = [
+        CameraFileInfo("/a", "B.JPG", 1, 20.0),
+        CameraFileInfo("/a", "A.JPG", 1, 20.0),
+        CameraFileInfo("/a", "C.JPG", 1, 10.0),
+        CameraFileInfo("/a", "D.JPG", 1, 30.0),
+    ]
+    svc._cache.walks[("/", True)] = sorted(base, key=lambda i: (i.folder, i.name))
+
+    async def names(order: str | None) -> list[str]:
+        p = {**R, **({"order": order} if order else {})}
+        return [i["name"] for i in (await c.get(F, params=p)).json()["items"]]
+
+    assert await names(None) == ["D.JPG", "A.JPG", "B.JPG", "C.JPG"]  # default newest, name ties
+    assert await names("newest") == ["D.JPG", "A.JPG", "B.JPG", "C.JPG"]
+    assert await names("oldest") == ["C.JPG", "A.JPG", "B.JPG", "D.JPG"]
+    assert await names("name") == ["A.JPG", "B.JPG", "C.JPG", "D.JPG"]
+    assert (await c.get(F, params={**R, "order": "bogus"})).status_code == 422
+
+
+def test_listing_timeout_is_generous() -> None:
+    import backend.services.camera_files as m
+
+    assert m._LIST_TIMEOUT_S >= 120.0
+
+
+async def test_listing_error_message_is_verbatim(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    await _shoot(connected_client, app, "JPEG Fine")
+    await _warm(connected_client)
+    _svc(app).invalidate()
+    fake_camera.fail_next("list_folders", exc=CameraOperationFailed("Could not get folder list"))
+    r = await connected_client.get(F, params=R)
+    assert r.status_code == 502 and r.json()["error"]["message"] == "Could not get folder list"
+
+
+async def _settle() -> None:
+    await asyncio.sleep(0.05)
+
+
+async def test_delete_on_download_invalidates_after_the_delete(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient, tmp_path: Any
+) -> None:
+    from backend.camera.backend import CameraFilePath
+    from backend.services.storage import download_files
+
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    assert (await c.get(F, params=R)).json()["total"] == 2  # warm: cached after the capture event
+    files = [
+        CameraFilePath(i["folder"], i["name"]) for i in (await c.get(F, params=R)).json()["items"]
+    ]
+    await download_files(app.state.camera_service, files, tmp_path, delete_from_camera=True)
+    await _settle()
+    assert (await c.get(F, params=R)).json()["total"] == 0
+
+
+async def test_strays_invalidate_even_when_downloads_are_off(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine")
+    assert (await c.get(F, params=R)).json()["total"] == 1
+    stray = fake_camera.press_shutter()
+    app.state.camera_service._on_strays(stray)  # no capture service: nothing downloads them
+    await _settle()
+    assert (await c.get(F, params=R)).json()["total"] == 2
+
+
+def _card(free_kb: int = 100, cap: int = 1000, label: str = "A") -> Any:
+    from backend.camera.backend import StorageInfo
+
+    return StorageInfo(label=label, base_dir="/store_1", capacity_kb=cap, free_kb=free_kb)
+
+
+async def test_free_space_increase_without_app_delete_is_a_card_change(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    svc = app.state.camera_service
+    svc.note_storage([_card(100)])
+    sub = app.state.event_bus.subscribe()
+    svc.note_storage([_card(50)])  # shrinking is a shot, not a swap
+    svc.note_storage([_card(200)])  # same card id, more room: swapped or emptied on the body
+    evs = await _collect(sub)
+    assert [e.type for e in evs] == [EventType.STORAGE_CHANGED]
+
+
+async def test_free_space_increase_after_app_delete_is_explained(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    svc = app.state.camera_service
+    svc.note_storage([_card(100)])
+    svc.card_files_changed()  # an app-side delete frees room
+    sub = app.state.event_bus.subscribe()
+    svc.note_storage([_card(200)])
+    svc.note_storage([_card(300)])  # nothing explains this second jump
+    evs = await _collect(sub)
+    assert [e.type for e in evs] == [EventType.STORAGE_CHANGED]
+
+
+async def test_ptp_store_events_invalidate_the_listing(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine")
+    assert await _walk_calls(fake_camera, c) > 0
+    assert await _walk_calls(fake_camera, c) == 0
+    fake_camera.announce_store_event(added=False)
+    deadline = time.monotonic() + 5
+    while await _walk_calls(fake_camera, c) == 0:  # the idle event poll reads it
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0.05)
+
+
+def test_store_event_text_is_recognised() -> None:
+    from backend.camera.backend import is_store_event
+
+    assert is_store_event("PTP StoreAdded, Param1 00010001")
+    assert is_store_event("PTP StoreRemoved, Param1 00010001")
+    assert not is_store_event('PTP Property 0000500f changed, "iso" to "800"')
+    assert not is_store_event(None)
+
+
+async def test_reset_cancels_the_orphaned_walk_and_restarts_one(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    await _warm(c)
+    svc = _svc(app)
+    svc.invalidate()
+    fake_camera.set_latency("list_files", 0.2)
+    req = asyncio.ensure_future(c.get(F, params=R))
+    await asyncio.sleep(0.1)  # first walk is inside a camera call
+    reqs = [req]
+    for _ in range(3):  # a time-lapse: a frame per reset, a request after each
+        svc.invalidate()
+        reqs.append(asyncio.ensure_future(c.get(F, params=R)))
+        await asyncio.sleep(0.05)
+    live = [t for t in asyncio.all_tasks() if "_cold_walk" in repr(t.get_coro()) and not t.done()]
+    assert len(live) <= 1
+    for r in await asyncio.gather(*reqs):
+        assert r.json()["total"] == 2  # waiters restart on a fresh walk, never fail
+    fake_camera.set_latency("list_files", 0.0)
+
+
+async def test_info_batches_use_a_shorter_timeout_than_name_listings(
+    app: FastAPI, fake_camera: FakeCamera, connected_client: httpx.AsyncClient
+) -> None:
+    import backend.services.camera_files as m
+
+    await _shoot(connected_client, app, "JPEG Fine")
+    await _warm(connected_client)
+    _svc(app).invalidate()
+    cam = app.state.camera_service
+    seen: list[float] = []
+    orig = cam.call
+
+    async def spy(fn: Any, *a: Any, **kw: Any) -> Any:
+        seen.append(kw.get("timeout"))
+        return await orig(fn, *a, **kw)
+
+    cam.call = spy
+    try:
+        await connected_client.get(F, params={"folder": CARD_FOLDER})
+    finally:
+        del cam.call
+    assert m._INFO_TIMEOUT_S == 30.0
+    assert seen[0] == m._LIST_TIMEOUT_S and m._INFO_TIMEOUT_S in seen
+
+
+async def test_orphaned_walk_never_feeds_the_new_walks_listeners(
+    app: FastAPI, connected_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _warm(connected_client)
+    svc = _svc(app)
+    svc.invalidate()
+    got: list[int] = []
+    gate = asyncio.Event()
+    starts: list[int] = []
+
+    async def fake_walk(
+        self: Any,
+        folder: str,
+        recursive: bool,
+        depth: int = 0,
+        on_found: Any = None,
+        found: Any = None,
+    ) -> list[Any]:
+        starts.append(1)
+        first_walk = len(starts) == 1
+        try:
+            on_found(1)
+            await gate.wait()
+        except asyncio.CancelledError:
+            on_found(99)  # a straggler report from the abandoned walk
+            raise
+        if first_walk:
+            on_found(99)
+        return []
+
+    monkeypatch.setattr(CameraFilesService, "_walk", fake_walk)
+    first = asyncio.ensure_future(svc.list_infos("/", True))
+    await asyncio.sleep(0.01)
+    svc.invalidate()
+    second = asyncio.ensure_future(svc.list_infos("/", True, got.append))
+    await asyncio.sleep(0.01)
+    gate.set()
+    await asyncio.gather(first, second)
+    assert 99 not in got

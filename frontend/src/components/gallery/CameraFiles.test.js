@@ -60,6 +60,55 @@ const btn = (text) => wrapper.findAll('button').find((b) => b.text().includes(te
 afterEach(() => wrapper?.unmount())
 
 describe('CameraFiles', () => {
+  it('shows the running file count while a cold listing loads', async () => {
+    const { cf } = setup()
+    cf.items = []
+    cf.total = 0
+    cf.loading = true
+    cf.listing = { count: 1234, done: false }
+    await flushPromises()
+    expect(wrapper.text()).toContain('Reading card… 1234 files')
+  })
+
+  it('sorts newest first by default and reloads page 1 on a new order', async () => {
+    const { cf } = setup()
+    await flushPromises()
+    const sel = wrapper.find('select[id]')
+    expect([...sel.element.options].map((o) => o.text)).toEqual(['Newest', 'Oldest', 'Name'])
+    expect(sel.element.value).toBe('newest')
+    await sel.setValue('oldest')
+    expect(cf.loadFiles).toHaveBeenLastCalledWith({ order: 'oldest', page: 1 })
+  })
+
+  it('shows the load error verbatim with Retry and no duplicate toast', async () => {
+    const { cf, toasts } = setup()
+    cf.items = []
+    cf.total = 0
+    cf.loadFiles.mockImplementationOnce(async () => {
+      cf.lastError = new Error('Could not get folder list')
+      throw cf.lastError
+    })
+    await btn('By folder').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Could not get folder list')
+    expect(toasts.error).not.toHaveBeenCalled()
+    cf.loadFiles.mockClear()
+    await btn('Retry').trigger('click')
+    expect(cf.loadFiles).toHaveBeenCalled()
+  })
+
+  it('shows a failed refresh verbatim above the list that is already there', async () => {
+    const { cf } = setup()
+    cf.loadFiles.mockImplementationOnce(async () => {
+      cf.lastError = new Error('Camera busy')
+      throw cf.lastError
+    })
+    wrapper.findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'oldest')
+    await flushPromises()
+    expect(wrapper.find('[data-testid=load-error]').text()).toContain('Camera busy')
+    expect(wrapper.find('[data-testid=card-files]').exists()).toBe(true)
+  })
+
   it('shows an empty state with Connect when disconnected', async () => {
     const { cam, cf } = setup({ connected: false })
     expect(wrapper.text()).toContain('Camera not connected')

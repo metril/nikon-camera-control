@@ -8,6 +8,7 @@ import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
 import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
 import CameraThumb from './CameraThumb.vue'
@@ -30,6 +31,11 @@ const view = ref('flat')
 const VIEWS = [
   { value: 'flat', label: 'All files' },
   { value: 'folders', label: 'By folder' },
+]
+const ORDERS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'name', label: 'Name' },
 ]
 const optionsOpen = ref(false)
 const onlyNew = ref(true)
@@ -92,9 +98,8 @@ async function load(params = {}) {
       }
       subfolders.value = out
     }
-  } catch (e) {
-    failedLoad.value = true
-    toasts.error(e)
+  } catch {
+    failedLoad.value = true // shown in the empty state with Retry: no toast
   }
 }
 const goFolder = (f) => load({ folder: f, page: 1, recursive: false })
@@ -189,46 +194,66 @@ const gb = (kb) => formatSize(kb * 1024)
     </template>
   </UiEmpty>
 
-  <div v-else class="space-y-4">
-    <div v-if="cards.length" class="flex flex-wrap gap-3" data-testid="storage">
-      <div
-        v-for="c in cards"
-        :key="c.base_dir || c.label"
-        class="rounded-inner border border-camera-border bg-camera-raised px-3 py-2 text-sm text-camera-muted"
-      >
-        <span class="font-medium text-camera-text">{{ c.label }}</span>
-        · <span class="tabular-nums">{{ gb(c.free_kb) }} free of {{ gb(c.capacity_kb) }}</span>
+  <div v-else class="space-y-3">
+    <!-- One toolbar row (wraps when narrow): view, sort, then the card-wide download -->
+    <div class="flex flex-wrap items-center gap-2">
+      <UiSegmented
+        size="sm"
+        :model-value="view"
+        :options="VIEWS"
+        aria-label="Card view"
+        @update:model-value="setView"
+      />
+      <div class="toolbar-select">
+        <UiSelect
+          :model-value="cf.query.order"
+          :options="ORDERS"
+          label="Sort"
+          @update:model-value="load({ order: $event, page: 1 })"
+        />
       </div>
+      <span class="flex-1" />
+      <UiButton
+        size="sm"
+        variant="ghost"
+        :aria-expanded="optionsOpen"
+        :disabled="running"
+        data-testid="download-options"
+        @click="optionsOpen = !optionsOpen"
+      >
+        Options
+        <UiIcon :name="optionsOpen ? 'ChevronUp' : 'ChevronDown'" :size="14" />
+      </UiButton>
+      <UiButton
+        v-if="!running"
+        variant="primary"
+        size="sm"
+        :loading="starting"
+        :disabled="leased || noStorage"
+        :title="noStorage ? 'Choose a storage first' : leaseReason"
+        data-testid="download-all"
+        @click="startAll"
+      >
+        Download all to storage
+      </UiButton>
     </div>
 
-    <div class="rounded-card border border-camera-border bg-camera-surface p-3">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="mr-auto text-sm font-semibold">Download all to storage</span>
-        <UiButton
-          size="sm"
-          variant="ghost"
-          :aria-expanded="optionsOpen"
-          :disabled="running"
-          data-testid="download-options"
-          @click="optionsOpen = !optionsOpen"
-        >
-          Options
-          <UiIcon :name="optionsOpen ? 'ChevronUp' : 'ChevronDown'" :size="14" />
-        </UiButton>
-        <UiButton
-          v-if="!running"
-          variant="primary"
-          size="sm"
-          :loading="starting"
-          :disabled="leased || noStorage"
-          :title="noStorage ? 'Choose a storage first' : leaseReason"
-          data-testid="download-all"
-          @click="startAll"
-        >
-          Download all
-        </UiButton>
-      </div>
-      <div v-if="optionsOpen" class="mt-3 space-y-3" data-testid="download-options-panel">
+    <p
+      v-if="cards.length"
+      class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-camera-muted"
+      data-testid="storage"
+    >
+      <span v-for="c in cards" :key="c.base_dir || c.label">
+        <span class="text-camera-text">{{ c.label }}</span>
+        · <span class="tabular-nums">{{ gb(c.free_kb) }} free of {{ gb(c.capacity_kb) }}</span>
+      </span>
+    </p>
+
+    <div
+      v-if="optionsOpen || leased || noStorage || running || job?.status === 'failed' || result"
+      class="space-y-2 rounded-card border border-camera-border bg-camera-surface p-3"
+    >
+      <div v-if="optionsOpen" class="space-y-3" data-testid="download-options-panel">
         <div class="flex flex-wrap gap-x-6 gap-y-1">
           <UiToggle v-model="onlyNew" label="Only new files" :disabled="running" />
           <UiToggle
@@ -264,14 +289,6 @@ const gb = (kb) => formatSize(kb * 1024)
         </span>
       </p>
     </div>
-
-    <UiSegmented
-      size="sm"
-      :model-value="view"
-      :options="VIEWS"
-      aria-label="Card view"
-      @update:model-value="setView"
-    />
 
     <template v-if="view === 'folders'">
       <nav aria-label="Card folder" class="flex flex-wrap items-center gap-1 text-sm">
@@ -309,10 +326,20 @@ const gb = (kb) => formatSize(kb * 1024)
       </div>
     </template>
 
+    <UiAlert v-if="failedLoad && cf.items.length" tone="danger" data-testid="load-error">
+      {{ cf.lastError?.message || 'Could not load the card listing' }}
+    </UiAlert>
     <div v-if="cf.loading && !cf.items.length" class="space-y-2" aria-busy="true">
+      <p class="text-sm text-camera-muted" aria-live="polite" data-testid="card-reading">
+        {{ cf.listing ? `Reading card… ${cf.listing.count} files` : 'Reading card…' }}
+      </p>
       <div v-for="n in 6" :key="n" class="h-10 animate-pulse rounded-inner bg-camera-raised" />
     </div>
-    <UiEmpty v-else-if="failedLoad && !cf.items.length" title="Could not list the card">
+    <UiEmpty
+      v-else-if="failedLoad && !cf.items.length"
+      title="Could not list the card"
+      :hint="cf.lastError?.message || ''"
+    >
       <template #actions><UiButton @click="load()">Retry</UiButton></template>
     </UiEmpty>
     <UiEmpty v-else-if="!cf.items.length" title="No files here" />
@@ -350,7 +377,7 @@ const gb = (kb) => formatSize(kb * 1024)
           </UiButton>
           <UiConfirmButton
             size="sm"
-            variant="danger"
+            variant="danger-quiet"
             data-testid="delete-card-file"
             :disabled="leased || busyFile === fileKey(f)"
             :title="leaseReason"
@@ -381,6 +408,18 @@ const gb = (kb) => formatSize(kb * 1024)
 </template>
 
 <style scoped>
+.toolbar-select :deep(label) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.toolbar-select :deep(select) {
+  height: var(--ctl-sm);
+  font-size: 13px;
+}
 /* One grid for header and rows: thumbnail, name, size, date, type, fixed actions column.
    On phones a row becomes a card: thumbnail and name, meta line, then actions. */
 .file-row {

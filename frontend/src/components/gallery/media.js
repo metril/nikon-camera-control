@@ -46,3 +46,8 @@ async function resolve(plain, fetchBlob) {
 }
 export const resolveFile = (path) =>
   resolve(fileUrl(path), () => api.downloadFile({ path: { path }, parseAs: 'blob' }))
+
+const SYSTEM_FOLDERS = new Set(['system volume information', '$recycle.bin', 'lost+found'])
+/** OS/system folders (and any dot-folder) never belong in the gallery's folder chips. */
+export const isSystemFolder = (name) =>
+  name.startsWith('.') || SYSTEM_FOLDERS.has(name.toLowerCase())

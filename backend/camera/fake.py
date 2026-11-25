@@ -35,6 +35,7 @@ from backend.camera.backend import (
     EventType,
     FileKind,
     StorageInfo,
+    is_store_event,
     parse_property_change,
 )
 from backend.camera.camera_text import apply_prohibit, camera_details, prohibit_reasons
@@ -419,6 +420,7 @@ class FakeCamera:
         self.focus_travel: int | None = None  # lens travel in drive steps; None = unlimited
         self._focus_pos = 0
         self.property_listener: Callable[[int, str | None, str | None], None] | None = None
+        self.store_listener: Callable[[], None] | None = None
         self._capture_exits_lv = capture_exits_liveview
         self._pv_flag = False  # mirrors Gphoto2Backend._viewfinder_on
         self._rng = random.Random(seed)  # noqa: S311
@@ -761,6 +763,16 @@ class FakeCamera:
             )
             self._cond.notify_all()
 
+    def announce_store_event(self, *, added: bool) -> None:
+        """A card was inserted or removed on the body: libgphoto2's ptp2 event text."""
+        what = "StoreAdded" if added else "StoreRemoved"
+        text = f"PTP {what}, Param1 00010001"
+        with self._cond:
+            self._events.append(
+                CameraEvent(EventType.UNKNOWN, payload={"gphoto2_type": 99, "data": text})
+            )
+            self._cond.notify_all()
+
     def body_set(self, name: str, value: str | int | float | bool) -> None:
         """Change a widget as if on the camera body: no app write, but a property event."""
         s = self._spec(name)
@@ -983,6 +995,8 @@ class FakeCamera:
                 self._cond.wait_for(lambda: bool(self._events), timeout=max(0.0, timeout_s))
             if self._events:
                 ev = self._events.popleft()
+                if ev.payload and is_store_event(ev.payload.get("data")) and self.store_listener:
+                    self.store_listener()
                 change = parse_property_change(ev.payload.get("data")) if ev.payload else None
                 if change is not None and self.property_listener is not None:
                     self.property_listener(*change)

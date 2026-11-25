@@ -30,7 +30,7 @@ function pick(v) {
       type="button"
       :aria-pressed="isOn(o.value)"
       :disabled="disabled"
-      class="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] px-3 text-[13px] font-medium transition-colors duration-[120ms] disabled:cursor-not-allowed disabled:opacity-[.45]"
+      class="inline-flex flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] px-3 text-[13px] font-medium transition-colors duration-[120ms] disabled:cursor-not-allowed disabled:opacity-[.45]"
       :class="
         isOn(o.value)
           ? 'bg-camera-accent/15 text-camera-text shadow-[inset_0_-2px_0_0_theme(colors.camera.accent)]'

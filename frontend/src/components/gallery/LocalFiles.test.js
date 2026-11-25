@@ -6,6 +6,8 @@ import { useFilesStore } from '@/stores/files'
 import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
 import { useCaptureStore } from '@/stores/capture'
+import { useVideosStore } from '@/stores/videos'
+import { useSessionsStore } from '@/stores/sessions'
 
 const item = (n, extra = {}) => ({
   path: `a/${n}.jpg`,
@@ -31,7 +33,15 @@ function setup({
   vi.spyOn(files, 'load').mockImplementation(async (p = {}) => {
     files.query = { ...files.query, ...p }
   })
-  useStorageStore(pinia).targetId = target
+  const st = useStorageStore(pinia)
+  st.targetId = target
+  st.locations = [{ id: 'loc', name: 'usb1', label: 'Data' }]
+  vi.spyOn(useSessionsStore(pinia), 'fetch').mockResolvedValue()
+  const vids = useVideosStore(pinia)
+  vi.spyOn(vids, 'fetch').mockImplementation(async () => {
+    vids.items = []
+    vids.total = 3
+  })
   files.items = items
   files.total = total ?? items.length
   vi.spyOn(files, 'loadCounts').mockResolvedValue()
@@ -326,5 +336,39 @@ describe('LocalFiles', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
     expect(q('[data-testid=lightbox]')).toBeNull()
+  })
+
+  it('hides system folders and names the breadcrumb root after the storage', async () => {
+    const { files } = setup()
+    files.folders = [
+      'sessions',
+      '.ncc',
+      '$RECYCLE.BIN',
+      'System Volume Information',
+      '.Trashes',
+      'lost+found',
+    ].map((name) => ({ name, path: name }))
+    await flushPromises()
+    const chips = wrapper.findAll('[data-testid=folders] button').map((b) => b.text())
+    expect(chips).toEqual(['sessions'])
+    // at the root the source card names the drive; no breadcrumb, no "Output" heading
+    expect(wrapper.find('nav[aria-label=Folder]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Output')
+    files.query = { ...files.query, folder: 'sessions/s1' }
+    await flushPromises()
+    const crumbs = wrapper.find('nav[aria-label=Folder]').text()
+    expect(crumbs).toContain('Data')
+    expect(crumbs).toContain('sessions')
+    expect(crumbs).toContain('s1')
+  })
+
+  it('shows time-lapse videos as a filter chip', async () => {
+    setup()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Time-lapses 3')
+    await btn('Time-lapses').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid=grid]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('No rendered videos')
   })
 })
