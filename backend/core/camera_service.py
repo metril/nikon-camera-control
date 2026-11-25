@@ -4,7 +4,7 @@ Design contract
 ---------------
 - One worker thread runs every blocking ``CameraBackend`` call, fed by a
   ``queue.PriorityQueue``. Priority order (lower runs first): CONTROL < CAPTURE <
-  KEEPALIVE < PREVIEW; FIFO within a priority (sequence counter). Async callers await a
+  KEEPALIVE < PREVIEW < BACKGROUND; FIFO within a priority (sequence counter). Async callers await a
   future resolved with ``loop.call_soon_threadsafe``.
 - ``call(fn, priority=, timeout=)`` is the one generic way to run a backend op. If the op
   does not finish within ``timeout`` the awaiting caller gets ``CameraTimeout`` and the item
@@ -17,6 +17,9 @@ Design contract
   ERROR; ``disconnect()`` waits a bounded time for an in-flight call, then abandons that
   worker (it exits by itself when the call finally returns, and never closes a backend a
   newer worker owns) and the next ``connect()`` starts a fresh one.
+- ``call`` is cancel-aware: if the awaiting task is cancelled while its item is still queued,
+  the item is marked abandoned and the worker skips it (no error, no reset); a running item
+  cannot be interrupted. BACKGROUND (bulk card reads) runs strictly behind live view frames.
 - Every state change goes through one validated path (``core.state.can_transition``;
   ``transition`` is its public form), is published on the bus as CAMERA_STATE
   ({state, previous}), plus CAMERA_CONNECTED / CAMERA_DISCONNECTED where relevant.
@@ -134,6 +137,7 @@ class Priority(enum.IntEnum):
     CAPTURE = 1
     KEEPALIVE = 2
     PREVIEW = 3
+    BACKGROUND = 4  # bulk reads (card image previews): strictly behind live view frames
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +182,16 @@ class _Item:
                 return False
             self.abandoned = True
             self.reset = reset and self.started
+            return True
+
+    def try_cancel_queued(self) -> bool:
+        """Waiter cancelled: mark a not-yet-started item abandoned so the worker skips it
+        (no reset, no error). A running item cannot be interrupted and is left alone."""
+        with self.lock:
+            if self.started or self.finished or self.abandoned:
+                return False
+            self.abandoned = True
+            self.reset = False
             return True
 
     def begin(self) -> bool:
@@ -982,9 +996,21 @@ class CameraService:
         ):
             raise CameraBusy(details={"leased_by": self._lease_owner})
 
-    async def _await_item(self, worker: _Worker, item: _Item, timeout: float | None) -> Any:  # noqa: ASYNC109  # noqa: ASYNC109
+    async def _await_item(
+        self,
+        worker: _Worker,
+        item: _Item,
+        timeout: float | None,  # noqa: ASYNC109
+        *,
+        cancel_queued: bool = False,
+    ) -> Any:
         fut = item.fut
-        await asyncio.wait({fut}, timeout=timeout)
+        try:
+            await asyncio.wait({fut}, timeout=timeout)
+        except asyncio.CancelledError:
+            if cancel_queued:  # sole waiter gone: a still-queued item must never run
+                item.try_cancel_queued()
+            raise
         if not fut.done():
             if item.try_abandon(reset=item.escalate):
                 if item.escalate and item.started:  # only the in-flight call stalls the camera
@@ -1070,7 +1096,7 @@ class CameraService:
         if worker is None or self._state in (_S.DISCONNECTED, _S.CONNECTING):
             raise CameraNotConnected()
         item = worker.submit(lambda w: fn(w.require()), priority)
-        return await self._finish(worker, item, timeout)
+        return await self._finish(worker, item, timeout, cancel_queued=True)
 
     def _reconnecting(self) -> bool:
         """Disconnected with the automatic reconnect loop running (not a user Disconnect)."""
@@ -1092,9 +1118,16 @@ class CameraService:
             await asyncio.sleep(0.05)
         return self._state in _LIVE_STATES
 
-    async def _finish(self, worker: _Worker, item: _Item, timeout: float | None) -> Any:  # noqa: ASYNC109
+    async def _finish(
+        self,
+        worker: _Worker,
+        item: _Item,
+        timeout: float | None,  # noqa: ASYNC109
+        *,
+        cancel_queued: bool = False,
+    ) -> Any:
         try:
-            return await self._await_item(worker, item, timeout)
+            return await self._await_item(worker, item, timeout, cancel_queued=cancel_queued)
         except (CameraIOError, CameraNotConnected, CameraNotFound) as e:
             if worker is self._worker:
                 self._lost(e.message)

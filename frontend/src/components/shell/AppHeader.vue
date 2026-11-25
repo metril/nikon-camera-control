@@ -1,5 +1,5 @@
 <script setup>
-/** Top bar: brand, tabs, camera status chip, battery, shots left, Jobs and (desktop only) the layout switch. */
+/** Top bar: brand, tabs, camera status chip, battery, shots left, Jobs and the Desktop/Touch layout switch. */
 import { computed, onMounted, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
@@ -107,7 +107,7 @@ const LAYOUTS = [
           jobs.active.length
         }}</span>
       </button>
-      <div v-if="!forced && layout !== 'touch'" class="seg" role="group" aria-label="Layout">
+      <div v-if="!forced" class="seg" role="group" aria-label="Layout">
         <button
           v-for="l in LAYOUTS"
           :key="l.value"
@@ -315,6 +315,15 @@ html[data-layout='touch'] .lbl {
 }
 html[data-layout='touch'] .name {
   display: inline;
+}
+/* Touch targets: each layout button is the full control height (icon only; no label) */
+html[data-layout='touch'] .seg {
+  height: auto;
+}
+html[data-layout='touch'] .seg button {
+  height: var(--ctl-sm);
+  min-width: var(--ctl-sm);
+  padding: 0;
 }
 @media (max-width: 560px) {
   html[data-layout='touch'] .name {

@@ -21,6 +21,15 @@ const props = defineProps({
   items: { type: Array, default: () => [] },
   index: { type: Number, default: 0 },
   busy: { type: Boolean, default: false },
+  /** Source adapter: async (item, { placeholder }) => { url, release, note? } | null. Default: local files. */
+  loader: { type: Function, default: null },
+  downloadLabel: { type: String, default: 'Download' },
+  deleteDisabled: { type: Boolean, default: false },
+  deleteTitle: { type: String, default: '' },
+  /** Position shown as `offset + index + 1 of total` when the items are a window of a longer list. */
+  offset: { type: Number, default: 0 },
+  total: { type: Number, default: null },
+  showDate: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'update:index', 'delete', 'download'])
 const files = useFilesStore()
@@ -29,10 +38,13 @@ const root = ref(null)
 const closeBtn = ref(null)
 const strip = ref(null)
 const item = computed(() => props.items[props.index] || null)
-const isVideo = computed(() => item.value?.kind === 'video')
+const isVideo = computed(() => item.value?.kind === 'video' && !props.loader)
 const src = ref(null)
 const loading = ref(false)
 const failed = ref(false)
+const note = ref('')
+const placeholder = ref(null)
+let releasePlaceholder = () => {}
 let release = () => {}
 let gen = 0
 let opener = null
@@ -110,10 +122,17 @@ function onPointerUp(e) {
   swipeFrom = null
 }
 
+function dropPlaceholder() {
+  releasePlaceholder()
+  releasePlaceholder = () => {}
+  placeholder.value = null
+}
 function drop() {
   release()
   release = () => {}
   src.value = null
+  note.value = ''
+  dropPlaceholder()
 }
 
 async function loadPreview() {
@@ -125,7 +144,23 @@ async function loadPreview() {
   loading.value = true
   failed.value = false
   try {
-    if (it.kind === 'image' || it.kind === 'video') {
+    if (props.loader) {
+      const r = await props.loader(it, {
+        // a quick low-resolution stand-in while the real file loads
+        placeholder: (h) => {
+          if (mine !== gen || !loading.value) return h.release()
+          dropPlaceholder()
+          releasePlaceholder = h.release
+          placeholder.value = h.url
+        },
+      })
+      if (mine !== gen) return r?.release()
+      if (r) {
+        release = r.release
+        src.value = r.url
+        note.value = r.note || ''
+      }
+    } else if (it.kind === 'image' || it.kind === 'video') {
       const r = await resolveFile(it.path)
       if (mine !== gen) return r.release()
       release = r.release
@@ -140,7 +175,10 @@ async function loadPreview() {
   } catch {
     if (mine === gen) failed.value = true
   } finally {
-    if (mine === gen) loading.value = false
+    if (mine === gen) {
+      loading.value = false
+      dropPlaceholder()
+    }
   }
 }
 
@@ -229,6 +267,12 @@ const exif = computed(() => {
     ['Mode', ex.mode],
     ['Size', formatSize(it.size)],
     ['Taken', taken],
+    [
+      'Date',
+      props.showDate && it.modified
+        ? new Date(it.modified * 1000).toLocaleDateString([], { dateStyle: 'medium' })
+        : null,
+    ],
   ].filter(([, v]) => v != null && v !== '' && v !== '-')
 })
 </script>
@@ -241,11 +285,11 @@ const exif = computed(() => {
       role="dialog"
       aria-modal="true"
       :aria-label="item?.name || 'Preview'"
-      class="fixed inset-0 z-50 grid grid-rows-[auto_minmax(0,1fr)_auto_auto] bg-black text-camera-text"
+      class="fixed inset-0 z-50 grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto_auto] bg-black text-camera-text"
       data-testid="lightbox"
     >
       <div
-        class="flex items-center gap-3 bg-camera-bg py-2.5 pl-[max(24px,env(safe-area-inset-left,0px))] pr-[max(16px,env(safe-area-inset-right,0px))] pt-[calc(10px+env(safe-area-inset-top,0px))]"
+        class="flex min-w-0 items-center gap-3 bg-camera-bg py-2.5 max-[560px]:gap-1.5 pl-[max(24px,env(safe-area-inset-left,0px))] max-[560px]:pl-[max(8px,env(safe-area-inset-left,0px))] pr-[max(16px,env(safe-area-inset-right,0px))] max-[560px]:pr-[max(8px,env(safe-area-inset-right,0px))] pt-[calc(10px+env(safe-area-inset-top,0px))]"
       >
         <button
           ref="closeBtn"
@@ -256,34 +300,39 @@ const exif = computed(() => {
         >
           <UiIcon name="X" />
         </button>
-        <span class="min-w-0 truncate font-mono text-sm font-medium" :title="item?.name">{{
+        <span class="min-w-0 flex-1 truncate font-mono text-sm font-medium" :title="item?.name">{{
           item?.name
         }}</span>
         <UiBadge v-if="item" :tone="kindTone(item.kind)">{{ fileKind(item.kind) }}</UiBadge>
-        <span class="flex-1" />
+        <slot name="actions" :item="item" />
         <UiButton
           size="sm"
           variant="ghost"
           :disabled="!item"
-          aria-label="Download file"
+          :aria-label="loader ? downloadLabel : 'Download file'"
+          :title="downloadLabel"
           @click="emit('download', item)"
         >
           <UiIcon name="Download" :size="16" />
-          <span class="hidden sm:inline">Download</span>
+          <span class="hidden sm:inline">{{ downloadLabel }}</span>
         </UiButton>
         <UiConfirmButton
           size="sm"
           variant="ghost"
           :loading="busy"
-          :disabled="!item"
+          :disabled="!item || deleteDisabled"
+          :title="deleteTitle"
           confirm-text="Delete?"
           @confirm="emit('delete', item)"
         >
           <UiIcon name="Trash2" :size="16" />
           <span class="hidden sm:inline">Delete</span>
         </UiConfirmButton>
-        <span class="tabular-nums text-[13px] text-camera-muted" data-testid="lightbox-position">
-          {{ index + 1 }} of {{ items.length }}
+        <span
+          class="flex-none tabular-nums text-[13px] text-camera-muted"
+          data-testid="lightbox-position"
+        >
+          {{ offset + index + 1 }} of {{ total ?? items.length }}
         </span>
       </div>
 
@@ -297,7 +346,17 @@ const exif = computed(() => {
         @pointerup="onPointerUp"
         @pointercancel="onPointerUp"
       >
-        <UiSpinner v-if="loading" />
+        <template v-if="loading">
+          <img
+            v-if="placeholder"
+            :src="placeholder"
+            :alt="item?.name"
+            draggable="false"
+            class="max-h-full max-w-full object-contain opacity-70"
+            data-testid="lightbox-placeholder"
+          />
+          <UiSpinner :class="placeholder ? 'absolute' : ''" />
+        </template>
         <video
           v-else-if="src && !failed && isVideo"
           :src="src"
@@ -317,6 +376,13 @@ const exif = computed(() => {
         />
         <p v-else class="p-6 text-sm text-camera-muted" data-testid="lightbox-nopreview">
           No preview available
+        </p>
+        <p
+          v-if="note && !loading"
+          class="absolute bottom-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded-full border border-camera-border bg-camera-surface/85 px-3 py-1 text-center text-xs text-camera-muted"
+          data-testid="lightbox-note"
+        >
+          {{ note }}
         </p>
         <span
           v-if="zoom !== 1"
@@ -377,7 +443,9 @@ const exif = computed(() => {
           "
           @click="emit('update:index', i)"
         >
-          <Thumb :path="f.path" :supported="f.has_thumbnail" :size="128" />
+          <slot name="thumb" :item="f">
+            <Thumb :path="f.path" :supported="f.has_thumbnail" :size="128" />
+          </slot>
         </button>
       </div>
     </div>

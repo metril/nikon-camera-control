@@ -208,7 +208,7 @@ def load_full_image(path: Path, draft_size: int | None = None) -> Image.Image:
     return im
 
 
-def _render(src: Path, dest: Path, size: int) -> None:
+def _render(src: Path, dest: Path, size: int, quality: int = _JPEG_QUALITY) -> None:
     im = load_full_image(src, draft_size=size)
     try:
         im = ImageOps.exif_transpose(im)
@@ -216,7 +216,7 @@ def _render(src: Path, dest: Path, size: int) -> None:
         rgb = im.convert("RGB")
         tmp = dest.with_name(f"{dest.name}.{uuid.uuid4().hex}.tmp")
         try:
-            rgb.save(tmp, "JPEG", quality=_JPEG_QUALITY, optimize=True)
+            rgb.save(tmp, "JPEG", quality=quality, optimize=True)
             os.replace(tmp, dest)
         finally:
             tmp.unlink(missing_ok=True)
@@ -274,3 +274,9 @@ class ThumbnailService:
     def _make(self, src: Path, dest: Path, size: int) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         _render(src, dest, size)
+
+
+def render_preview(src: Path, dest: Path, size: int, quality: int) -> None:
+    """Screen-sized JPEG of an image or RAW (embedded preview), long edge <= ``size`` (blocking)."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _render(src, dest, size, quality)

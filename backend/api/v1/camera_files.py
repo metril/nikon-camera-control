@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import shutil
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, Response
 from starlette.types import Receive, Scope, Send
 
@@ -100,6 +101,44 @@ async def get_camera_thumbnail(svc: FilesDep, folder: str, name: str) -> Respons
     # short: the body reuses file names, so a long cache could show another photo
     headers = {"Cache-Control": "private, max-age=60"}
     return Response(data, media_type="image/jpeg", headers=headers)
+
+
+@router.get(
+    "/preview",
+    operation_id="get_camera_preview",
+    response_class=Response,
+    responses=binary_response("image/jpeg", "Screen-sized JPEG (long edge 2560 px) of the file"),
+)
+async def get_camera_preview(
+    request: Request,
+    svc: FilesDep,
+    folder: str,
+    name: str,
+    size: int | None = None,
+    mtime: float | None = None,
+) -> Response:
+    """JPEG as rendered from the card file (RAW: its embedded preview); 415 for videos.
+
+    ``size`` and ``mtime`` (from the listing) are cache-busters only: the body reuses file
+    names. 409 while another owner holds the camera lease and the preview is not cached.
+    A client that goes away cancels the render (a still-queued camera read never runs).
+    """
+    work = asyncio.ensure_future(
+        svc.preview_file(validate_camera_folder(folder), validate_camera_name(name))
+    )
+    try:
+        while not work.done():
+            await asyncio.wait({work}, timeout=0.25)
+            if not work.done() and await request.is_disconnected():
+                work.cancel()
+                return Response(status_code=499)
+        path = work.result()
+    finally:
+        if not work.done():
+            work.cancel()
+    data = await asyncio.to_thread(path.read_bytes)
+    # short: the body reuses file names, so a long cache could show another photo
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=60"})
 
 
 @router.post(

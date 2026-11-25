@@ -2164,6 +2164,17 @@
             "title": "Delete After",
             "type": "boolean"
           },
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CameraFileRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Download only this file (folder is then ignored)"
+          },
           "folder": {
             "anyOf": [
               {
@@ -8523,6 +8534,146 @@
           }
         ],
         "summary": "List Camera Folders",
+        "tags": [
+          "camera-files"
+        ]
+      }
+    },
+    "/api/v1/camera/preview": {
+      "get": {
+        "description": "JPEG as rendered from the card file (RAW: its embedded preview); 415 for videos.\n\n``size`` and ``mtime`` (from the listing) are cache-busters only: the body reuses file\nnames. 409 while another owner holds the camera lease and the preview is not cached.\nA client that goes away cancels the render (a still-queued camera read never runs).",
+        "operationId": "get_camera_preview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "folder",
+            "required": true,
+            "schema": {
+              "title": "Folder",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mtime",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mtime"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Screen-sized JPEG (long edge 2560 px) of the file"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Camera Preview",
         "tags": [
           "camera-files"
         ]

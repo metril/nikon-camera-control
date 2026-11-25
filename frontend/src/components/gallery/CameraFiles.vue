@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import UiToggle from '@/components/ui/UiToggle.vue'
@@ -12,6 +12,15 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
 import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
 import CameraThumb from './CameraThumb.vue'
+import Lightbox from './Lightbox.vue'
+import {
+  loadCameraViewerItem,
+  prefetchCameraPreview,
+  keepCameraPreviews,
+  cancelCameraPreviews,
+  clearCameraPreviews,
+  previewKey,
+} from './cameraPreviews'
 import { fileKind, leaseOwner } from '@/labels'
 import { useCameraStore } from '@/stores/camera'
 import { useCameraFilesStore } from '@/stores/cameraFiles'
@@ -179,6 +188,102 @@ async function cancel() {
 }
 const noStorage = computed(() => storage.noTarget)
 const gb = (kb) => formatSize(kb * 1024)
+
+// Viewer: a contiguous window of the sorted card listing. `start` is the absolute offset of
+// items[0]; neighbours are fetched by offset, so deletes (which shift server pages) stay right.
+const viewer = ref({ items: [], index: -1, start: 0 })
+const paging = ref(false)
+const viewerOpen = computed(() => viewer.value.index >= 0)
+const toViewer = (f) => ({
+  path: fileKey(f),
+  folder: f.folder,
+  name: f.name,
+  size: f.size,
+  modified: f.mtime || null,
+  kind: f.type === 'jpeg' ? 'image' : f.type,
+  has_thumbnail: f.type !== 'video',
+})
+const previewKeyOf = (f) => previewKey(f.folder, f.name, f.size ?? 0, f.modified ?? 0)
+function openViewer(i) {
+  const { page, limit } = cf.query
+  viewer.value = { items: cf.items.map(toViewer), index: i, start: (page - 1) * limit }
+}
+function closeViewer() {
+  viewer.value = { ...viewer.value, index: -1 }
+  cancelCameraPreviews()
+}
+async function pageViewer(dir) {
+  const v = viewer.value
+  const limit = cf.query.limit
+  // forward: the page holding the first unseen offset; backward: the one holding the offset before
+  const at = dir > 0 ? v.start + v.items.length : v.start - 1
+  if (paging.value || at < 0 || at >= cf.total) return
+  const page = Math.floor(at / limit) + 1
+  const first = (page - 1) * limit
+  paging.value = true
+  try {
+    const out = (await cf.peekPage(page)).items.map(toViewer)
+    const now = viewer.value
+    // the window moved (delete, close) while the page was loading: its offsets no longer fit
+    if (now.index < 0 || now.start !== v.start || now.items.length !== v.items.length) return
+    if (dir > 0) {
+      const add = out.slice(at - first)
+      if (add.length) viewer.value = { ...now, items: [...now.items, ...add] }
+    } else {
+      const add = out.slice(0, at - first + 1)
+      if (add.length)
+        viewer.value = {
+          ...now,
+          items: [...add, ...now.items],
+          index: now.index + add.length,
+          start: now.start - add.length,
+        }
+    }
+  } catch (e) {
+    toasts.error(e)
+  } finally {
+    paging.value = false
+  }
+}
+watch(
+  () => [viewer.value.index, viewer.value.items.length, viewer.value.start],
+  () => {
+    const { items, index } = viewer.value
+    if (index < 0) return
+    if (index >= items.length - 2) pageViewer(1)
+    if (index <= 1) pageViewer(-1) // a short window (after deletes) can need both
+    // only the current and adjacent files are worth reading from the card
+    const near = [index - 1, index, index + 1].map((i) => items[i]).filter(Boolean)
+    keepCameraPreviews(near.map(previewKeyOf))
+    for (const f of near)
+      if (f.kind !== 'video') prefetchCameraPreview(f.folder, f.name, f.size ?? 0, f.modified ?? 0)
+  },
+)
+async function viewerToStorage(it) {
+  try {
+    const j = await cf.downloadAll({
+      file: { folder: it.folder, name: it.name },
+      only_new: false,
+      delete_after: false,
+    })
+    jobs.upsert(j)
+    toasts.success(`Saving ${it.name} to storage`)
+  } catch (e) {
+    toasts.error(e)
+  }
+}
+async function viewerDelete(it) {
+  const { index } = viewer.value
+  await removeOne(it)
+  if (cf.items.some((f) => fileKey(f) === it.path)) return // failed: toast already shown
+  const items = viewer.value.items.filter((f) => f.path !== it.path)
+  if (!items.length) return closeViewer()
+  viewer.value = { ...viewer.value, items, index: Math.min(index, items.length - 1) }
+}
+onUnmounted(() => {
+  cancelCameraPreviews()
+  clearCameraPreviews()
+})
 </script>
 
 <template>
@@ -353,19 +458,25 @@ const gb = (kb) => formatSize(kb * 1024)
         <span />
       </div>
       <div
-        v-for="f in cf.items"
+        v-for="(f, i) in cf.items"
         :key="f.folder + '/' + f.name"
         role="listitem"
         class="file-row border-t border-camera-subtle"
         data-testid="card-file"
       >
-        <span class="thumb">
+        <button type="button" class="thumb" :aria-label="`View ${f.name}`" @click="openViewer(i)">
           <CameraThumb :folder="f.folder" :name="f.name" :supported="f.type !== 'video'" />
-        </span>
+        </button>
         <span class="flex min-w-0 items-center gap-2">
-          <span class="truncate font-mono text-[13px]" :title="f.folder + '/' + f.name">{{
-            f.name
-          }}</span>
+          <button
+            type="button"
+            class="open truncate font-mono text-[13px]"
+            :title="f.folder + '/' + f.name"
+            data-testid="card-file-open"
+            @click="openViewer(i)"
+          >
+            {{ f.name }}
+          </button>
           <UiBadge v-if="f.downloaded" tone="ok">Downloaded</UiBadge>
         </span>
         <span class="tabular-nums text-camera-muted">{{ formatSize(f.size) }}</span>
@@ -388,6 +499,42 @@ const gb = (kb) => formatSize(kb * 1024)
         </span>
       </div>
     </div>
+
+    <Lightbox
+      :open="viewerOpen"
+      :items="viewer.items"
+      :index="Math.max(0, viewer.index)"
+      :offset="viewer.start"
+      :total="cf.total"
+      :loader="loadCameraViewerItem"
+      :busy="!!busyFile"
+      download-label="Save to this device"
+      :delete-disabled="leased"
+      :delete-title="leaseReason"
+      show-date
+      @update:index="viewer = { ...viewer, index: $event }"
+      @close="closeViewer"
+      @download="downloadOne"
+      @delete="viewerDelete"
+    >
+      <template #actions="{ item }">
+        <UiButton
+          size="sm"
+          variant="ghost"
+          :disabled="!item || noStorage"
+          :title="noStorage ? 'Choose a storage first' : 'Download to storage'"
+          aria-label="Download to storage"
+          data-testid="viewer-to-storage"
+          @click="viewerToStorage(item)"
+        >
+          <UiIcon name="HardDrive" :size="16" />
+          <span class="hidden sm:inline">Download to storage</span>
+        </UiButton>
+      </template>
+      <template #thumb="{ item }">
+        <CameraThumb :folder="item.folder" :name="item.name" :supported="item.has_thumbnail" />
+      </template>
+    </Lightbox>
 
     <div v-if="cf.total > cf.query.limit" class="flex items-center justify-center gap-3">
       <UiButton size="sm" :disabled="cf.query.page <= 1" @click="load({ page: cf.query.page - 1 })">
@@ -433,6 +580,16 @@ const gb = (kb) => formatSize(kb * 1024)
   display: block;
   width: 56px;
   height: 40px;
+  padding: 0;
+  cursor: pointer;
+}
+.open {
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.open:hover {
+  text-decoration: underline;
 }
 .actions {
   display: flex;

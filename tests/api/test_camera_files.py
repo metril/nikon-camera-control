@@ -743,3 +743,207 @@ async def test_orphaned_walk_never_feeds_the_new_walks_listeners(
     gate.set()
     await asyncio.gather(first, second)
     assert 99 not in got
+
+
+# ---- screen-sized preview ----------------------------------------------------------------
+P = "/api/v1/camera/preview"
+
+
+async def _first(c: httpx.AsyncClient, kind: str) -> dict[str, Any]:
+    items = (await c.get(F, params={"recursive": "true"})).json()["items"]
+    return next(i for i in items if i["type"] == kind)
+
+
+async def test_preview_jpeg_is_downscaled_cached_and_single_read(
+    connected_client: httpx.AsyncClient, app: FastAPI, fake_camera: FakeCamera
+) -> None:
+    import io
+
+    from PIL import Image
+
+    await _shoot(connected_client, app, "JPEG Fine")
+    f = await _first(connected_client, "jpeg")
+    q = {"folder": f["folder"], "name": f["name"]}
+    r = await connected_client.get(P, params=q)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert "max-age" in r.headers["cache-control"]
+    with Image.open(io.BytesIO(r.content)) as im:
+        assert max(im.size) <= 2560
+    reads = fake_camera.calls.get("read_file", 0)
+    again = await connected_client.get(P, params=q)
+    assert again.content == r.content
+    assert fake_camera.calls.get("read_file", 0) == reads  # served from the disk cache
+
+
+async def test_preview_raw_uses_embedded_image(
+    connected_client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    await _shoot(connected_client, app, "NEF (Raw)")
+    f = await _first(connected_client, "raw")
+    r = await connected_client.get(P, params={"folder": f["folder"], "name": f["name"]})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+
+
+async def test_preview_rejects_video_missing_and_bad_names(
+    connected_client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    c = connected_client
+    r = await c.get(P, params={"folder": CARD_FOLDER, "name": "DSC_0001.MOV"})
+    assert r.status_code in (404, 415)
+    await _shoot(c, app, "JPEG Fine")
+    f = await _first(c, "jpeg")
+    r = await c.get(P, params={"folder": f["folder"], "name": "nope.jpg"})
+    assert r.status_code == 404
+    r = await c.get(P, params={"folder": f["folder"], "name": "../x.jpg"})
+    assert r.status_code in (400, 403, 422)
+    r = await c.get(P, params={"folder": "/a/../b", "name": "x.jpg"})
+    assert r.status_code in (400, 403, 422)
+
+
+async def test_preview_concurrent_requests_read_the_camera_once(
+    connected_client: httpx.AsyncClient, app: FastAPI, fake_camera: FakeCamera
+) -> None:
+    await _shoot(connected_client, app, "JPEG Fine")
+    f = await _first(connected_client, "jpeg")
+    q = {"folder": f["folder"], "name": f["name"]}
+    before = fake_camera.calls.get("read_file", 0)
+    rs = await asyncio.gather(*(connected_client.get(P, params=q) for _ in range(4)))
+    assert all(r.status_code == 200 for r in rs)
+    assert fake_camera.calls.get("read_file", 0) - before == 1
+
+
+async def test_download_all_single_file_to_storage(
+    connected_client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    f = await _first(c, "jpeg")
+    r = await c.post(
+        F + "/download-all",
+        json={"file": {"folder": f["folder"], "name": f["name"]}, "only_new": False},
+    )
+    assert r.status_code == 202
+    j = await _wait_job(c, r.json()["id"], _finished)
+    assert j["status"] == "completed"
+    assert j["result"]["downloaded"] == 1
+    assert j["result"]["downloaded_names"] == [f["name"]]
+
+
+async def test_preview_works_without_a_storage_target(
+    connected_client: httpx.AsyncClient,
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    import tempfile
+
+    from backend.core.errors import NoTargetError
+
+    await _shoot(connected_client, app, "JPEG Fine")
+    f = await _first(connected_client, "jpeg")
+    svc = _svc(app)
+
+    def _none() -> Any:
+        raise NoTargetError()
+
+    monkeypatch.setattr(svc._store, "cache", _none)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    r = await connected_client.get(P, params={"folder": f["folder"], "name": f["name"]})
+    assert r.status_code == 200
+    assert any(p.name.startswith("ncc-previews-") for p in tmp_path.iterdir())
+
+
+async def test_preview_refused_under_lease_unless_cached(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    items = (await c.get(F, params={"recursive": "true"})).json()["items"]
+    a, b = (items[0], items[1])
+    qa = {"folder": a["folder"], "name": a["name"]}
+    qb = {"folder": b["folder"], "name": b["name"]}
+    assert (await c.get(P, params=qa)).status_code == 200  # cached before the lease
+    reads = fake_camera.calls.get("read_file", 0)
+    async with app.state.camera_service.lease("timelapse"):
+        assert (await c.get(P, params=qa)).status_code == 200
+        r = await c.get(P, params=qb)
+        assert r.status_code == 409 and r.json()["error"]["code"] == "CAMERA_BUSY"
+        assert "timelapse" in r.json()["error"]["message"]
+        assert fake_camera.calls.get("read_file", 0) == reads  # no full read while leased
+    assert (await c.get(P, params=qb)).status_code == 200
+
+
+async def test_preview_cache_is_lru_and_capped_by_bytes(
+    app: FastAPI,
+    connected_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    from backend.services import camera_files as mod
+
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 3)
+    items = (await c.get(F, params={"recursive": "true"})).json()["items"]
+    for i in items:
+        r = await c.get(P, params={"folder": i["folder"], "name": i["name"]})
+        assert r.status_code == 200
+    cache = _svc(app)._preview_dir()
+    files = sorted(cache.glob("*.jpg"))
+    assert len(files) == 3
+    old = files[0]
+    os.utime(old, (1, 1))
+    for f in files[1:]:
+        os.utime(f, (100, 100))
+    sizes = sum(f.stat().st_size for f in files)
+    mod._prune_previews(cache, 300, max_bytes=sizes - 1)  # one must go: the oldest
+    assert not old.exists() and len(list(cache.glob("*.jpg"))) == 2
+    # a hit refreshes mtime (LRU)
+    keep = next(iter(cache.glob("*.jpg")))
+    os.utime(keep, (1, 1))
+    for i in items:
+        await c.get(P, params={"folder": i["folder"], "name": i["name"]})
+    assert keep.stat().st_mtime > 1000 or not keep.exists()
+
+
+async def test_preview_fallback_dir_is_private_and_per_process(
+    app: FastAPI, connected_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.core.errors import NoTargetError
+
+    await connected_client.get(F, params={"recursive": "true"})
+    svc = _svc(app)
+
+    def _none() -> Any:
+        raise NoTargetError()
+
+    monkeypatch.setattr(svc._store, "cache", _none)
+    d = svc._preview_dir()
+    assert d == svc._preview_dir()  # stable within the process
+    assert d.stat().st_mode & 0o777 == 0o700
+    assert d.name != "ncc-previews" and d.name.startswith("ncc-previews-")
+
+
+async def test_download_all_single_file_result_reports_its_folder(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 1)
+    f = await _first(c, "jpeg")
+    r = await c.post(
+        F + "/download-all",
+        json={"file": {"folder": f["folder"], "name": f["name"]}, "only_new": False},
+    )
+    j = await _wait_job(c, r.json()["id"], _finished)
+    assert j["result"]["folder"] == f["folder"]
+
+
+async def test_preview_accepts_cache_buster_params(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    await _shoot(connected_client, app, "JPEG Fine")
+    f = await _first(connected_client, "jpeg")
+    q = {"folder": f["folder"], "name": f["name"], "size": f["size"], "mtime": f["mtime"]}
+    assert (await connected_client.get(P, params=q)).status_code == 200
