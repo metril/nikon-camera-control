@@ -76,6 +76,7 @@ async def get_camera_battery(svc: CameraServiceDep) -> BatteryOut:
 @router.get("/storage", operation_id="get_camera_storage", response_model=StorageOut)
 async def get_camera_storage(svc: CameraServiceDep) -> StorageOut:
     cards = await svc.call(lambda b: b.storage_info())
+    svc.note_storage(cards)
     return StorageOut(
         cards=[
             StorageCardOut(

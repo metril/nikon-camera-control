@@ -62,6 +62,8 @@ class EventType(StrEnum):
     PRESETS_CHANGED = "presets_changed"
     LOCATIONS_CHANGED = "locations_changed"
     BACKUP_STATUS = "backup_status"
+    STORAGE_CHANGED = "storage_changed"
+    CARD_LISTING = "card_listing"
     ERROR = "error"
 
 

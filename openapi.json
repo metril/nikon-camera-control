@@ -1739,6 +1739,60 @@
         "title": "CapturedFile",
         "type": "object"
       },
+      "CardListingData": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Files found so far while reading the card",
+            "title": "Count",
+            "type": "integer"
+          },
+          "done": {
+            "description": "True once the walk finished or failed",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "recursive": {
+            "title": "Recursive",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "folder",
+          "recursive",
+          "count",
+          "done"
+        ],
+        "title": "CardListingData",
+        "type": "object"
+      },
+      "CardListingEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CardListingData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "card_listing",
+            "default": "card_listing",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CardListingEvent",
+        "type": "object"
+      },
       "ClipOut": {
         "properties": {
           "folder": {
@@ -5951,6 +6005,44 @@
         "title": "StorageCardOut",
         "type": "object"
       },
+      "StorageChangedData": {
+        "additionalProperties": true,
+        "properties": {
+          "cards": {
+            "description": "Cards the camera now reports",
+            "title": "Cards",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cards"
+        ],
+        "title": "StorageChangedData",
+        "type": "object"
+      },
+      "StorageChangedEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StorageChangedData"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "storage_changed",
+            "default": "storage_changed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "StorageChangedEvent",
+        "type": "object"
+      },
       "StorageConfigPatch": {
         "additionalProperties": false,
         "properties": {
@@ -7910,6 +8002,21 @@
           },
           {
             "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "newest",
+              "enum": [
+                "newest",
+                "oldest",
+                "name"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "page",
             "required": false,
             "schema": {
@@ -9702,6 +9809,7 @@
                       "camera_state": "#/components/schemas/CameraStateEvent",
                       "capture_complete": "#/components/schemas/CaptureCompleteEvent",
                       "capture_started": "#/components/schemas/CaptureStartedEvent",
+                      "card_listing": "#/components/schemas/CardListingEvent",
                       "config_changed": "#/components/schemas/ConfigChangedEvent",
                       "error": "#/components/schemas/ErrorEvent",
                       "job_cancelled": "#/components/schemas/JobCancelledEvent",
@@ -9716,6 +9824,7 @@
                       "recording_started": "#/components/schemas/RecordingStartedEvent",
                       "recording_stopped": "#/components/schemas/RecordingStoppedEvent",
                       "setting_changed": "#/components/schemas/SettingChangedEvent",
+                      "storage_changed": "#/components/schemas/StorageChangedEvent",
                       "timelapse_completed": "#/components/schemas/TimelapseCompletedEvent",
                       "timelapse_error": "#/components/schemas/TimelapseErrorEvent",
                       "timelapse_frame": "#/components/schemas/TimelapseFrameEvent",
@@ -9811,6 +9920,12 @@
                     },
                     {
                       "$ref": "#/components/schemas/BackupStatusEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StorageChangedEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CardListingEvent"
                     },
                     {
                       "$ref": "#/components/schemas/ErrorEvent"

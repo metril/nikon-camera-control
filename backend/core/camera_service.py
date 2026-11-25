@@ -516,6 +516,9 @@ class CameraService:
         self._settings_tree: list[ConfigWidget] | None = None
         self._settings_map: dict[str, ConfigWidget] = {}
         self._storage_cache: tuple[float, list[Any]] | None = None
+        self._storage_sig: tuple[tuple[str, str, int], ...] | None = None
+        self._storage_free: dict[str, tuple[int, int | None]] = {}  # base_dir -> (kb, images)
+        self._files_explained = False  # an app-side file change since the last storage reading
         self._cache_epoch = 0
         self._inval_epoch = 0  # bumped only when the whole cache is dropped
         self._tree_task: asyncio.Task[list[ConfigWidget]] | None = None
@@ -752,6 +755,8 @@ class CameraService:
         backend = self._factory()
         with contextlib.suppress(Exception):
             backend.property_listener = self._on_property_code
+        with contextlib.suppress(Exception):
+            backend.store_listener = self._on_store_event
         try:
             backend.open()
             model = backend.model()
@@ -778,6 +783,13 @@ class CameraService:
             with contextlib.suppress(RuntimeError):
                 loop.call_soon_threadsafe(self._prop_sync.on_event, code, name, value)
 
+    def _on_store_event(self) -> None:
+        """Worker thread: the body reported a card added or removed (PTP StoreAdded/Removed)."""
+        loop = self._loop
+        if loop is not None:
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(self.card_files_changed, False)
+
     def cached_setting(self, name: str) -> ConfigWidget | None:
         return self._settings_map.get(name)
 
@@ -791,6 +803,7 @@ class CameraService:
         for f in files:
             log.info("file %s/%s arrived outside a capture", f.folder, f.name)
             self.stray_files.append(f)
+        self.card_files_changed()  # on the card whether or not anything downloads them
         if self.stray_handler is not None:
             self.stray_handler(files)
 
@@ -1402,6 +1415,31 @@ class CameraService:
         )
         return files
 
+    def card_files_changed(self, app_side: bool = True) -> None:
+        """The card's files changed (deleted after a download, a shot from the body, a card
+        added or removed): tell listeners to drop cached listings. ``app_side`` marks the
+        change as ours, which explains freed space in the next storage reading."""
+        if app_side:
+            self._files_explained = True
+        self._bus.publish(EventType.STORAGE_CHANGED, {"cards": len(self._storage_sig or ())})
+
+    def note_storage(self, cards: list[Any]) -> None:
+        """Publish STORAGE_CHANGED when the camera-reported cards differ from the last reading
+        (card inserted, removed or swapped) or a card has more room than before with no delete
+        of ours to explain it (swapped for an equal one, or emptied on the body)."""
+        sig = tuple(sorted((c.base_dir, c.label, c.capacity_kb) for c in cards))
+        free = {c.base_dir: (c.free_kb, c.free_images) for c in cards}
+        prev, self._storage_sig = self._storage_sig, sig
+        prev_free, self._storage_free = self._storage_free, free
+        explained, self._files_explained = self._files_explained, False
+        grew = not explained and any(
+            base in prev_free
+            and (kb > prev_free[base][0] or (img or 0) > (prev_free[base][1] or 0))
+            for base, (kb, img) in free.items()
+        )
+        if prev is not None and (prev != sig or grew):
+            self._bus.publish(EventType.STORAGE_CHANGED, {"cards": len(cards)})
+
     async def _card_list(self, *, fresh: bool = False) -> list[Any] | None:
         """Camera-reported storage for the card capture target; None when not applicable or
         unreadable (best effort: never blocks a shot). Cached a few seconds unless ``fresh``."""
@@ -1415,6 +1453,7 @@ class CameraService:
             if not fresh and self._storage_cache is not None and now - self._storage_cache[0] < 3.0:
                 return list(self._storage_cache[1])
             cards = await self._run(lambda b: b.storage_info(), Priority.CONTROL, 10.0)
+            self.note_storage(cards)
             ok = any(
                 c.access != "ro" and (c.free_images is None or c.free_images > 0) for c in cards
             )

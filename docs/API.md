@@ -458,6 +458,7 @@ operation_id: `list_camera_files`
 |---|---|---|---|---|---|---|
 | `folder` | query | string | no | `"/"` |  |  |
 | `recursive` | query | boolean | no | `false` |  |  |
+| `order` | query | enum("newest", "oldest", "name") | no | `"newest"` |  |  |
 | `page` | query | integer | no | `1` | `>=1` |  |
 | `limit` | query | integer | no | `50` | `>=1`, `<=500` |  |
 
@@ -810,7 +811,7 @@ generated client carry the event types.
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `application/json`: `CameraStateEvent \| CameraConnectedEvent \| CameraDisconnectedEvent \| SettingChangedEvent \| BatteryEvent \| CaptureStartedEvent \| CaptureCompleteEvent \| LiveviewStartedEvent \| LiveviewStoppedEvent \| TimelapseStartedEvent \| TimelapsePausedEvent \| TimelapseResumedEvent \| TimelapseStoppedEvent \| TimelapseCompletedEvent \| TimelapseFrameEvent \| TimelapseWarningEvent \| TimelapseErrorEvent \| RecordingStartedEvent \| RecordingStoppedEvent \| JobCreatedEvent \| JobProgressEvent \| JobCompletedEvent \| JobFailedEvent \| JobCancelledEvent \| ConfigChangedEvent \| PresetsChangedEvent \| LocationsChangedEvent \| BackupStatusEvent \| ErrorEvent` |
+| 200 | Successful Response | `application/json`: `CameraStateEvent \| CameraConnectedEvent \| CameraDisconnectedEvent \| SettingChangedEvent \| BatteryEvent \| CaptureStartedEvent \| CaptureCompleteEvent \| LiveviewStartedEvent \| LiveviewStoppedEvent \| TimelapseStartedEvent \| TimelapsePausedEvent \| TimelapseResumedEvent \| TimelapseStoppedEvent \| TimelapseCompletedEvent \| TimelapseFrameEvent \| TimelapseWarningEvent \| TimelapseErrorEvent \| RecordingStartedEvent \| RecordingStoppedEvent \| JobCreatedEvent \| JobProgressEvent \| JobCompletedEvent \| JobFailedEvent \| JobCancelledEvent \| ConfigChangedEvent \| PresetsChangedEvent \| LocationsChangedEvent \| BackupStatusEvent \| StorageChangedEvent \| CardListingEvent \| ErrorEvent` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -2423,6 +2424,8 @@ Payload keys are found by a static scan of `publish(...)` call sites; `(dynamic)
 | `presets_changed` | `action`, `id`, `kind` |
 | `locations_changed` | `id`, `reason`, `target_id` |
 | `backup_status` | `copied`, `current`, `failed`, `pending`, `running` |
+| `storage_changed` | `cards` |
+| `card_listing` | `count`, `done`, `folder`, `recursive` |
 | `error` | `cause`, `code`, `message` |
 
 ## Configuration reference

@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.services.camera_files import validate_camera_folder
 
+CameraFileOrder = Literal["newest", "oldest", "name"]
+
 
 class FolderOut(BaseModel):
     name: str

@@ -15,6 +15,7 @@ from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.camera_files import (
     CameraFileEntry,
+    CameraFileOrder,
     DownloadAllRequest,
     FolderListOut,
     FolderOut,
@@ -76,11 +77,12 @@ async def list_camera_files(
     svc: FilesDep,
     folder: str = "/",
     recursive: bool = False,
+    order: CameraFileOrder = "newest",
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> Page[CameraFileEntry]:
     folder = validate_camera_folder(folder)
-    entries = await svc.list(folder, recursive)
+    entries = await svc.list(folder, recursive, order)
     start = (page - 1) * limit
     return Page[CameraFileEntry](
         items=entries[start : start + limit], total=len(entries), page=page, limit=limit

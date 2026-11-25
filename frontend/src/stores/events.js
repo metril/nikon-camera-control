@@ -17,6 +17,7 @@ import { useToastsStore } from './toasts'
 import { useAuthStore } from './auth'
 import { usePresetsStore } from './presets'
 import { useStorageStore } from './storage'
+import { useCameraFilesStore } from './cameraFiles'
 import { clearCameraThumbs } from '@/components/gallery/cameraThumbs'
 
 /** Background refresh: failures land in the store's lastError; nothing to await or throw. */
@@ -91,6 +92,8 @@ export const useEventsStore = defineStore('events', () => {
         return useStorageStore().onLocationsChanged(data)
       case 'backup_status':
         return useStorageStore().onBackupStatus(data)
+      case 'card_listing':
+        return useCameraFilesStore().onListing(data)
       case 'error':
         return useToastsStore().error({
           message: data.message || data.code || 'Error',

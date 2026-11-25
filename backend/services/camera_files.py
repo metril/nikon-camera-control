@@ -45,7 +45,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _MAX_DEPTH = 8
-_LIST_TIMEOUT_S = 30.0
+_LIST_TIMEOUT_S = 120.0  # per folder name listing: a full card folder can take many seconds cold
+_INFO_TIMEOUT_S = 30.0  # per info batch (_INFO_BATCH files, about 1.5 s on a D500)
 _INFO_BATCH = 50  # file infos fetched per camera call (about 1.5 s on a D500)
 _READ_TIMEOUT_S = 600.0
 _TMP_MAX_AGE_S = 3600.0  # single-file download temp dirs older than this are removed
@@ -55,6 +56,7 @@ _INVALIDATING = frozenset(
         EventType.CAPTURE_COMPLETE,
         EventType.CAMERA_CONNECTED,
         EventType.CAMERA_DISCONNECTED,
+        EventType.STORAGE_CHANGED,
         EventType.TIMELAPSE_FRAME,
         EventType.RECORDING_STOPPED,
     }
@@ -211,11 +213,22 @@ class _Cache:
     gen: int = 0
     folders: dict[str, list[str]] = field(default_factory=dict)
     files: dict[str, list[CameraFileInfo]] = field(default_factory=dict)
+    # whole walks, sorted by (folder, name); one in-flight walk per key (single flight)
+    walks: dict[tuple[str, bool], list[CameraFileInfo]] = field(default_factory=dict)
+    inflight: dict[tuple[str, bool], asyncio.Future[list[CameraFileInfo]]] = field(
+        default_factory=dict
+    )
+    listeners: dict[tuple[str, bool], list[Callable[[int], None]]] = field(default_factory=dict)
 
     def reset(self) -> None:
         self.gen += 1
+        for fut in self.inflight.values():
+            fut.cancel()  # the abandoned walk stops issuing camera calls
         self.folders = {}
         self.files = {}
+        self.walks = {}
+        self.inflight = {}
+        self.listeners = {}
 
 
 class CameraFilesService:
@@ -297,7 +310,7 @@ class CameraFilesService:
             infos += await self._camera.call(
                 lambda b, chunk=chunk: _infos(b, folder, chunk),  # type: ignore[misc]
                 priority=Priority.KEEPALIVE,
-                timeout=_LIST_TIMEOUT_S,
+                timeout=_INFO_TIMEOUT_S,
             )
         if gen == c.gen:
             c.files[folder] = infos
@@ -327,14 +340,80 @@ class CameraFilesService:
     async def list_infos(
         self, folder: str, recursive: bool, on_found: Callable[[int], None] | None = None
     ) -> list[CameraFileInfo]:
-        infos = await self._walk(folder, recursive, on_found=on_found)
-        infos.sort(key=lambda i: (i.folder, i.name))
-        return infos
+        """Every file under ``folder``, sorted by (folder, name). Served from the walk cache;
+        concurrent cold calls share one camera walk (``on_found`` still gets the running count)."""
+        self._ensure_listener()
+        c = self._cache
+        key = (folder, recursive)
+        cached = c.walks.get(key)
+        if cached is not None:
+            if on_found is not None:
+                on_found(len(cached))
+            return cached
+        while True:
+            listeners = c.listeners.setdefault(key, [])
+            if on_found is not None:
+                listeners.append(on_found)
+            fut = c.inflight.get(key)
+            if fut is None:
+                fut = asyncio.ensure_future(self._cold_walk(key, c, listeners))
+                c.inflight[key] = fut
+            try:
+                return await asyncio.shield(fut)
+            except asyncio.CancelledError:
+                if not fut.cancelled():
+                    raise  # this caller was cancelled, not the walk
+                # the walk was reset under us: the next pass starts (or joins) one fresh walk
 
-    async def list(self, folder: str = "/", recursive: bool = False) -> list[CameraFileEntry]:
+    async def _cold_walk(
+        self, key: tuple[str, bool], c: _Cache, listeners: list[Callable[[int], None]]
+    ) -> list[CameraFileInfo]:
+        folder, recursive = key
+        gen = c.gen
+        last = 0.0
+
+        def emit(n: int, done: bool = False) -> None:
+            nonlocal last
+            now = time.monotonic()
+            if not done and now - last < 0.25:
+                return
+            last = now
+            if gen != c.gen:
+                return  # abandoned by a reset: its count means nothing now
+            self._bus.publish(
+                EventType.CARD_LISTING,
+                {"folder": folder, "recursive": recursive, "count": n, "done": done},
+            )
+
+        def found(n: int) -> None:
+            emit(n)
+            for cb in list(listeners):
+                cb(n)
+
+        total = 0
+        try:
+            infos = await self._walk(folder, recursive, on_found=found)
+            infos.sort(key=lambda i: (i.folder, i.name))
+            total = len(infos)
+            if gen == c.gen:
+                c.walks[key] = infos
+            return infos
+        finally:
+            emit(total, True)
+            if gen == c.gen:
+                c.inflight.pop(key, None)
+                c.listeners.pop(key, None)
+
+    async def list(
+        self, folder: str = "/", recursive: bool = False, order: str = "newest"
+    ) -> list[CameraFileEntry]:
         from backend.api.schemas.camera_files import CameraFileEntry
 
         infos = await self.list_infos(folder, recursive)
+        if order == "newest":
+            infos = sorted(infos, key=lambda i: (-i.mtime, i.folder, i.name))
+        elif order == "oldest":
+            infos = sorted(infos, key=lambda i: (i.mtime, i.folder, i.name))
         ledger: DownloadLedger | None
         try:  # without a target nothing counts as downloaded
             ledger = self._ledger
@@ -408,6 +487,7 @@ class CameraFilesService:
             )
         finally:
             self.invalidate()
+            self._camera.card_files_changed()
 
     # download-all job -----------------------------------------------------
     def start_download_all(self, req: DownloadAllRequest) -> Job:

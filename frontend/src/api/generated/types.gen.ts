@@ -1077,6 +1077,48 @@ export type CapturedFile = {
 };
 
 /**
+ * CardListingData
+ */
+export type CardListingData = {
+    /**
+     * Count
+     *
+     * Files found so far while reading the card
+     */
+    count: number;
+    /**
+     * Done
+     *
+     * True once the walk finished or failed
+     */
+    done: boolean;
+    /**
+     * Folder
+     */
+    folder: string;
+    /**
+     * Recursive
+     */
+    recursive: boolean;
+    [key: string]: unknown;
+};
+
+/**
+ * CardListingEvent
+ */
+export type CardListingEvent = {
+    data: CardListingData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'card_listing';
+};
+
+/**
  * ClipOut
  */
 export type ClipOut = {
@@ -3570,6 +3612,34 @@ export type StorageCardOut = {
 };
 
 /**
+ * StorageChangedData
+ */
+export type StorageChangedData = {
+    /**
+     * Cards
+     *
+     * Cards the camera now reports
+     */
+    cards: number;
+    [key: string]: unknown;
+};
+
+/**
+ * StorageChangedEvent
+ */
+export type StorageChangedEvent = {
+    data: StorageChangedData;
+    /**
+     * Ts
+     */
+    ts?: string;
+    /**
+     * Type
+     */
+    type?: 'storage_changed';
+};
+
+/**
  * StorageConfigPatch
  */
 export type StorageConfigPatch = {
@@ -4623,6 +4693,10 @@ export type ListCameraFilesData = {
          */
         recursive?: boolean;
         /**
+         * Order
+         */
+        order?: 'newest' | 'oldest' | 'name';
+        /**
          * Page
          */
         page?: number;
@@ -5613,6 +5687,10 @@ export type GetEventSchemaResponses = {
     } & LocationsChangedEvent) | ({
         type: 'backup_status';
     } & BackupStatusEvent) | ({
+        type: 'storage_changed';
+    } & StorageChangedEvent) | ({
+        type: 'card_listing';
+    } & CardListingEvent) | ({
         type: 'error';
     } & ErrorEvent);
 };

@@ -105,6 +105,16 @@ def parse_property_change(text: object) -> tuple[int, str | None, str | None] | 
     return (int(m.group(1), 16), m.group(2), m.group(3)) if m else None
 
 
+_STORE_EVENT = re.compile(r"PTP Store(?:Added|Removed)\b")
+
+
+def is_store_event(text: object) -> bool:
+    """True for the libgphoto2 ptp2 UNKNOWN event text of a store (card) being added or removed:
+    ``PTP StoreAdded, Param1 00010001``. StorageInfoChanged is only logged by libgphoto2, so it
+    never surfaces as an event."""
+    return _STORE_EVENT.search(str(text)) is not None
+
+
 @dataclass(frozen=True, slots=True)
 class CameraEvent:
     type: EventType
@@ -129,6 +139,8 @@ class CameraBackend(Protocol):
     # Called (on the worker thread) with the PTP code of each property-change event that
     # wait_for_event sees; set by the camera service.
     property_listener: Callable[[int, str | None, str | None], None] | None
+    # Called (on the worker thread) when wait_for_event sees a store added/removed event.
+    store_listener: Callable[[], None] | None
 
     @property
     def is_open(self) -> bool:

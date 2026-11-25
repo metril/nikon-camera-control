@@ -39,6 +39,7 @@ export {
   Maximize,
   Minimize,
   Monitor,
+  Network,
   Pause,
   Pencil,
   Play,
