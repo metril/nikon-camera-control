@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 import UiModal from './UiModal.vue'
 
 let w
@@ -100,5 +100,39 @@ describe('UiModal', () => {
     expect(outer.emitted('close')).toBeUndefined()
     inner.unmount()
     outer.unmount()
+  })
+
+  it('a modal opened and closed within one tick never creates an observer', async () => {
+    const created = []
+    const disconnects = []
+    const Real = globalThis.MutationObserver
+    vi.stubGlobal(
+      'MutationObserver',
+      class {
+        constructor(cb) {
+          this.inner = new Real(cb)
+          created.push(this)
+        }
+        observe(...a) {
+          this.inner.observe(...a)
+        }
+        disconnect() {
+          disconnects.push(this)
+          this.inner.disconnect()
+        }
+      },
+    )
+    try {
+      w = mountModal({ open: false })
+      w.setProps({ open: true })
+      await Promise.resolve()
+      w.setProps({ open: false })
+      await flushPromises()
+      const leaked = created.filter((o) => !disconnects.includes(o))
+      expect(leaked).toHaveLength(0)
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    } finally {
+      vi.stubGlobal('MutationObserver', Real)
+    }
   })
 })

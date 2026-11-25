@@ -649,6 +649,8 @@ async function setLocation(id) {
   margin-inline: -16px;
   padding: 8px 16px;
   background: theme('colors.camera.bg');
+  /* cover the gap above the chips so scrolled content never peeks out under the header */
+  box-shadow: 0 -12px 0 0 theme('colors.camera.bg');
   border-bottom: 1px solid theme('colors.camera.subtle');
 }
 html[data-layout='touch'] .chips {

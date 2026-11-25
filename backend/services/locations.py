@@ -52,6 +52,10 @@ Listener = Callable[[str, str | None], None]
 
 FSCK_TIMEOUT_S = 3600.0  # a repair of a big drive legitimately takes long
 TERM_GRACE_S = 10.0
+FORMAT_TIMEOUT_S = 3600.0
+FORMAT_FS = ("exfat", "fat32", "ntfs", "ext4")
+FORMAT_LABEL_MAX = {"exfat": 15, "fat32": 11, "ntfs": 32, "ext4": 16}
+_LABEL_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_ -]*$")
 LIVE_MOUNT_TTL_S = 0.25  # how long root_of() trusts its last read of the mount table
 
 
@@ -86,6 +90,31 @@ async def sudo_runner(
                     await asyncio.wait_for(asyncio.shield(proc.wait()), TERM_GRACE_S)  # reap
         raise
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
+
+
+FAT32_MAX_BYTES = 4294965248 * 512  # 2 TiB less 1 MiB; the helper refuses larger disks too
+
+
+def fat32_error(fstype: str, size: int) -> str | None:
+    if fstype == "fat32" and size > FAT32_MAX_BYTES:
+        return "Use exFAT for drives over 2 TB"
+    return None
+
+
+def label_error(fstype: str, label: str) -> str | None:
+    """Why ``label`` cannot label a ``fstype`` volume, or None. ASCII letters, digits, space,
+    ``_`` and ``-`` are safe on every filesystem (FAT stores them uppercase)."""
+    if fstype not in FORMAT_LABEL_MAX:
+        return f"Unsupported filesystem: {fstype}"
+    limit = FORMAT_LABEL_MAX[fstype]
+    if len(label) > limit:
+        return f"The label can have at most {limit} characters for {fstype}"
+    if label and not _LABEL_RE.fullmatch(label):
+        return (
+            "The label may only use letters, digits, spaces, '_' and '-', "
+            "and must not start with '-' or a space"
+        )
+    return None
 
 
 def parse_mountinfo(text: str) -> set[str]:
@@ -140,6 +169,7 @@ class LocationInfo:
     is_target: bool
     is_backup: bool
     encrypted: bool | None = None
+    disk: dict[str, Any] | None = None  # physical disk: name, majmin, size, model, diskseq
 
 
 class _ProbePending(Exception):
@@ -175,6 +205,7 @@ class LocationService:
         self._points: set[str] = set()  # mount points seen by the last live read / mount / unmount
         self._live_at = float("-inf")
         self._fsck_busy: set[str] = set()
+        self._format_busy: set[str] = set()  # physical disk names being formatted
         self.busy = busy
         self._poll = poll_interval_s
         self._fixed = Path(fixed_target) if fixed_target is not None else None
@@ -332,6 +363,9 @@ class LocationService:
             is_target=loc.id == cfg.target_id,
             is_backup=loc.id in cfg.backup_ids,
             encrypted=rt.encrypted if rt.mounted else None,
+            disk=self._disk_ref(self._detected.items.get(loc.uuid or ""))
+            if loc.kind == "usb"
+            else None,
         )
 
     def list_locations(self) -> list[LocationInfo]:
@@ -365,9 +399,15 @@ class LocationService:
                     has_password=False,
                     is_target=False,
                     is_backup=False,
+                    disk=self._disk_ref(item),
                 )
             )
         return out
+
+    @staticmethod
+    def _disk_ref(item: dict[str, Any] | None) -> dict[str, Any] | None:
+        d = item.get("disk") if item else None
+        return dict(d) if isinstance(d, dict) and d.get("name") else None
 
     def get(self, location_id: str) -> LocationInfo:
         for info in self.list_locations():
@@ -480,13 +520,32 @@ class LocationService:
         self._changed("backups", None)
 
     # ---- mount / unmount ----------------------------------------------------------------
+    @staticmethod
+    def _item_location_id(item: dict[str, Any]) -> str:
+        uuid = item.get("uuid")
+        return f"usb-{uuid}" if uuid else f"dev-{item.get('name')}"
+
+    def _disk_items(self, disk: str) -> list[dict[str, Any]]:
+        return [
+            i for i in self._detected.items.values() if (i.get("disk") or {}).get("name") == disk
+        ]
+
+    def _disk_of(self, location_id: str) -> str | None:
+        for i in self._detected.items.values():
+            if self._item_location_id(i) == location_id:
+                return (i.get("disk") or {}).get("name")
+        return None
+
     def _check_not_checking(self, location_id: str) -> None:
         if location_id in self._fsck_busy:
             raise LocationBusy("The drive is being checked", details={"id": location_id})
+        if self._format_busy and self._disk_of(location_id) in self._format_busy:
+            raise LocationBusy("The drive is being formatted", details={"id": location_id})
 
     async def mount(self, location_id: str, *, user: bool = True) -> LocationInfo:
         self._check_not_checking(location_id)
         async with self._lock:
+            self._check_not_checking(location_id)  # a check may have started while we waited
             return await self._mount(location_id, user=user)
 
     async def _mount(self, location_id: str, *, user: bool) -> LocationInfo:
@@ -565,16 +624,21 @@ class LocationService:
             rt.user_unmounted = True
         self._changed("unmounted", location_id)
 
-    async def fsck(self, location_id: str) -> tuple[int, str]:
+    def check_fsck_allowed(self, location_id: str) -> StorageLocation:
         loc = self._cfg(location_id)
         if loc.kind != "usb":
             raise InvalidState("Only USB drives can be checked")
         self._check_not_checking(location_id)
         if self._state(location_id).mounted:
             raise InvalidState("Unmount the drive before checking it")
-        # Not under self._lock: a check can take an hour and must not stall polling,
-        # unplug detection or other locations. Only this id is refused meanwhile.
-        self._fsck_busy.add(location_id)
+        return loc
+
+    async def fsck(self, location_id: str) -> tuple[int, str]:
+        # Check-mounted-and-mark-busy is atomic against mount() via the lock, which is
+        # released before the long repair so polling and other locations are not stalled.
+        async with self._lock:
+            loc = self.check_fsck_allowed(location_id)
+            self._fsck_busy.add(location_id)
         try:
             rc, out, err = await self._run(["fsck", loc.uuid or ""], limit_s=FSCK_TIMEOUT_S)
         except TimeoutError as exc:
@@ -585,6 +649,106 @@ class LocationService:
         finally:
             self._fsck_busy.discard(location_id)
         return rc, (out + err).strip()
+
+    def check_format_allowed(
+        self, disk: str, majmin: str, size: int, diskseq: str
+    ) -> list[dict[str, Any]]:
+        """Synchronous validation of a format request; returns the detected partitions."""
+        items = self._disk_items(disk)
+        if not items:
+            raise LocationNotFound("No such USB drive is connected", details={"disk": disk})
+        ref = items[0]["disk"]
+        if (
+            ref.get("majmin") != majmin
+            or ref.get("size") != size
+            or str(ref.get("diskseq") or "") != diskseq
+        ):
+            raise InvalidState(
+                "The drive changed since it was listed; refresh and try again",
+                details={"disk": disk},
+            )
+        cfg = self._store.config.storage
+        for i in items:
+            lid = self._item_location_id(i)
+            if lid == cfg.target_id:
+                raise InvalidState(
+                    "This drive holds the capture target; choose another target first",
+                    details={"id": lid},
+                )
+            if lid in cfg.backup_ids:
+                raise InvalidState(
+                    "This drive is a backup destination; remove it from the backups first",
+                    details={"id": lid},
+                )
+        for i in items:
+            lid = self._item_location_id(i)
+            rt = self._rt.get(lid)
+            if i.get("mounted") or (rt is not None and rt.mounted):
+                raise InvalidState(
+                    "Unmount every partition of this drive before formatting it",
+                    details={"id": lid},
+                )
+        if disk in self._format_busy:
+            raise LocationBusy("The drive is being formatted", details={"disk": disk})
+        if any(self._item_location_id(i) in self._fsck_busy for i in items):
+            raise LocationBusy("A partition of this drive is being checked", details={"disk": disk})
+        return items
+
+    async def format_disk(
+        self, disk: str, fstype: str, label: str, majmin: str, size: int, diskseq: str
+    ) -> list[str]:
+        """Erase the whole physical disk and create one partition with a fresh filesystem.
+        Returns the ids of saved locations that lived on it (now removed). Like fsck, the
+        check-and-mark is atomic under the lock, released before the long operation."""
+        if (why := label_error(fstype, label)) is not None:
+            raise ConfigInvalid(why)
+        if (why := fat32_error(fstype, size)) is not None:
+            raise ConfigInvalid(why)
+        async with self._lock:
+            items = self.check_format_allowed(disk, majmin, size, diskseq)
+            self._format_busy.add(disk)
+        stale = [self._item_location_id(i) for i in items]
+        ok = False
+        try:
+            args = [
+                "format-usb", disk, majmin, str(size), diskseq, fstype, *([label] if label else [])
+            ]  # fmt: skip
+            try:
+                rc, out, err = await self._run(args, limit_s=FORMAT_TIMEOUT_S)
+            except TimeoutError as exc:
+                raise MountFailed(
+                    "The drive format did not finish in time and was stopped",
+                    details={"disk": disk},
+                ) from exc
+            if rc != 0:
+                raise MountFailed(
+                    (err.strip() or out.strip() or f"format failed (exit {rc})")[:500],
+                    details={"disk": disk},
+                )
+            ok = True
+        finally:
+            self._format_busy.discard(disk)
+            with contextlib.suppress(Exception):
+                await self.refresh()  # the new (or, after a failure, changed) layout
+        removed: list[str] = []
+        if ok:
+            saved = {loc.id: loc for loc in self._store.config.storage.locations}
+            elsewhere = {
+                str(i.get("uuid"))
+                for i in self._detected.items.values()
+                if i.get("uuid") and (i.get("disk") or {}).get("name") != disk
+            }
+            for lid in stale:
+                loc = saved.get(lid)
+                if loc is None or (loc.kind == "usb" and loc.uuid in elsewhere):
+                    continue  # never drop a location whose UUID lives on another drive
+                try:
+                    await self.remove(lid)
+                    removed.append(lid)
+                except Exception:
+                    log.exception("could not remove %s after formatting %s", lid, disk)
+        self._changed("formatted", None)
+        return removed
 
     async def test_smb(
         self, unc: str, username: str | None, password: str | None, domain: str | None
@@ -667,16 +831,29 @@ class LocationService:
             await self._refresh()
 
     async def _refresh(self) -> None:
+        items: Any = None
         try:
             rc, out, _err = await self._run(["list-usb"])
-            items: Any = json.loads(out) if rc == 0 else None
+            items = json.loads(out) if rc == 0 else None
         except (TimeoutError, OSError, ValueError):
             items = None
         usb_ok = isinstance(items, list)
         if usb_ok:
-            self._detected = _Detected(
-                {str(i.get("uuid") or i.get("name")): i for i in items if isinstance(i, dict)}, True
-            )
+            found = {str(i.get("uuid") or i.get("name")): i for i in items if isinstance(i, dict)}
+            if self._format_busy:  # the layout of a disk being formatted is in flux: keep it frozen
+                found = {
+                    k: i
+                    for k, i in found.items()
+                    if (i.get("disk") or {}).get("name") not in self._format_busy
+                }
+                found.update(
+                    {
+                        k: i
+                        for k, i in self._detected.items.items()
+                        if (i.get("disk") or {}).get("name") in self._format_busy
+                    }
+                )
+            self._detected = _Detected(found, True)
         points = self._points = await asyncio.to_thread(self._mounted_points)
         self._live_at = time.monotonic()
         for loc in list(self._store.config.storage.locations):
@@ -735,6 +912,7 @@ class LocationService:
             and not rt.user_unmounted
             and time.monotonic() >= rt.retry_at
             and loc.id not in self._fsck_busy
+            and not (self._format_busy and self._disk_of(loc.id) in self._format_busy)
         )
         if loc.kind == "usb":
             want = want and rt.present and rt.supported

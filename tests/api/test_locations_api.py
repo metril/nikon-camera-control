@@ -312,3 +312,154 @@ async def test_offload_skips_fresh_files_and_refuses_active_session(env: Env) ->
             json={**body, "scope": {"kind": "session", "session_id": sid}},
         )
     assert r.status_code == 409
+
+
+async def test_fsck_is_a_background_job_with_the_outcome_as_result(env: Env) -> None:
+    lid = await _setup_target(env)
+    r = await env.c.post(f"{V}/locations/{lid}/fsck")
+    assert r.status_code == 409 and "Unmount the drive" in r.text
+    assert (await env.c.post(f"{V}/locations/{lid}/unmount")).status_code == 200
+    r = await env.c.post(f"{V}/locations/{lid}/fsck")
+    assert r.status_code == 202 and r.json()["kind"] == "fsck"
+    j = await _wait_job(env.c, r.json()["id"])
+    assert j["status"] == "completed"
+    r = await env.c.post(f"{V}/locations/{lid}/fsck")
+    j = await _wait_job(env.c, r.json()["id"])
+    assert j["status"] == "completed" and j["result"] == {"returncode": 0, "output": "clean"}
+
+
+async def test_fsck_job_names_its_location_and_cancel_stops_the_repair(env: Env) -> None:
+    lid = await _setup_target(env)
+    assert (await env.c.post(f"{V}/locations/{lid}/unmount")).status_code == 200
+    svc = env.app.state.storage
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def slow(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return 0, "", ""
+
+    svc._run = slow
+    job = (await env.c.post(f"{V}/locations/{lid}/fsck")).json()
+    assert job["target"] == lid
+    await asyncio.wait_for(started.wait(), 2)
+    assert lid in svc._fsck_busy
+    assert (await env.c.delete(f"{V}/jobs/{job['id']}")).status_code == 200
+    j = await _wait_job(env.c, job["id"])
+    assert j["status"] == "cancelled" and cancelled.is_set()
+    assert lid not in svc._fsck_busy
+
+
+async def test_fsck_validates_synchronously_before_creating_a_job(env: Env) -> None:
+    assert (await env.c.post(f"{V}/locations/usb-nope/fsck")).status_code == 404
+    r = await env.c.post(
+        f"{V}/locations",
+        json={"kind": "smb", "name": "nas", "unc": "//nas/share"},
+    )
+    assert r.status_code == 201, r.text
+    r = await env.c.post(f"{V}/locations/{r.json()['id']}/fsck")
+    assert r.status_code == 409 and "Only USB" in r.text
+    lid = await _setup_target(env)
+    assert (await env.c.post(f"{V}/locations/{lid}/unmount")).status_code == 200
+    env.app.state.storage._fsck_busy.add(lid)
+    r = await env.c.post(f"{V}/locations/{lid}/fsck")
+    assert r.status_code == 409 and "being checked" in r.text
+    assert (await env.c.get(f"{V}/jobs")).json() == []
+
+
+DISK, MM, SZ = "sdAB", "8:16", 1 << 30
+
+
+def _fbody(**kw: Any) -> dict[str, Any]:
+    return {"fstype": "exfat", "label": "", "majmin": MM, "size": SZ, "diskseq": "100", **kw}
+
+
+async def test_locations_report_their_physical_disk(env: Env) -> None:
+    await _setup_target(env)
+    locs = (await env.c.get(f"{V}/locations")).json()["locations"]
+    assert locs[0]["disk"] == {
+        "name": DISK,
+        "majmin": MM,
+        "size": SZ,
+        "model": "Ultra",
+        "diskseq": "100",
+    }
+
+
+async def test_format_is_a_background_job_that_replaces_the_drive(env: Env) -> None:
+    lid = await _setup_target(env)
+    assert (await env.c.put(f"{V}/storage/target", json={"id": None})).status_code == 200
+    assert (await env.c.post(f"{V}/locations/{lid}/unmount")).status_code == 200
+    r = await env.c.post(f"{V}/storage/disks/{DISK}/format", json=_fbody(label="PHOTOS"))
+    assert r.status_code == 202, r.text
+    assert r.json()["kind"] == "format" and r.json()["target"] == DISK
+    j = await _wait_job(env.c, r.json()["id"])
+    assert j["status"] == "completed", j
+    assert j["result"]["removed_locations"] == [lid]
+    locs = (await env.c.get(f"{V}/locations")).json()["locations"]
+    assert [(x["fstype"], x["label"], x["configured"]) for x in locs] == [
+        ("exfat", "PHOTOS", False)
+    ]
+
+
+async def test_format_validates_synchronously_before_creating_a_job(env: Env) -> None:
+    url = f"{V}/storage/disks/{DISK}/format"
+    assert (await env.c.post(f"{V}/storage/disks/sdnone/format", json=_fbody())).status_code == 404
+    lid = await _setup_target(env)
+    r = await env.c.post(url, json=_fbody())
+    assert r.status_code == 409 and "target" in r.text
+    assert (await env.c.put(f"{V}/storage/target", json={"id": None})).status_code == 200
+    r = await env.c.post(url, json=_fbody())
+    assert r.status_code == 409 and "Unmount" in r.text
+    assert (await env.c.post(f"{V}/locations/{lid}/unmount")).status_code == 200
+    for bad in (
+        _fbody(fstype="xfs"),
+        _fbody(label="a;b"),
+        _fbody(fstype="fat32", label="A" * 12),
+        _fbody(majmin="x"),
+        _fbody(size=0),
+        _fbody(diskseq="x"),
+        _fbody(diskseq=None),
+        _fbody(fstype="fat32", size=3 << 40),
+    ):
+        assert (await env.c.post(url, json=bad)).status_code == 422, bad
+    assert (await env.c.post(url, json=_fbody(size=SZ + 1))).status_code == 409
+    assert (await env.c.post(url, json=_fbody(diskseq="5"))).status_code == 409
+    env.app.state.storage._fsck_busy.add(lid)
+    r = await env.c.post(url, json=_fbody())
+    assert r.status_code == 409 and "checked" in r.text
+    assert (await env.c.get(f"{V}/jobs")).json() == []
+    assert env.helper.formats == []
+
+
+async def test_cancelling_a_format_job_terminates_it_and_frees_the_disk(env: Env) -> None:
+    lid = await _setup_target(env)
+    assert (await env.c.put(f"{V}/storage/target", json={"id": None})).status_code == 200
+    assert (await env.c.post(f"{V}/locations/{lid}/unmount")).status_code == 200
+    svc = env.app.state.storage
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def slow(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        if args[0] == "list-usb":
+            return await env.helper.runner(args)
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return 0, "", ""
+
+    svc._run = slow
+    job = (await env.c.post(f"{V}/storage/disks/{DISK}/format", json=_fbody())).json()
+    await asyncio.wait_for(started.wait(), 2)
+    assert DISK in svc._format_busy
+    assert (await env.c.delete(f"{V}/jobs/{job['id']}")).status_code == 200
+    j = await _wait_job(env.c, job["id"])
+    assert j["status"] == "cancelled" and cancelled.is_set()
+    assert DISK not in svc._format_busy
+    assert (await env.c.get(f"{V}/locations")).json()["locations"][0]["id"] == lid

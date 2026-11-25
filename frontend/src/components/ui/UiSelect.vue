@@ -34,6 +34,7 @@ function onChange(e) {
         v-for="o in items"
         :key="String(o.value)"
         :value="String(o.value)"
+        :disabled="o.disabled || undefined"
         :selected="o.value === modelValue"
       >
         {{ o.label }}

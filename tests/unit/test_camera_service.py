@@ -1020,3 +1020,31 @@ async def test_refresh_waits_for_inflight_read_then_reads_again(env: Env) -> Non
     await svc.list_settings(refresh=True)
     await first
     assert env.backend.list_calls == 2
+
+
+async def test_orphaned_failed_tree_read_is_not_reported_as_unretrieved(env: Env) -> None:
+    """The only awaiting caller is cancelled in the very loop turn the read fails: the shield
+    drops the exception, so list_settings must mark it retrieved itself."""
+    import gc
+
+    svc = await env.make()
+    svc.invalidate_settings()
+    loop = asyncio.get_running_loop()
+    reported: list[dict[str, Any]] = []
+    loop.set_exception_handler(lambda _l, ctx: reported.append(ctx))
+    caller: asyncio.Task[Any] | None = None
+
+    async def failing_read() -> list[ConfigWidget]:
+        assert caller is not None
+        loop.call_soon(caller.cancel)  # runs before the task's done callbacks
+        raise CameraOperationFailed("read failed")
+
+    svc._read_tree = failing_read  # type: ignore[method-assign]  # noqa: SLF001
+    caller = asyncio.create_task(svc.list_settings())
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    await asyncio.sleep(0.05)
+    svc._tree_task = None  # noqa: SLF001
+    gc.collect()
+    await asyncio.sleep(0)
+    assert not [c for c in reported if "never retrieved" in str(c.get("message"))]

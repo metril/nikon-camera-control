@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import shutil
+import threading
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -68,6 +69,19 @@ def safe_join(root: Path, relative: str) -> Path:
     return full
 
 
+_dir_locks: dict[Path, threading.Lock] = {}
+_dir_locks_guard = threading.Lock()
+
+
+def _dir_lock(directory: Path) -> threading.Lock:
+    """In-process lock per resolved directory. Every writer is this process (callers run in
+    worker threads), so serialising name choice + creation/commit per directory closes the
+    check-then-rename races on filesystems without hard links (FAT/exFAT)."""
+    key = directory.resolve()
+    with _dir_locks_guard:
+        return _dir_locks.setdefault(key, threading.Lock())
+
+
 def unique_path(dest_dir: Path, name: str) -> Path:
     """Create (O_EXCL) and return a fresh empty file ``dest_dir/name``; on collision
     append ``-1``, ``-2``... before the extension. Race-safe across threads/processes."""
@@ -75,14 +89,15 @@ def unique_path(dest_dir: Path, name: str) -> Path:
     name = sanitize_name(name)
     stem, ext = os.path.splitext(name)
     n = 0
-    while True:
-        candidate = dest_dir / (name if n == 0 else f"{stem}-{n}{ext}")
-        try:
-            os.close(os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
-        except FileExistsError:
-            n += 1
-            continue
-        return candidate
+    with _dir_lock(dest_dir):
+        while True:
+            candidate = dest_dir / (name if n == 0 else f"{stem}-{n}{ext}")
+            try:
+                os.close(os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+            except FileExistsError:
+                n += 1
+                continue
+            return candidate
 
 
 def reserve_part(dest_dir: Path, name: str) -> tuple[Path, Path]:
@@ -94,40 +109,42 @@ def reserve_part(dest_dir: Path, name: str) -> tuple[Path, Path]:
     name = sanitize_name(name)
     stem, ext = os.path.splitext(name)
     n = 0
-    while True:
-        final = dest_dir / (name if n == 0 else f"{stem}-{n}{ext}")
-        part = final.with_name(final.name + ".part")
-        if not final.exists():
-            try:
-                os.close(os.open(part, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
-            except FileExistsError:
-                pass
-            else:
-                return final, part
-        n += 1
+    with _dir_lock(dest_dir):
+        while True:
+            final = dest_dir / (name if n == 0 else f"{stem}-{n}{ext}")
+            part = final.with_name(final.name + ".part")
+            if not final.exists():
+                try:
+                    os.close(os.open(part, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+                except FileExistsError:
+                    pass
+                else:
+                    return final, part
+            n += 1
 
 
 def commit_part(part: Path, final: Path) -> Path:
     """Move a finished ``part`` into place without ever replacing a file that appeared since
     :func:`reserve_part` (another writer, a concurrent job): ``os.link`` fails if the name
     exists, and the next free name is taken. FAT/exFAT have no hard links: there the
-    existence check plus rename is the best available (a much narrower window)."""
+    existence check plus rename runs under the per-directory lock (all writers are in-process)."""
     stem, ext = os.path.splitext(final.name)
     n = 0
-    while True:
-        target = final if n == 0 else final.with_name(f"{stem}-{n}{ext}")
-        n += 1
-        try:
-            os.link(part, target)
-        except FileExistsError:
-            continue
-        except OSError:  # no hard links on this filesystem
-            if target.exists():
+    with _dir_lock(final.parent):
+        while True:
+            target = final if n == 0 else final.with_name(f"{stem}-{n}{ext}")
+            n += 1
+            try:
+                os.link(part, target)
+            except FileExistsError:
                 continue
-            os.replace(part, target)
+            except OSError:  # no hard links on this filesystem
+                if target.exists():
+                    continue
+                os.replace(part, target)
+                return target
+            part.unlink()
             return target
-        part.unlink()
-        return target
 
 
 def _notify_stored(on_stored: Callable[[Path], None], path: Path) -> None:

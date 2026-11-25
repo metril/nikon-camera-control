@@ -56,3 +56,15 @@ describe('jobs.fetch', () => {
     expect(jobs.byId.y).toBeTruthy()
   })
 })
+
+describe('jobs.upsert', () => {
+  it('never lets an active status replace a finished one for the same id', () => {
+    const jobs = useJobsStore()
+    jobs.onJobEvent({ job: { ...job('a', 'failed'), error: 'boom' } })
+    jobs.upsert(job('a', 'queued'))
+    jobs.upsert(job('a', 'running'))
+    expect(jobs.byId.a.status).toBe('failed')
+    jobs.upsert(job('a', 'completed'))
+    expect(jobs.byId.a.status).toBe('completed')
+  })
+})

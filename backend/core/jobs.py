@@ -40,6 +40,7 @@ _FINISHED = frozenset({JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLE
 class Job(BaseModel):
     id: str
     kind: str  # e.g. "video", "download_all", "focus_stack"
+    target: str | None = None  # what the job works on (e.g. a storage location id)
     status: JobStatus = JobStatus.QUEUED
     progress: float | None = Field(
         default=0.0, ge=0.0, le=1.0, description="0..1, or null while the total is unknown"
@@ -159,13 +160,14 @@ class JobManager:
         *,
         exclusive_key: str | None = None,
         release: Callable[[], Awaitable[None]] | None = None,
+        target: str | None = None,
     ) -> Job:
         if exclusive_key is not None and exclusive_key in self._keys:
             raise CameraBusy(
                 f"A '{kind}' job is already running for this target",
                 details={"exclusive_key": exclusive_key, "job_id": self._keys[exclusive_key]},
             )
-        job = Job(id=uuid.uuid4().hex, kind=kind, created=datetime.now(UTC))
+        job = Job(id=uuid.uuid4().hex, kind=kind, target=target, created=datetime.now(UTC))
         ctx = JobContext(self, job)
         self._jobs[job.id] = job
         self._ctxs[job.id] = ctx

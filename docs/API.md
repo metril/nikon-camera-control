@@ -200,6 +200,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | POST | `/api/v1/locations/{location_id}/mount` | `mount_location` | Mount Location |
 | POST | `/api/v1/locations/{location_id}/unmount` | `unmount_location` | Unmount Location |
 | POST | `/api/v1/locations/{location_id}/fsck` | `check_location` | Check Location |
+| POST | `/api/v1/storage/disks/{disk}/format` | `format_disk` | Format Disk |
 | POST | `/api/v1/locations/test-smb` | `test_smb_location` | Test Smb Location |
 | PUT | `/api/v1/storage/target` | `set_storage_target` | Set Storage Target |
 | PUT | `/api/v1/storage/backups` | `set_storage_backups` | Set Storage Backups |
@@ -1855,6 +1856,9 @@ operation_id: `unmount_location`
 
 operation_id: `check_location`
 
+Check and repair an unmounted USB drive as a background job (up to an hour). The job
+result is ``{returncode, output}``; cancelling the job stops the repair.
+
 **Parameters**
 
 | Name | In | Type | Required | Default | Constraints | Description |
@@ -1865,7 +1869,45 @@ operation_id: `check_location`
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | Successful Response | `application/json`: `FsckResult` |
+| 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/storage/disks/{disk}/format`
+
+operation_id: `format_disk`
+
+Erase a whole USB disk and create one partition with a new filesystem, as a background
+job (up to an hour). The disk is identified by name, device numbers, size and kernel
+sequence number, all re-checked just before writing. Refused while any partition is
+mounted, in use as the target or a backup, or being checked. Cancelling the job stops the
+format; the disk may then be left blank or half-written.
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `disk` | path | string | yes |  | `pattern=^[A-Za-z0-9_-]{1,32}$` |  |
+
+**Request body** (`application/json`): `FormatRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `fstype` | enum("exfat", "fat32", "ntfs", "ext4") | no | `"exfat"` |  |  |
+| `label` | string | no | `""` | `maxLength=32` | Empty for no label |
+| `majmin` | string | yes |  | `pattern=^[0-9]+:[0-9]+$` | Expected device numbers |
+| `size` | integer | yes |  | `>0.0`, `<1e+18` | Expected disk size in bytes |
+| `diskseq` | string | yes |  | `pattern=^[0-9]{1,20}$` | Expected kernel sequence number of the disk |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 202 | Successful Response | `application/json`: `JobOut` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |

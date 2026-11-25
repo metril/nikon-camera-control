@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import Path as PathParam
 
 from backend.api.deps import ConfigStoreDep, JobManagerDep, StorageDep
 from backend.api.errors import ERROR_RESPONSES
@@ -19,6 +20,8 @@ from backend.api.schemas.jobs import JobOut
 from backend.api.schemas.locations import (
     BackupsSet,
     BackupStatusOut,
+    FormatRequest,
+    FormatResult,
     FsckResult,
     LocationCreate,
     LocationOut,
@@ -115,11 +118,63 @@ async def unmount_location(location_id: str, svc: StorageDep) -> LocationOut:
 
 
 @router.post(
-    "/locations/{location_id}/fsck", operation_id="check_location", response_model=FsckResult
+    "/locations/{location_id}/fsck",
+    operation_id="check_location",
+    response_model=JobOut,
+    status_code=202,
 )
-async def check_location(location_id: str, svc: StorageDep) -> FsckResult:
-    rc, out = await svc.fsck(location_id)
-    return FsckResult(returncode=rc, output=out)
+async def check_location(location_id: str, svc: StorageDep, jobs: JobManagerDep) -> JobOut:
+    """Check and repair an unmounted USB drive as a background job (up to an hour). The job
+    result is ``{returncode, output}``; cancelling the job stops the repair."""
+
+    svc.check_fsck_allowed(location_id)  # fail fast; re-checked atomically inside the job
+
+    async def run(ctx: JobContext) -> dict[str, Any]:
+        ctx.report(None, "Checking drive")
+        rc, out = await svc.fsck(location_id)
+        return FsckResult(returncode=rc, output=out).model_dump()
+
+    return JobOut.model_validate(
+        jobs.submit(
+            "fsck", run, exclusive_key=f"fsck:{location_id}", target=location_id
+        ).model_dump()
+    )
+
+
+@router.post(
+    "/storage/disks/{disk}/format",
+    operation_id="format_disk",
+    response_model=JobOut,
+    status_code=202,
+)
+async def format_disk(
+    disk: Annotated[str, PathParam(pattern=r"^[A-Za-z0-9_-]{1,32}$")],
+    body: FormatRequest,
+    svc: StorageDep,
+    jobs: JobManagerDep,
+) -> JobOut:
+    """Erase a whole USB disk and create one partition with a new filesystem, as a background
+    job (up to an hour). The disk is identified by name, device numbers, size and kernel
+    sequence number, all re-checked just before writing. Refused while any partition is
+    mounted, in use as the target or a backup, or being checked. Cancelling the job stops the
+    format; the disk may then be left blank or half-written."""
+
+    svc.check_format_allowed(
+        disk, body.majmin, body.size, body.diskseq
+    )  # fail fast; re-checked in the job
+
+    async def run(ctx: JobContext) -> dict[str, Any]:
+        ctx.report(None, "Formatting drive")
+        removed = await svc.format_disk(
+            disk, body.fstype, body.label, body.majmin, body.size, body.diskseq
+        )
+        return FormatResult(
+            disk=disk, fstype=body.fstype, label=body.label, removed_locations=removed
+        ).model_dump()
+
+    return JobOut.model_validate(
+        jobs.submit("format", run, exclusive_key=f"format:{disk}", target=disk).model_dump()
+    )
 
 
 @router.post("/locations/test-smb", operation_id="test_smb_location", response_model=SmbTestResult)

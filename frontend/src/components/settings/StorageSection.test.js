@@ -8,6 +8,7 @@ import LocalFiles from '@/components/gallery/LocalFiles.vue'
 import { useStorageStore } from '@/stores/storage'
 import { useSessionsStore } from '@/stores/sessions'
 import { useToastsStore } from '@/stores/toasts'
+import { useJobsStore } from '@/stores/jobs'
 import { useCameraStore } from '@/stores/camera'
 import { useFilesStore } from '@/stores/files'
 import { useEventsStore } from '@/stores/events'
@@ -57,6 +58,22 @@ describe('StorageSection', () => {
     const mounts = w.findAll('[data-test="mount"]')
     expect(mounts[0].attributes('disabled')).toBeUndefined()
     expect(mounts[1].attributes('disabled')).toBeDefined()
+  })
+
+  it('explains a blank or unknown drive and keeps real reasons verbatim', () => {
+    const { pinia } = setup([
+      loc({
+        id: 'dev-sdb',
+        name: 'sdb',
+        fstype: null,
+        supported: false,
+        reason: 'unknown filesystem',
+      }),
+      loc({ id: 'usb-c', name: 'Enc', supported: false, reason: 'encrypted (LUKS) volume' }),
+    ])
+    const t = mnt(StorageSection, pinia).text()
+    expect(t).toContain('Blank or unreadable — format it to use it')
+    expect(t).toContain('encrypted (LUKS) volume')
   })
 
   it('mounts a drive', async () => {
@@ -237,5 +254,163 @@ describe('NO_TARGET handling', () => {
     const t = useToastsStore()
     t.error(new ApiError({ code: 'NO_TARGET', message: 'raw', status: 409 }))
     expect(t.items.at(-1).message).toContain('Settings › Storage')
+  })
+})
+
+describe('StorageSection fsck job', () => {
+  const job = { id: 'j1', kind: 'fsck', target: 'usb-a', status: 'running' }
+
+  it('shows Checking… from a running fsck job in the store (e.g. after reload)', async () => {
+    const { pinia } = setup([loc({})])
+    useJobsStore().upsert(job)
+    const w = mnt(StorageSection, pinia)
+    await flushPromises()
+    const b = w.find('[data-test="fsck"]')
+    expect(b.text()).toContain('Checking')
+    expect(b.attributes('disabled')).toBeDefined()
+  })
+
+  it('starts the job, then shows the result when it completes', async () => {
+    const { pinia, s } = setup([loc({})])
+    s.check = vi.fn(async () => useJobsStore().upsert(job))
+    const w = mnt(StorageSection, pinia)
+    await w.find('[data-test="fsck"]').trigger('click')
+    await w.find('[data-test="fsck"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="fsck"]').text()).toContain('Checking')
+    useJobsStore().upsert({
+      ...job,
+      status: 'completed',
+      result: { returncode: 0, output: 'clean' },
+    })
+    await flushPromises()
+    expect(w.find('[data-test="fsck"]').text()).not.toContain('Checking')
+    expect(w.find('[data-test="fsck-out"]').text()).toBe('clean')
+  })
+
+  it('does not toast a failed check itself (the Jobs panel does)', async () => {
+    const { pinia } = setup([loc({})])
+    useJobsStore().upsert(job)
+    const toasts = useToastsStore()
+    toasts.error = vi.fn()
+    const w = mnt(StorageSection, pinia)
+    await flushPromises()
+    useJobsStore().upsert({ ...job, status: 'failed', error: 'did not finish in time' })
+    await flushPromises()
+    expect(toasts.error).not.toHaveBeenCalled()
+    expect(w.find('[data-test="fsck"]').text()).not.toContain('Checking')
+  })
+
+  it('shows the newest finished run: a newer failure hides an older clean result', async () => {
+    const { pinia } = setup([loc({})])
+    const jobs = useJobsStore()
+    jobs.upsert({
+      ...job,
+      id: 'old',
+      status: 'completed',
+      created: '1',
+      result: { returncode: 0, output: 'clean' },
+    })
+    jobs.upsert({ ...job, id: 'new', status: 'failed', created: '2', error: 'ran out of time' })
+    const w = mnt(StorageSection, pinia)
+    await flushPromises()
+    const out = w.find('[data-test="fsck-out"]')
+    expect(out.text()).toBe('ran out of time')
+    jobs.upsert({ ...job, id: 'newer', status: 'cancelled', created: '3' })
+    await flushPromises()
+    expect(w.find('[data-test="fsck-out"]').text()).toBe('Cancelled')
+  })
+
+  it('disables the button between confirm and the POST response (no double POST)', async () => {
+    const { pinia, s } = setup([loc({})])
+    let resolve
+    s.check = vi.fn(() => new Promise((r) => (resolve = r)))
+    const w = mnt(StorageSection, pinia)
+    await w.find('[data-test="fsck"]').trigger('click')
+    await w.find('[data-test="fsck"]').trigger('click')
+    await flushPromises()
+    expect(s.check).toHaveBeenCalledTimes(1)
+    expect(w.find('[data-test="fsck"]').attributes('disabled')).toBeDefined()
+    resolve()
+    await flushPromises()
+  })
+})
+
+describe('StorageSection format', () => {
+  const disk = { name: 'sda', majmin: '8:0', size: 64e9, model: 'Ultra Fit' }
+  const two = (o = {}) => [
+    loc({ id: 'usb-a', disk, ...o }),
+    loc({ id: 'dev-sda2', name: 'sda2', uuid: null, configured: false, disk }),
+  ]
+  const fjob = { id: 'f1', kind: 'format', target: 'sda', status: 'running' }
+
+  it('groups partitions under their physical disk with one Format… action', () => {
+    const { pinia } = setup(two())
+    const w = mnt(StorageSection, pinia)
+    const g = w.find('[data-test="disk-sda"]')
+    expect(g.text()).toContain('Ultra Fit')
+    expect(g.findAll('[data-test^="loc-"]')).toHaveLength(2)
+    expect(w.findAll('[data-test="format-sda"]')).toHaveLength(1)
+    expect(w.find('[data-test="format-sda"]').classes()).not.toContain('bg-camera-danger-fill')
+    expect(w.find('[data-test="format-sda"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it.each([
+    [{ mounted: true }, 'Unmount'],
+    [{ is_target: true }, 'photo location'],
+    [{ is_backup: true }, 'backup'],
+  ])('disables Format… with a reason when %j', (o, text) => {
+    const { pinia } = setup(two(o))
+    const w = mnt(StorageSection, pinia)
+    expect(w.find('[data-test="format-sda"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="format-reason"]').text()).toContain(text)
+  })
+
+  it('disables Format… while a partition is being checked', async () => {
+    const { pinia } = setup(two())
+    useJobsStore().upsert({ id: 'c', kind: 'fsck', target: 'usb-a', status: 'running' })
+    const w = mnt(StorageSection, pinia)
+    await flushPromises()
+    expect(w.find('[data-test="format-sda"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="format-reason"]').text()).toContain('check')
+  })
+
+  it('opens the confirmation in the page (no window.confirm)', async () => {
+    const { pinia } = setup(two())
+    const spy = vi.spyOn(window, 'confirm')
+    const w = mnt(StorageSection, pinia)
+    await w.find('[data-test="format-sda"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="format-dialog"]')).not.toBeNull()
+    expect(spy).not.toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('shows Formatting… from a running format job (e.g. after reload) and blocks the partitions', async () => {
+    const { pinia } = setup(two())
+    useJobsStore().upsert(fjob)
+    const w = mnt(StorageSection, pinia)
+    await flushPromises()
+    const b = w.find('[data-test="format-sda"]')
+    expect(b.text()).toContain('Formatting')
+    expect(b.attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="mount"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="fsck"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('refreshes the drive list when a format finishes and does not toast itself', async () => {
+    const { pinia, s } = setup(two())
+    s.fetch = vi.fn(async () => {})
+    useJobsStore().upsert(fjob)
+    const toasts = useToastsStore()
+    toasts.error = vi.fn()
+    const w = mnt(StorageSection, pinia)
+    await flushPromises()
+    useJobsStore().upsert({ ...fjob, status: 'failed', error: 'mkfs failed: boom' })
+    await flushPromises()
+    expect(s.fetch).toHaveBeenCalled()
+    expect(toasts.error).not.toHaveBeenCalled()
+    expect(w.find('[data-test="format-out"]').text()).toBe('mkfs failed: boom')
+    expect(w.find('[data-test="format-sda"]').text()).not.toContain('Formatting')
   })
 })

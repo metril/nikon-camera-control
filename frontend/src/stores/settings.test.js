@@ -97,6 +97,35 @@ describe('settings write queue', () => {
     expect(s.get('iso')).toBe(200)
   })
 
+  it('ignores the echo of a sent value while a later write is in flight', async () => {
+    const d1 = deferred()
+    const d2 = deferred()
+    api.setSetting.mockReturnValueOnce(d1.promise).mockReturnValueOnce(d2.promise)
+    s.set('iso', 200)
+    const p2 = s.set('iso', 300)
+    d1.resolve({ name: 'iso', value: 200 })
+    await vi.waitFor(() => expect(api.setSetting).toHaveBeenCalledTimes(2))
+    s.onSettingChanged({ name: 'iso', value: 200 }) // late echo of the first write
+    d2.resolve({ name: 'iso', value: 300 })
+    await p2
+    expect(s.get('iso')).toBe(300)
+  })
+
+  it('an echo also consumes older sends that were never echoed', async () => {
+    const d1 = deferred()
+    const d2 = deferred()
+    api.setSetting.mockReturnValueOnce(d1.promise).mockReturnValueOnce(d2.promise)
+    s.set('iso', 200)
+    const p2 = s.set('iso', 300)
+    d1.resolve({ name: 'iso', value: 200 })
+    await vi.waitFor(() => expect(api.setSetting).toHaveBeenCalledTimes(2))
+    s.onSettingChanged({ name: 'iso', value: 300 }) // echo of the newest; the 200 echo never came
+    s.onSettingChanged({ name: 'iso', value: 200 }) // the dial really went to 200
+    d2.resolve({ name: 'iso', value: 300 })
+    await p2
+    expect(s.get('iso')).toBe(200)
+  })
+
   it('rolls back to the last CONFIRMED value when a coalesced later write fails', async () => {
     const d1 = deferred()
     const d2 = deferred()
