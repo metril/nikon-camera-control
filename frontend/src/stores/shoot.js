@@ -20,7 +20,7 @@ export const CAPTURE_MODES = [
   { value: 'bulb', label: 'Bulb', title: 'Bulb exposure' },
   { value: 'stack', label: 'Stack', title: 'Focus stack' },
 ]
-const NO_TARGET_REASON = 'No storage target. Choose one in Settings.'
+const NO_TARGET_REASON = 'No storage chosen. Choose one in Settings.'
 /** Lease name each capture mode holds on the camera while it runs. */
 const OWN_LEASE = { bracket: 'bracket', bulb: 'bulb', stack: 'focus-stack' }
 
@@ -106,7 +106,7 @@ export const useShootStore = defineStore('shoot', () => {
     if (mode.value === 'stack' && stackProblem.value) return `${stackProblem.value}.`
     return ''
   })
-  /** The shutter is blocked only by the missing storage target (nothing more basic is wrong). */
+  /** The shutter is blocked only by the missing storage (nothing more basic is wrong). */
   const noTargetBlocks = computed(() => noTarget.value && blockedReason.value === NO_TARGET_REASON)
   const canPress = computed(() => stoppable.value || (!blockedReason.value && !starting.value))
 

@@ -104,3 +104,44 @@ def test_sanitize_prefix_dashes() -> None:
     assert sanitize_prefix("wedding day!") == "wedding-day-"
     assert sanitize_prefix("-a/b-") == "a-b-"
     assert sanitize_prefix("  ") == "" and sanitize_prefix(None) == ""
+
+
+async def test_download_reserves_only_a_part_file_and_keeps_a_finished_file_on_cancel(
+    app: FastAPI, connected_client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    svc = app.state.camera_service
+    files = await svc.capture()
+    out = tmp_path / "o"
+    seen: list[list[str]] = []
+
+    def stored(p: Path) -> None:
+        seen.append(sorted(x.name for x in out.iterdir()))
+        raise asyncio.CancelledError  # cancelled right after the rename
+
+    with pytest.raises(asyncio.CancelledError):
+        await download_files(svc, files[:1], out, on_stored=stored)
+    (name,) = [x.name for x in out.iterdir()]
+    assert not name.endswith(".part") and (out / name).stat().st_size > 0  # finished file kept
+    assert seen == [[name]]
+
+
+def test_reserve_part_leaves_no_empty_final_and_avoids_collisions(tmp_path: Path) -> None:
+    from backend.services.storage import reserve_part
+
+    f1, p1 = reserve_part(tmp_path, "a.jpg")
+    f2, p2 = reserve_part(tmp_path, "a.jpg")
+    assert not f1.exists() and p1.exists() and f2.name == "a-1.jpg" and p2.exists()
+    f1.write_bytes(b"x")
+    p1.unlink()
+    assert reserve_part(tmp_path, "a.jpg")[0].name == "a-2.jpg"  # an existing final is not reused
+
+
+def test_commit_part_never_replaces_a_file_that_appeared_after_reservation(tmp_path: Path) -> None:
+    from backend.services.storage import commit_part, reserve_part
+
+    final, part = reserve_part(tmp_path, "a.jpg")
+    part.write_bytes(b"new")
+    final.write_bytes(b"other writer")  # raced in between reserve and commit
+    got = commit_part(part, final)
+    assert final.read_bytes() == b"other writer"
+    assert got.name == "a-1.jpg" and got.read_bytes() == b"new" and not part.exists()

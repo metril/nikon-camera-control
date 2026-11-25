@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import { useTabs } from './useTabs'
+import { useTabs, routeQuery } from './useTabs'
 
 function setup() {
   let api
@@ -48,5 +48,23 @@ describe('useTabs', () => {
     const { api } = setup()
     api.select('nope')
     expect(api.activeTab.value).toBe('shoot')
+  })
+
+  it('keeps a deep link query in the hash and exposes it', async () => {
+    const { api } = setup()
+    api.select('settings', { section: 'storage' })
+    await Promise.resolve()
+    expect(location.hash).toBe('#/settings?section=storage')
+    expect(api.activeTab.value).toBe('settings')
+    expect(routeQuery.value).toEqual({ section: 'storage' })
+    api.select('gallery')
+    expect(routeQuery.value).toEqual({})
+  })
+
+  it('reads the query from the hash on load', () => {
+    location.hash = '#/gallery?open=a%2Fb.jpg'
+    const { api } = setup()
+    expect(api.activeTab.value).toBe('gallery')
+    expect(routeQuery.value).toEqual({ open: 'a/b.jpg' })
   })
 })

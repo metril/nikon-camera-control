@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -68,7 +69,7 @@ async def list_files(
     responses=binary_response("application/octet-stream", "The file content"),
 )
 async def download_file(path: str, svc: FilesDep) -> FileResponse:
-    p = svc.resolve_file(path)
+    p = await asyncio.to_thread(svc.resolve_file, path)
     return FileResponse(p, filename=p.name)
 
 

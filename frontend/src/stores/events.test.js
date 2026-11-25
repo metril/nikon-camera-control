@@ -61,7 +61,11 @@ describe('event dispatcher', () => {
 
   it('error events become toasts; unknown/malformed events are ignored', () => {
     ev.dispatch({ type: 'error', data: { message: 'boom', code: 'X' } })
-    expect(useToastsStore().error).toHaveBeenCalledWith('boom')
+    expect(useToastsStore().error).toHaveBeenCalledWith({
+      message: 'boom',
+      code: 'X',
+      details: undefined,
+    })
     expect(() => {
       ev.dispatch({ type: 'who_knows', data: {} })
       ev.dispatch(null)

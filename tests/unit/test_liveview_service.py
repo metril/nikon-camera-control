@@ -162,3 +162,43 @@ async def test_stream_continues_while_camera_is_recording(rig: Rig) -> None:
     assert (await rig.lv.snapshot())[:3] == b"\xff\xd8\xff"
     await rig.cam.transition(S.LIVEVIEW)
     rig.lv.unsubscribe(sub)
+
+
+async def test_subscriber_arriving_while_producer_releases_still_gets_frames(rig: Rig) -> None:
+    real_release = rig.lv._release
+
+    async def slow_release() -> None:
+        await asyncio.sleep(0.15)
+        await real_release()
+
+    rig.lv._release = slow_release  # type: ignore[method-assign]
+    first = rig.lv.subscribe()
+    await asyncio.wait_for(first.get(), 2)
+    rig.lv.unsubscribe(first)
+    await asyncio.sleep(0.05)  # the producer is now inside its release window
+    second = rig.lv.subscribe()
+    got = None
+    for _ in range(50):
+        item = await asyncio.wait_for(second.get(), 3)
+        if item and item[0] == "frame":
+            got = item
+            break
+    assert got is not None
+    rig.lv.unsubscribe(second)
+
+
+async def test_crashed_producer_is_not_restarted_in_a_tight_loop(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    starts = 0
+
+    async def boom() -> None:
+        nonlocal starts
+        starts += 1
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(rig.lv, "_loop", boom)
+    sub = rig.lv.subscribe()
+    await asyncio.sleep(0.3)
+    assert starts <= 2  # backoff between restarts, not one per event-loop turn
+    rig.lv.unsubscribe(sub)

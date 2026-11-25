@@ -1,51 +1,24 @@
 <script setup>
 /** Bottom-centre focus pill: large and small steps nearer and farther, Autofocus in the middle. */
-import { ref, watch } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
-const props = defineProps({
+defineProps({
   disabled: Boolean,
   busy: Boolean,
   mode: { type: String, default: 'af' },
-  /** Direction at the lens focus limit: -1 closest, 1 farthest, 0 none. */
-  limit: { type: Number, default: 0 },
-  /** Changes on every rejected step at a limit: replays the edge bump. */
-  bump: { type: Number, default: 0 },
 })
-const bumping = ref(0) // side of the pill nudging: -1 left, 1 right
-let bumpTimer
-watch(
-  () => props.bump,
-  () => {
-    if (!props.limit) return
-    clearTimeout(bumpTimer)
-    bumping.value = 0
-    requestAnimationFrame(() => {
-      bumping.value = props.limit
-      bumpTimer = setTimeout(() => (bumping.value = 0), 220)
-    })
-  },
-)
-const LIMIT_TITLE = { '-1': 'Closest focus', 1: 'Farthest focus' }
 /** step(direction, size): direction -1 nearer / 1 farther; size 'small' | 'large' */
 const emit = defineEmits(['step', 'autofocus', 'mode'])
 </script>
 
 <template>
-  <div
-    class="lv-focus"
-    :class="{ 'bump-near': bumping === -1, 'bump-far': bumping === 1 }"
-    role="toolbar"
-    aria-label="Focus"
-    data-testid="lv-focus"
-  >
+  <div class="lv-focus" role="toolbar" aria-label="Focus" data-testid="lv-focus">
     <button
       type="button"
       :disabled="disabled"
-      :aria-disabled="limit === -1 || undefined"
-      :class="{ limited: limit === -1 }"
       aria-label="Large step nearer"
-      :title="limit === -1 ? LIMIT_TITLE[-1] : 'Large step nearer'"
+      title="Large step nearer"
+      class="step s1"
       data-testid="lv-focus-near-large"
       @click="emit('step', -1, 'large')"
     >
@@ -54,10 +27,9 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
     <button
       type="button"
       :disabled="disabled"
-      :aria-disabled="limit === -1 || undefined"
-      :class="{ limited: limit === -1 }"
       aria-label="Small step nearer"
-      :title="limit === -1 ? LIMIT_TITLE[-1] : 'Small step nearer'"
+      title="Small step nearer"
+      class="step s2"
       data-testid="lv-focus-near-small"
       @click="emit('step', -1, 'small')"
     >
@@ -78,7 +50,7 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       data-testid="lv-focus-mode"
       @click="emit('mode', mode === 'manual' ? 'af' : 'manual')"
     >
-      {{ mode === 'manual' ? 'Manual' : 'Auto' }}
+      <span class="pre">Focus: </span>{{ mode === 'manual' ? 'Manual' : 'Auto' }}
     </button>
     <button
       v-if="mode !== 'manual'"
@@ -96,10 +68,9 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
     <button
       type="button"
       :disabled="disabled"
-      :aria-disabled="limit === 1 || undefined"
-      :class="{ limited: limit === 1 }"
       aria-label="Small step farther"
-      :title="limit === 1 ? LIMIT_TITLE[1] : 'Small step farther'"
+      title="Small step farther"
+      class="step s3"
       data-testid="lv-focus-far-small"
       @click="emit('step', 1, 'small')"
     >
@@ -108,10 +79,9 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
     <button
       type="button"
       :disabled="disabled"
-      :aria-disabled="limit === 1 || undefined"
-      :class="{ limited: limit === 1 }"
       aria-label="Large step farther"
-      :title="limit === 1 ? LIMIT_TITLE[1] : 'Large step farther'"
+      title="Large step farther"
+      class="step s4"
       data-testid="lv-focus-far-large"
       @click="emit('step', 1, 'large')"
     >
@@ -158,43 +128,6 @@ button:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: theme('colors.camera.text');
 }
-button.limited {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-button.limited:hover {
-  background: none;
-  color: theme('colors.camera.muted');
-}
-.bump-near {
-  animation: lv-bump-near 0.2s ease-out;
-}
-.bump-far {
-  animation: lv-bump-far 0.2s ease-out;
-}
-@keyframes lv-bump-near {
-  40% {
-    transform: translateX(-4px);
-    border-left-color: theme('colors.camera.text');
-  }
-}
-@keyframes lv-bump-far {
-  40% {
-    transform: translateX(4px);
-    border-right-color: theme('colors.camera.text');
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .bump-near,
-  .bump-far {
-    animation-name: lv-bump-flash;
-  }
-  @keyframes lv-bump-flash {
-    40% {
-      border-color: theme('colors.camera.text');
-    }
-  }
-}
 button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -209,7 +142,63 @@ html[data-layout='touch'] button {
   height: 44px;
   min-width: 44px;
 }
+/* Touch: the pill sits outside the image, in a narrow rail on landscape screens */
+html[data-layout='touch'] .lv-focus {
+  flex-wrap: wrap;
+  justify-content: center;
+  border-radius: 24px;
+  max-width: 100%;
+}
+@media (max-width: 480px) {
+  html[data-layout='touch'] .lbl {
+    display: none;
+  }
+}
 /* The frame is a size container (see LiveViewPanel): icon-only Autofocus when narrow */
+/* Landscape rail: « ‹ › » on one line, Autofocus under it, the AF mode last */
+@media (min-width: 900px) and (orientation: landscape) {
+  html[data-layout='touch'] .lv-focus {
+    display: grid;
+    grid-template-columns: repeat(4, 44px);
+    justify-content: center;
+    gap: 6px 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    backdrop-filter: none;
+  }
+  html[data-layout='touch'] .lv-focus .lbl {
+    display: inline;
+  }
+  html[data-layout='touch'] .lv-focus .pre {
+    display: inline;
+  }
+  html[data-layout='touch'] .lv-focus .s1 {
+    order: 1;
+  }
+  html[data-layout='touch'] .lv-focus .s2 {
+    order: 2;
+  }
+  html[data-layout='touch'] .lv-focus .s3 {
+    order: 3;
+  }
+  html[data-layout='touch'] .lv-focus .s4 {
+    order: 4;
+  }
+  html[data-layout='touch'] .lv-focus .af {
+    order: 5;
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  html[data-layout='touch'] .lv-focus .mode {
+    order: 6;
+    grid-column: 1 / -1;
+    border: 1px solid theme('colors.camera.border');
+  }
+}
+.pre {
+  display: none;
+}
 @container lv (max-width: 720px) {
   .lbl {
     display: none;

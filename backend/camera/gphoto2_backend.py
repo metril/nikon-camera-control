@@ -276,6 +276,7 @@ class Gphoto2Backend:
         self._dev_root = dev_root
         self._camera: Any = None
         self._ctx: Any = None
+        self._pv_file: Any = None  # reused preview CameraFile
         self._model = ""
         self._viewfinder_on = False
         self._sleep = time.sleep
@@ -337,7 +338,7 @@ class Gphoto2Backend:
 
     def close(self) -> None:
         camera, ctx = self._camera, self._ctx
-        self._camera = self._ctx = None
+        self._camera = self._ctx = self._pv_file = None
         self._viewfinder_on = False
         if camera is not None:
             self._exit_quietly(camera, ctx)
@@ -494,7 +495,9 @@ class Gphoto2Backend:
         try:
             if not self._viewfinder_on:
                 self._enable_viewfinder()
-            f = cam.capture_preview()  # binding returns a new CameraFile; no context arg
+            if self._pv_file is None:
+                self._pv_file = gp.CameraFile()
+            f = cam.capture_preview(self._pv_file, self._ctx)  # ctx: keeps the camera's error text
             return bytes(f.get_data_and_size())
         except gp.GPhoto2Error as e:
             self._viewfinder_on = False  # re-enable (with retry) on the next frame
@@ -618,14 +621,14 @@ class Gphoto2Backend:
                     log.info("partial_read_unsupported", folder=folder, name=name, reason=str(e))
                     tmp.unlink(missing_ok=True)
                     try:
-                        cam.file_get(folder, name, ftype).save(str(tmp))
+                        cam.file_get(folder, name, ftype, None, self._ctx).save(str(tmp))
                     except gp.GPhoto2Error as e2:
                         err = self._translate(e2, f"read_file({posixpath.join(folder, name)})")
                         err.details["partial_read_cause"] = str(e)
                         err.details["whole_file_cause"] = str(e2)
                         raise err from e2
             else:  # previews/EXIF are small; let libgphoto2 build them
-                cam.file_get(folder, name, ftype).save(str(tmp))
+                cam.file_get(folder, name, ftype, None, self._ctx).save(str(tmp))
             tmp.replace(dest)
         except gp.GPhoto2Error as e:  # not reached by the fallback's own failure (AppError)
             tmp.unlink(missing_ok=True)
@@ -680,7 +683,7 @@ class Gphoto2Backend:
                     free_kb=int(si.freekbytes) if fields & gp.GP_STORAGEINFO_FREESPACEKBYTES else 0,
                     free_images=int(si.freeimages)
                     if fields & gp.GP_STORAGEINFO_FREESPACEIMAGES
-                    else 0,
+                    else None,
                     access=access,
                 )
             )

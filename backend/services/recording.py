@@ -57,6 +57,7 @@ START_UNDO_S = 10.0  # bound for the best-effort movie=0 after a failed start
 _RETRY_DELAY_S = 0.5
 _OFF_VALUES = frozenset({"", "0", "false", "off", "none"})
 RECORDINGS_DIR = "recordings"
+FFPROBE_TIMEOUT_S = 15.0
 
 
 async def ffprobe_duration(path: Path) -> float | None:
@@ -69,7 +70,13 @@ async def ffprobe_duration(path: Path) -> float | None:
             exe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )  # fmt: skip
-        out, _ = await asyncio.wait_for(proc.communicate(), 15.0)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), FFPROBE_TIMEOUT_S)
+        except BaseException:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            raise
         value = float(out.decode().strip())
     except (OSError, ValueError, TimeoutError):
         return None

@@ -4,12 +4,9 @@ import UiCard from '@/components/ui/UiCard.vue'
 import UiText from '@/components/ui/UiText.vue'
 import UiNumber from '@/components/ui/UiNumber.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
-import UiButton from '@/components/ui/UiButton.vue'
-import UiBadge from '@/components/ui/UiBadge.vue'
 import StatGrid from './StatGrid.vue'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useCameraStore } from '@/stores/camera'
-import { useToastsStore } from '@/stores/toasts'
 import {
   draft,
   applied,
@@ -18,9 +15,6 @@ import {
   fresh,
   localErrors,
   draftKey,
-  dirty,
-  edited,
-  applyDraft,
   previewDraft,
 } from './useDraft'
 import { quickShots, formatBytes, formatDuration } from './bracketUtils'
@@ -28,7 +22,6 @@ import { quickShots, formatBytes, formatDuration } from './bracketUtils'
 const DEBOUNCE_MS = 600
 const timelapse = useTimelapseStore()
 const camera = useCameraStore()
-const toasts = useToastsStore()
 
 const limitOptions = [
   { value: 'frames', label: 'Frames' },
@@ -104,15 +97,6 @@ const stats = computed(() => [
 
 let timer = null
 const clear = () => clearTimeout(timer)
-async function apply() {
-  clear()
-  if (!draftKey.value || locked.value) return
-  try {
-    await applyDraft()
-  } catch (e) {
-    toasts.error(e)
-  }
-}
 /** The estimate comes from the preview route; the configuration is only saved on Apply/Start. */
 async function refreshPreview() {
   if (!draftKey.value || fresh.value) return
@@ -137,10 +121,6 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
 
 <template>
   <UiCard title="Schedule">
-    <template #actions>
-      <UiBadge v-if="dirty && edited" tone="warn" aria-live="polite">Unsaved changes</UiBadge>
-      <UiBadge v-else-if="result" tone="ok">Applied</UiBadge>
-    </template>
     <div class="grid gap-4">
       <div>
         <UiText v-model="draft.name" label="Session name" :maxlength="200" :disabled="locked" />
@@ -183,6 +163,8 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
           />
           <UiNumber
             v-if="draft.limit === 'frames'"
+            label="Frames"
+            class="[&_label]:sr-only"
             :model-value="Number.isFinite(draft.totalFrames) ? draft.totalFrames : null"
             :min="1"
             :max="100000"
@@ -192,6 +174,8 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
           />
           <UiNumber
             v-else
+            label="Duration"
+            class="[&_label]:sr-only"
             :model-value="Number.isFinite(draft.durationMin) ? draft.durationMin : null"
             unit="min"
             :min="0.1"
@@ -233,16 +217,9 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
       <p v-if="locked" class="text-xs text-camera-muted">
         The schedule is locked while a time-lapse is running.
       </p>
-      <div>
-        <UiButton
-          variant="secondary"
-          :loading="applied.busy"
-          :disabled="locked || !draftKey || !dirty"
-          @click="apply"
-        >
-          Apply configuration
-        </UiButton>
-      </div>
+      <p class="text-xs text-camera-muted" data-test="applied-on-start">
+        The schedule is applied when you press Start.
+      </p>
     </div>
   </UiCard>
 </template>

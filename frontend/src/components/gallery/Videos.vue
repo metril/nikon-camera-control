@@ -1,11 +1,14 @@
 <script setup>
 defineOptions({ name: 'GalleryVideos' })
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import UiModal from '@/components/ui/UiModal.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
+import { isNoTarget } from '@/api'
+import { useStorageStore } from '@/stores/storage'
 import { useVideosStore } from '@/stores/videos'
 import { useSessionsStore } from '@/stores/sessions'
 import { videoCodec } from '@/labels'
@@ -15,6 +18,9 @@ import { formatSize, formatDate, formatDuration } from './media'
 const videos = useVideosStore()
 const sessions = useSessionsStore()
 const toasts = useToastsStore()
+const storage = useStorageStore()
+const noTargetHit = ref(false)
+const noStorage = computed(() => storage.noTarget || noTargetHit.value)
 
 const loading = ref(false)
 const failed = ref(false)
@@ -31,20 +37,29 @@ const key = (v) => `${v.session_id}/${v.name}`
 const firstLoad = computed(() => loading.value && !videos.items.length)
 
 async function load() {
+  if (storage.noTarget) return // the empty state explains; nothing to list
   loading.value = true
   failed.value = false
+  noTargetHit.value = false
   try {
     await videos.fetch()
     // Session names are cosmetic: a failure just falls back to a generic label.
     sessions.fetch({ limit: 100 }).catch(() => {})
   } catch (e) {
-    failed.value = true
-    toasts.error(e)
+    if (isNoTarget(e)) noTargetHit.value = true
+    else {
+      failed.value = true
+      toasts.error(e)
+    }
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
+watch(
+  () => storage.targetId,
+  (id) => id && load(),
+)
 
 function drop() {
   release()
@@ -102,7 +117,8 @@ async function remove(v) {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <NoTargetNotice v-if="noStorage" data-testid="no-target" />
+  <div v-else class="space-y-4">
     <div v-if="firstLoad" class="space-y-2" aria-busy="true">
       <div v-for="n in 4" :key="n" class="h-12 animate-pulse rounded-inner bg-camera-raised" />
     </div>

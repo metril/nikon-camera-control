@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiText from '@/components/ui/UiText.vue'
@@ -37,6 +37,12 @@ const valueOptions = (name) => choicesOf(name).map((v) => ({ value: v, label: v 
 onMounted(() => {
   if (camera.connected && !settings.all.length) settings.fetchAll().catch((e) => toasts.error(e))
 })
+
+// The camera's valid values arrive once it is connected (it may connect after this opens).
+watch(
+  () => camera.connected,
+  (on) => on && !settings.all.length && settings.fetchAll().catch((e) => toasts.error(e)),
+)
 
 const add = () => steps.value.length < MAX && steps.value.push(newStep())
 function remove(id) {
@@ -133,7 +139,12 @@ const setDelay = (s, v) => (s.delay_ms = v == null ? 0 : Math.round(v * 1000))
             :options="valueOptions(r.name)"
             :disabled="disabled"
           />
-          <UiText v-else v-model="r.value" placeholder="Value" :disabled="disabled" />
+          <UiText
+            v-else
+            v-model="r.value"
+            :placeholder="camera.connected ? 'Value' : 'Connect the camera to pick a value'"
+            :disabled="disabled"
+          />
           <UiButton
             variant="ghost"
             class="!w-[var(--ctl)] !px-0"

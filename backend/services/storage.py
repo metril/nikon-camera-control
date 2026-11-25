@@ -85,6 +85,51 @@ def unique_path(dest_dir: Path, name: str) -> Path:
         return candidate
 
 
+def reserve_part(dest_dir: Path, name: str) -> tuple[Path, Path]:
+    """Reserve ``dest_dir/name`` for a download: returns (final, part) where ``part`` was just
+    created (O_EXCL) and ``final`` does not exist. Only the ``.part`` placeholder exists until
+    the download is renamed into place, so a crash leaves a stale ``.part`` (swept later),
+    never an empty final file. Names collide as in :func:`unique_path`."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    name = sanitize_name(name)
+    stem, ext = os.path.splitext(name)
+    n = 0
+    while True:
+        final = dest_dir / (name if n == 0 else f"{stem}-{n}{ext}")
+        part = final.with_name(final.name + ".part")
+        if not final.exists():
+            try:
+                os.close(os.open(part, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+            except FileExistsError:
+                pass
+            else:
+                return final, part
+        n += 1
+
+
+def commit_part(part: Path, final: Path) -> Path:
+    """Move a finished ``part`` into place without ever replacing a file that appeared since
+    :func:`reserve_part` (another writer, a concurrent job): ``os.link`` fails if the name
+    exists, and the next free name is taken. FAT/exFAT have no hard links: there the
+    existence check plus rename is the best available (a much narrower window)."""
+    stem, ext = os.path.splitext(final.name)
+    n = 0
+    while True:
+        target = final if n == 0 else final.with_name(f"{stem}-{n}{ext}")
+        n += 1
+        try:
+            os.link(part, target)
+        except FileExistsError:
+            continue
+        except OSError:  # no hard links on this filesystem
+            if target.exists():
+                continue
+            os.replace(part, target)
+            return target
+        part.unlink()
+        return target
+
+
 def _notify_stored(on_stored: Callable[[Path], None], path: Path) -> None:
     try:
         on_stored(path)
@@ -141,22 +186,20 @@ async def download_files(
     camera), and a failed delete is logged, not raised."""
     out: list[Path] = []
     for f in files:
-        final = await asyncio.to_thread(unique_path, dest_dir, f"{name_prefix}{f.name}")
-        part = final.with_name(final.name + ".part")
+        final, part = await asyncio.to_thread(reserve_part, dest_dir, f"{name_prefix}{f.name}")
         try:
             await camera.call(
                 _reader(f, part),
                 timeout=DOWNLOAD_TIMEOUT_S,
                 owner=owner,
             )
-            await asyncio.to_thread(os.replace, part, final)
+            final = await asyncio.to_thread(commit_part, part, final)
             if on_stored is not None:
                 await asyncio.to_thread(_notify_stored, on_stored, final)
         except BaseException:
             with contextlib.suppress(OSError):
                 part.unlink(missing_ok=True)
-                final.unlink(missing_ok=True)
-            raise
+            raise  # ``final`` only ever exists once complete, so it is never removed here
         out.append(final)
         if delete_from_camera:
             if not await _verified(camera, f, final, owner):

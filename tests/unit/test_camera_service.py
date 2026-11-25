@@ -29,6 +29,7 @@ from backend.core.errors import (
     CameraIOError,
     CameraNotConnected,
     CameraNotFound,
+    CameraOperationFailed,
     CameraTimeout,
     InvalidState,
 )
@@ -931,3 +932,91 @@ async def test_refresh_setting_shared_coalesces_concurrent_and_recent_reads(env:
     assert sum(performed for _, performed in results) == 1
     await svc.refresh_setting_shared("iso")  # within the TTL, nothing changed since
     assert env.backend.get_calls == before + 1
+
+
+# A-series review fixes ------------------------------------------------------------------
+async def test_reconnect_turns_persistent_when_camera_not_found(env: Env) -> None:
+    svc = await env.make(connect_retries=1, reconnect_interval_s=0.01)
+
+    def io(_b: CameraBackend) -> None:
+        raise CameraIOError()
+
+    env.backend.fail_open = CameraNotFound()
+    with pytest.raises(CameraIOError):
+        await svc.call(io, retry=False)
+    await wait_until(lambda: env.factory_calls >= 5)  # well past connect_retries
+    env.backend.fail_open = None
+    await wait_until(lambda: svc.state == S.IDLE)
+
+
+async def test_connect_from_error_failing_in_zombie_wait_self_resolves(env: Env) -> None:
+    svc = await env.make(connect_retries=5, reconnect_interval_s=0.01)
+    blocker = asyncio.create_task(svc.call(hang, timeout=30))
+    await wait_until(env.backend.entered.is_set)
+    await svc.disconnect()
+    with pytest.raises(CameraNotConnected):
+        await blocker
+    svc._zombie_wait_s = 0.05  # noqa: SLF001
+    svc._try_state(S.ERROR)  # noqa: SLF001
+    with pytest.raises(CameraTimeout):
+        await svc.connect()
+    assert svc.state == S.DISCONNECTED
+    env.backend.release.set()
+    await wait_until(lambda: svc.state == S.IDLE)
+
+
+async def test_raising_connect_hook_does_not_leave_connecting(env: Env) -> None:
+    svc = await env.make(connect=False)
+
+    def boom() -> None:
+        raise RuntimeError("hook")
+
+    svc.connect_hooks.append(boom)
+    with pytest.raises(RuntimeError):
+        await svc.connect()
+    assert svc.state == S.DISCONNECTED
+
+
+async def test_reconnecting_counts_connecting_state(env: Env) -> None:
+    svc = await env.make(connect_retries=5, reconnect_interval_s=60.0)
+    await svc.disconnect()
+    svc._start_reconnect()  # noqa: SLF001
+    svc._set_state(S.CONNECTING)  # noqa: SLF001
+    assert svc._reconnecting()  # noqa: SLF001
+
+
+async def test_unreported_free_images_does_not_block_card(env: Env) -> None:
+    svc = await env.make()
+    await svc.set_setting("capturetarget", "Memory card")
+    env.backend.storage = [StorageInfo("SD", "/store", 100, 50, None, "rw")]  # type: ignore[arg-type]
+    assert await svc.card_problem(fresh=True) is None
+
+
+async def test_list_settings_concurrent_callers_share_one_read(env: Env) -> None:
+    svc = await env.make()
+    svc.invalidate_settings()
+    env.backend.list_calls = 0
+    await asyncio.gather(*(svc.list_settings() for _ in range(5)))
+    assert env.backend.list_calls == 1
+
+
+async def test_explain_failure_keeps_camera_error_and_adds_card_facts(env: Env) -> None:
+    svc = await env.make()
+    await svc.set_setting("capturetarget", "Memory card")
+    env.backend.storage = []
+    exc = CameraOperationFailed("Camera says X", details={"gphoto2_error": "-1"})
+    await svc.explain_failure(exc)  # no relabelling: the original is what gets re-raised
+    assert type(exc) is CameraOperationFailed and exc.message == "Camera says X"
+    assert exc.details["gphoto2_error"] == "-1"
+    assert exc.details["card"] == {"cards": 0, "writable": 0, "free_images": None}
+
+
+async def test_refresh_waits_for_inflight_read_then_reads_again(env: Env) -> None:
+    svc = await env.make()
+    svc.invalidate_settings()
+    env.backend.list_calls = 0
+    first = asyncio.create_task(svc.list_settings())
+    await asyncio.sleep(0)  # the first read is now in flight
+    await svc.list_settings(refresh=True)
+    await first
+    assert env.backend.list_calls == 2

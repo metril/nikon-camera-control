@@ -355,7 +355,7 @@ const exif = computed(() => {
           :key="k"
           class="grid gap-px border-r border-camera-subtle px-4 py-2 text-center last:border-r-0 max-[560px]:px-2 max-[560px]:[&:nth-child(4n)]:border-r-0"
         >
-          <span class="eyebrow !text-[10px]">{{ k }}</span>
+          <span class="eyebrow">{{ k }}</span>
           <b class="font-mono text-sm font-medium tabular-nums">{{ v }}</b>
         </div>
       </div>

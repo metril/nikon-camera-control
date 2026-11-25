@@ -81,5 +81,9 @@ services:
       - "996"  # input : /dev/input/event*
     volumes:
       - /run/udev:/run/udev:ro  # libinput device discovery and hotplug
+      - kiosk-profile:/kiosk-profile  # Chromium profile: keeps the API key and prefs across restarts
     tmpfs:
       - /tmp
+
+volumes:
+  kiosk-profile:

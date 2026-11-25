@@ -38,7 +38,8 @@ class IntegrityError(Exception):
 @dataclass
 class SyncReport:
     copied: int = 0
-    skipped: int = 0
+    skipped: int = 0  # already at the destination
+    vetoed: int = 0  # left alone because the caller's skip() refused them
     failed: list[tuple[str, str]] = field(default_factory=list)
     deleted_source: int = 0
     cancelled: bool = False
@@ -290,14 +291,14 @@ def select_files(
         cutoff = before.timestamp()
         files = [f for f in files if _mtime(f) < cutoff]
     if exclude_sessions:
-        files = [f for f in files if _session_of(f, root) not in exclude_sessions]
+        files = [f for f in files if session_of(f, root) not in exclude_sessions]
     if min_age_s > 0:
         newest = time.time() - min_age_s
         files = [f for f in files if _mtime(f) <= newest]
     return files
 
 
-def _session_of(path: Path, root: Path) -> str | None:
+def session_of(path: Path, root: Path) -> str | None:
     parts = path.relative_to(root).parts
     return parts[1] if len(parts) > 2 and parts[0] == "sessions" else None
 
@@ -318,9 +319,12 @@ def offload_files(
     sidecars: bool,
     cancel: threading.Event | None = None,
     progress: Callable[[int, int], None] | None = None,
+    skip: Callable[[Path], bool] | None = None,
 ) -> SyncReport:
     """Verified copy of ``files`` to ``dst_root`` and, unless ``keep_source``, deletion of
-    each source file (+ sidecar + SHA256SUMS line) only after the destination re-hashed equal."""
+    each source file (+ sidecar + SHA256SUMS line) only after the destination re-hashed equal.
+    ``skip(src)`` is asked right before each file (e.g. its session became active since the
+    file list was taken); vetoed files are left alone and counted as vetoed."""
     rep = SyncReport()
     src_cache, dst_cache = _SumsCache(), _SumsCache(clean=True)
     for i, src in enumerate(files):
@@ -330,6 +334,9 @@ def offload_files(
         rel = src.relative_to(src_root)
         if progress:
             progress(i, len(files))
+        if skip is not None and skip(src):
+            rep.vetoed += 1
+            continue
         try:
             dst = dst_root / rel
             res = sync_file(
@@ -347,9 +354,9 @@ def offload_files(
             else:
                 rep.skipped += 1
             if not keep_source:
+                src.unlink()  # forget only once the file is really gone
                 integrity.forget(src)
                 src_cache.get(src.parent).pop(src.name, None)
-                src.unlink()
                 rep.deleted_source += 1
                 with contextlib.suppress(OSError):  # prune emptied directories
                     p = src.parent
@@ -444,11 +451,6 @@ class BackupService:
         else:
             self._task = self._loop.create_task(self._run(), name="backup-run")
         return self.status
-
-    async def wait_idle(self) -> None:
-        """Wait until no run is active or queued (tests, shutdown helpers)."""
-        while self._task is not None and not self._task.done():
-            await asyncio.wait({self._task})
 
     async def aclose(self) -> None:
         self._closed = True

@@ -54,7 +54,6 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `LOCATION_BUSY` | 409 | `LocationBusy` | Storage location is busy |
 | `MOUNT_FAILED` | 502 | `MountFailed` | Mount failed |
 | `FILE_TOO_LARGE` | 413 | `FileTooLarge` | File is too large for the target filesystem (FAT32 limit is 4 GiB) |
-| `FOCUS_LIMIT` | 409 | `FocusLimit` | The lens is at the end of its focus travel |
 
 ## Endpoints
 
@@ -79,6 +78,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 |---|---|---|---|
 | GET | `/api/v1/camera/folders` | `list_camera_folders` | List Camera Folders |
 | GET | `/api/v1/camera/files` | `list_camera_files` | List Camera Files |
+| GET | `/api/v1/camera/thumbnail` | `get_camera_thumbnail` | Get Camera Thumbnail |
 | POST | `/api/v1/camera/files/download-all` | `download_all_camera_files` | Download All Camera Files |
 | GET | `/api/v1/camera/files/{folder}/{name}` | `download_camera_file` | Download Camera File |
 | DELETE | `/api/v1/camera/files/{folder}/{name}` | `delete_camera_file` | Delete Camera File |
@@ -472,6 +472,29 @@ operation_id: `list_camera_files`
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
+### `GET /api/v1/camera/thumbnail`
+
+operation_id: `get_camera_thumbnail`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `folder` | query | string | yes |  |  |  |
+| `name` | query | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | The camera's own preview JPEG of the file | `image/jpeg`: `string(binary)` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ### `POST /api/v1/camera/files/download-all`
 
 operation_id: `download_all_camera_files`
@@ -807,7 +830,7 @@ operation_id: `list_files`
 | `folder` | query | string | no | `""` |  | Folder relative to the output dir |
 | `page` | query | integer | no | `1` | `>=1` |  |
 | `limit` | query | integer | no | `50` | `>=1`, `<=500` |  |
-| `kind` | query | enum("image", "raw", "video", "all") | no | `"all"` |  |  |
+| `kind` | query | enum("image", "raw", "video", "photos", "all") | no | `"all"` |  |  |
 | `sort` | query | enum("newest", "oldest", "name") | no | `"newest"` |  |  |
 
 **Responses**

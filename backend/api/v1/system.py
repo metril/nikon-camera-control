@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 
 from fastapi import APIRouter, Depends, Request
@@ -55,7 +56,7 @@ async def get_info(request: Request, store: ConfigStoreDep) -> InfoOut:
         version=__version__,
         backend="demo" if cfg.demo_camera else "real",
         auth_enabled=cfg.api_key_hash is not None,
-        output_free_bytes=_free_bytes(request.app.state.storage),
+        output_free_bytes=await asyncio.to_thread(_free_bytes, request.app.state.storage),
         ffmpeg_available=shutil.which("ffmpeg") is not None,
         libgphoto2_version=gp_version,
         started_at=request.app.state.started_at,

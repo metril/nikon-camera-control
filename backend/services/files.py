@@ -16,7 +16,7 @@ from backend.services import integrity
 from backend.services.storage import MediaKindName, classify, safe_join
 from backend.services.thumbnails import DEFAULT_SIZE, ThumbnailService
 
-KindFilter = Literal["image", "raw", "video", "all"]
+KindFilter = Literal["image", "raw", "video", "photos", "all"]  # photos = image + raw
 SortOrder = Literal["newest", "oldest", "name"]
 _THUMB_KINDS = ("image", "raw")
 
@@ -44,6 +44,10 @@ class Listing:
 
 def _hidden(name: str) -> bool:
     return integrity.is_aux(name)
+
+
+def _wanted(want: str, kind: str) -> bool:
+    return want == "all" or kind == want or (want == "photos" and kind in ("image", "raw"))
 
 
 class FileIndex:
@@ -129,9 +133,7 @@ class FileIndex:
         files, dirs = self.snapshot()
         prefix = f"{folder}/" if folder else ""
         sel = [
-            f
-            for f in files
-            if (not folder or f.path.startswith(prefix)) and (kind == "all" or f.kind == kind)
+            f for f in files if (not folder or f.path.startswith(prefix)) and _wanted(kind, f.kind)
         ]
         if sort == "newest":
             sel.sort(key=lambda f: (-f.modified, f.path))

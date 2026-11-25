@@ -17,6 +17,7 @@ import { useToastsStore } from './toasts'
 import { useAuthStore } from './auth'
 import { usePresetsStore } from './presets'
 import { useStorageStore } from './storage'
+import { clearCameraThumbs } from '@/components/gallery/cameraThumbs'
 
 /** Background refresh: failures land in the store's lastError; nothing to await or throw. */
 const bg = (p) => p?.catch?.(() => {})
@@ -50,8 +51,10 @@ export const useEventsStore = defineStore('events', () => {
       case 'camera_disconnected':
         camera.onDisconnected(data)
         useLiveViewStore().reset()
+        useCaptureStore().reset()
         useFocusStore().clear()
         useCameraAdminStore().reset()
+        clearCameraThumbs()
         return
       case 'battery':
         return camera.onBattery(data)
@@ -89,7 +92,11 @@ export const useEventsStore = defineStore('events', () => {
       case 'backup_status':
         return useStorageStore().onBackupStatus(data)
       case 'error':
-        return useToastsStore().error(data.message || data.code || 'Error')
+        return useToastsStore().error({
+          message: data.message || data.code || 'Error',
+          code: data.code,
+          details: data.details,
+        })
       default:
         if (type.startsWith('timelapse_')) return useTimelapseStore().onEvent(type, data)
     }
@@ -103,10 +110,12 @@ export const useEventsStore = defineStore('events', () => {
         .fetchStatus()
         .then((st) => {
           if (!st?.connected) return
+          bg(useCameraStore().fetchBattery())
           bg(useSettingsStore().fetchCommon())
           bg(useCameraAdminStore().refresh())
         }),
     )
+    useCaptureStore().reset() // a capture_complete may have been missed while disconnected
     bg(useAuthStore().fetchInfo()) // boot identifier: clears a stale restart banner
     bg(useJobsStore().fetch())
     bg(useStorageStore().refresh())

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -43,9 +44,6 @@ class FakeHelper:
     def unplug(self, uuid: str) -> None:
         self.usb = [u for u in self.usb if u["uuid"] != uuid]
 
-    def ismount(self, path: str) -> bool:
-        return path in self.mounted
-
     def _sync(self) -> None:
         self.mountinfo.write_text(
             "".join(f"{i} 1 0:1 / {p} rw - tmpfs x rw\n" for i, p in enumerate(self.mounted))
@@ -56,7 +54,9 @@ class FakeHelper:
         self.mounted.discard(str(self.base / location_id))
         self._sync()
 
-    async def runner(self, args: Sequence[str], stdin: str | None = None) -> tuple[int, str, str]:
+    async def runner(
+        self, args: Sequence[str], stdin: str | None = None, limit_s: float | None = None
+    ) -> tuple[int, str, str]:
         self.calls.append(list(args))
         verb = args[0]
         key = f"{verb}:{args[1]}" if len(args) > 1 else verb
@@ -100,3 +100,9 @@ class FakeHelper:
         if verb == "fsck":
             return 0, "clean", ""
         return 2, "", "bad verb"
+
+
+async def wait_backup_idle(backup: Any) -> None:
+    """Wait until no backup run is active or queued."""
+    while backup._task is not None and not backup._task.done():
+        await asyncio.wait({backup._task})

@@ -101,7 +101,7 @@ describe('App shell', () => {
     useCameraStore().fetchStorage = vi.fn(async () => {})
     const w = mount(App, { global: { plugins: [pinia] } })
     const a = w.find('[data-test="no-key-warning"]')
-    expect(a.attributes('href')).toBe('#/settings')
+    expect(a.attributes('href')).toBe('#/settings?section=api-key')
     expect(a.text()).toContain('No API key set')
     w.unmount()
   })

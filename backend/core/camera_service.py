@@ -517,6 +517,9 @@ class CameraService:
         self._settings_map: dict[str, ConfigWidget] = {}
         self._storage_cache: tuple[float, list[Any]] | None = None
         self._cache_epoch = 0
+        self._inval_epoch = 0  # bumped only when the whole cache is dropped
+        self._tree_task: asyncio.Task[list[ConfigWidget]] | None = None
+        self._read_widgets: dict[str, ConfigWidget] | None = None  # stored during a tree read
         self._read_exposure_timeout_s = 5.0
         self._refuse_bulb_timeout_s = 10.0
         self._close_wait_s = 2.0
@@ -599,6 +602,11 @@ class CameraService:
         except CameraNotFound:
             # Camera off or unplugged: keep looking until it shows up or the user disconnects.
             self._start_reconnect(persistent=True)
+            raise
+        except Exception:
+            if self._state == _S.ERROR:  # e.g. zombie wait failed: never stay in ERROR unwatched
+                self._try_state(_S.DISCONNECTED)
+                self._start_reconnect()
             raise
         return self.status()
 
@@ -773,9 +781,6 @@ class CameraService:
     def cached_setting(self, name: str) -> ConfigWidget | None:
         return self._settings_map.get(name)
 
-    def cached_setting_names(self) -> frozenset[str]:
-        return frozenset(self._settings_map)
-
     def known_setting_name(self, candidates: tuple[str, ...]) -> str | None:
         """First of ``candidates`` known to exist on this body (settings cache or resolved
         names); None if unknown. Never talks to the camera."""
@@ -852,9 +857,9 @@ class CameraService:
         self._name_cache = {}
         self._invalidate_cache()
         self.stray_files.clear()  # RAM names (capt0000...) restart on a new connection
-        for hook in list(self.connect_hooks):
-            hook()
         try:
+            for hook in list(self.connect_hooks):
+                hook()
             exposure = await self._read_exposure(worker)  # before IDLE: nothing races the settle
             self._set_state(_S.IDLE)
         except BaseException as e:
@@ -941,6 +946,8 @@ class CameraService:
             try:
                 await self._do_connect()
                 return
+            except CameraNotFound:
+                persistent = True  # unplugged/off (battery swap): keep looking until it appears
             except Exception:  # noqa: S112
                 continue
 
@@ -1055,7 +1062,9 @@ class CameraService:
     def _reconnecting(self) -> bool:
         """Disconnected with the automatic reconnect loop running (not a user Disconnect)."""
         task = self._reconnect_task
-        return self._state == _S.DISCONNECTED and task is not None and not task.done()
+        return (
+            self._state in (_S.DISCONNECTED, _S.CONNECTING) and task is not None and not task.done()
+        )
 
     async def _await_reconnect(self) -> bool:
         """After a device-gone error: wait for the reconnect loop (bounded) and report
@@ -1100,6 +1109,7 @@ class CameraService:
     # settings -------------------------------------------------------------------
     def _invalidate_cache(self) -> None:
         self._cache_epoch += 1
+        self._inval_epoch += 1
         self._settings_tree = None
         self._settings_map = {}
 
@@ -1110,6 +1120,8 @@ class CameraService:
     def _store_widget(self, widget: ConfigWidget) -> None:
         """Update one widget in the cache (map and tree) without refetching the tree."""
         self._cache_epoch += 1  # reads in flight started before this must not overwrite it
+        if self._read_widgets is not None:
+            self._read_widgets[widget.name] = widget  # merged into the tree read in flight
         if self._settings_tree is None:
             return
         self._settings_map[widget.name] = widget
@@ -1139,12 +1151,32 @@ class CameraService:
         Read-only: allowed during a lease."""
         if self._settings_tree is not None and not refresh:
             return self._settings_tree
-        epoch = self._cache_epoch
-        tree = await self._run(lambda b: b.list_config(), Priority.CONTROL, 30.0)
-        if epoch == self._cache_epoch:
-            self._settings_tree = tree
-            self._settings_map = self._flatten(tree)
-        return tree
+        task = self._tree_task
+        if refresh and task is not None and not task.done():
+            # an in-flight read may predate the change that prompted the refresh: let it
+            # finish (result discarded), then read anew
+            with contextlib.suppress(Exception):
+                await asyncio.shield(task)
+            task = self._tree_task
+        if task is None or task.done():
+            task = self._tree_task = asyncio.create_task(self._read_tree())
+            task.add_done_callback(lambda t: t.cancelled() or t.exception())  # mark retrieved
+        return await asyncio.shield(task)  # concurrent callers share one tree read
+
+    async def _read_tree(self) -> list[ConfigWidget]:
+        inval = self._inval_epoch
+        self._read_widgets = {}
+        try:
+            tree = await self._run(lambda b: b.list_config(), Priority.CONTROL, 30.0)
+        finally:
+            stored, self._read_widgets = self._read_widgets, None
+        if inval != self._inval_epoch:
+            return tree
+        self._settings_tree = tree
+        self._settings_map = self._flatten(tree)
+        for w in stored.values():  # single-widget writes made while the tree was read
+            self._store_widget(w)
+        return self._settings_tree
 
     async def get_setting(self, name: str) -> ConfigWidget:
         """Cached leaf widget. Raises SettingNotFound. Read-only: allowed during a lease."""
@@ -1370,10 +1402,9 @@ class CameraService:
         )
         return files
 
-    async def card_problem(self, *, fresh: bool = False) -> AppError | None:
-        """With the card as capture target: why a shot would fail (no card, locked, full), or
-        None. Storage is cached for a few seconds unless ``fresh``. Best effort: an unreadable
-        target or storage never blocks a shot."""
+    async def _card_list(self, *, fresh: bool = False) -> list[Any] | None:
+        """Camera-reported storage for the card capture target; None when not applicable or
+        unreadable (best effort: never blocks a shot). Cached a few seconds unless ``fresh``."""
         if self._state not in _LIVE_STATES:
             return None
         try:
@@ -1382,19 +1413,28 @@ class CameraService:
                 return None
             now = time.monotonic()
             if not fresh and self._storage_cache is not None and now - self._storage_cache[0] < 3.0:
-                cards = self._storage_cache[1]
-            else:
-                cards = await self._run(lambda b: b.storage_info(), Priority.CONTROL, 10.0)
-                ok = any(c.access != "ro" and c.free_images > 0 for c in cards)
-                self._storage_cache = (time.monotonic(), cards) if ok else None  # only "card OK"
+                return list(self._storage_cache[1])
+            cards = await self._run(lambda b: b.storage_info(), Priority.CONTROL, 10.0)
+            ok = any(
+                c.access != "ro" and (c.free_images is None or c.free_images > 0) for c in cards
+            )
+            self._storage_cache = (time.monotonic(), cards) if ok else None  # only "card OK"
+            return list(cards)
         except AppError:
+            return None
+
+    async def card_problem(self, *, fresh: bool = False) -> AppError | None:
+        """With the card as capture target: no card, locked or full according to the
+        camera-reported storage, or None."""
+        cards = await self._card_list(fresh=fresh)
+        if cards is None:
             return None
         if not cards:
             return NoCard()
         writable = [c for c in cards if c.access != "ro"]
         if not writable:
             return CardLocked()
-        if all(c.free_images <= 0 for c in writable):
+        if all(c.free_images is not None and c.free_images <= 0 for c in writable):
             return StorageFull("The memory card is full.")
         return None
 
@@ -1404,13 +1444,24 @@ class CameraService:
             raise problem
 
     async def explain_failure(self, exc: AppError) -> None:
-        """A bare camera failure with the card as target may be a missing, locked or full
-        card (the pre-check can be stale): re-read storage and raise that instead."""
-        if (
-            type(exc) is CameraOperationFailed
-            and (problem := await self.card_problem(fresh=True)) is not None
-        ):
-            raise problem from exc
+        """Attach freshly read camera-reported storage state to a bare camera failure as
+        facts (``details["card"]``). The failure itself is never relabelled: the camera's
+        message and code stay the headline."""
+        if type(exc) is not CameraOperationFailed:
+            return
+        cards = await self._card_list(fresh=True)
+        if cards is None:
+            return
+        exc.details = {
+            **exc.details,
+            "card": {
+                "cards": len(cards),
+                "writable": sum(1 for c in cards if c.access != "ro"),
+                "free_images": sum(c.free_images or 0 for c in cards if c.access != "ro")
+                if any(c.free_images is not None for c in cards if c.access != "ro")
+                else None,
+            },
+        }
 
     async def refuse_bulb_shutter(self) -> None:
         """Public guard for callers that fire the shutter outside capture() (trigger)."""

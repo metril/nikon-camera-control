@@ -30,6 +30,23 @@ _SUBIFDS = 0x014A
 _JPEG_OFFSET = 0x0201
 _JPEG_LENGTH = 0x0202
 _ORIENTATION = 0x0112
+MAX_CONCURRENT_RENDERS = 2  # full decodes are memory-heavy; the rest wait
+CACHE_MAX_ENTRIES = 5000
+CACHE_PRUNE_EVERY = 200  # renders between prune passes
+
+
+def _prune(cache: Path, keep: int) -> None:
+    """Delete the oldest cached thumbnails beyond ``keep`` (blocking)."""
+    try:
+        files = sorted(
+            (e for e in os.scandir(cache) if e.name.endswith(".jpg")),
+            key=lambda e: e.stat().st_mtime,
+        )
+    except OSError:
+        return
+    for e in files[: max(0, len(files) - keep)]:
+        with contextlib.suppress(OSError):
+            os.unlink(e.path)
 
 
 def clamp_size(size: int) -> int:
@@ -123,7 +140,9 @@ def _scan_jpeg_starts(buf: mmap.mmap | bytes) -> list[int]:
     return out
 
 
-def _embedded_preview(path: Path, im: Image.Image) -> Image.Image | None:
+def _embedded_preview(
+    path: Path, im: Image.Image, draft_size: int | None = None
+) -> Image.Image | None:
     """Largest image among: JPEGs referenced by TIFF/SubIFD tags, JPEG streams found by a
     bounded byte scan, and Pillow's own decode (``im``). Memory-safe: the file is mmapped and
     only the winning candidate is decoded. Returns None if nothing beats failing outright."""
@@ -146,6 +165,7 @@ def _embedded_preview(path: Path, im: Image.Image) -> Image.Image | None:
             cands.sort(key=lambda c: c[0], reverse=True)
             for _, choice in cands:
                 try:
+                    _draft(choice, draft_size)
                     choice.load()
                 except Exception:  # noqa: S112 - e.g. raw sensor data Pillow cannot decode
                     continue
@@ -157,7 +177,14 @@ def _embedded_preview(path: Path, im: Image.Image) -> Image.Image | None:
     return None
 
 
-def load_full_image(path: Path) -> Image.Image:
+def _draft(im: Image.Image, draft_size: int | None) -> None:
+    """Ask the JPEG decoder for a reduced-scale decode (never below 2x ``draft_size``).
+    Must run before ``load()``: afterwards it is a no-op."""
+    if draft_size and im.format == "JPEG" and im.mode in ("RGB", "L"):
+        im.draft("RGB", (draft_size * 2, draft_size * 2))
+
+
+def load_full_image(path: Path, draft_size: int | None = None) -> Image.Image:
     kind = classify(path.name)
     if kind not in ("image", "raw"):
         raise UnsupportedMedia(f"No thumbnail for {path.suffix or 'this'} files")
@@ -167,13 +194,14 @@ def load_full_image(path: Path) -> Image.Image:
         raise UnsupportedMedia("File is not a readable image") from e
     orientation = im.getexif().get(_ORIENTATION)
     if kind == "raw":
-        preview = _embedded_preview(path, im)
+        preview = _embedded_preview(path, im, draft_size)
         if preview is not None:
             if preview.getexif().get(_ORIENTATION) is None and orientation:
                 preview.getexif()[_ORIENTATION] = orientation
             im.close()
             return preview
     try:
+        _draft(im, draft_size)
         im.load()
     except Exception as e:
         raise UnsupportedMedia("No embedded preview could be extracted") from e
@@ -181,7 +209,7 @@ def load_full_image(path: Path) -> Image.Image:
 
 
 def _render(src: Path, dest: Path, size: int) -> None:
-    im = load_full_image(src)
+    im = load_full_image(src, draft_size=size)
     try:
         im = ImageOps.exif_transpose(im)
         im.thumbnail((size, size), Image.Resampling.LANCZOS)
@@ -211,6 +239,8 @@ class ThumbnailService:
         self._cache = cache_dir if callable(cache_dir) else (lambda: cache_dir)
         self._default = default_size
         self._locks: dict[str, asyncio.Lock] = {}
+        self._renders = asyncio.Semaphore(MAX_CONCURRENT_RENDERS)
+        self._rendered = 0
 
     @property
     def _dir(self) -> Path:
@@ -232,7 +262,11 @@ class ThumbnailService:
         try:
             async with lock:
                 if not await asyncio.to_thread(dest.exists):
-                    await asyncio.to_thread(self._make, path, dest, s)
+                    async with self._renders:
+                        await asyncio.to_thread(self._make, path, dest, s)
+                    self._rendered += 1
+                    if self._rendered % CACHE_PRUNE_EVERY == 0:
+                        await asyncio.to_thread(_prune, self._dir, CACHE_MAX_ENTRIES)
         finally:
             self._locks.pop(key, None)
         return dest

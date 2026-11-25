@@ -105,12 +105,6 @@ def parse_property_change(text: object) -> tuple[int, str | None, str | None] | 
     return (int(m.group(1), 16), m.group(2), m.group(3)) if m else None
 
 
-def parse_property_event(text: object) -> int | None:
-    """PTP device property code from a ptp2 UNKNOWN event text, else None."""
-    ch = parse_property_change(text)
-    return ch[0] if ch else None
-
-
 @dataclass(frozen=True, slots=True)
 class CameraEvent:
     type: EventType
@@ -124,7 +118,7 @@ class StorageInfo:
     base_dir: str
     capacity_kb: int = 0
     free_kb: int = 0
-    free_images: int = 0
+    free_images: int | None = None  # None: the camera did not report it
     access: str = ""  # "rw" | "ro" | ""
 
 

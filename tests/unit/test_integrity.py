@@ -91,3 +91,14 @@ def test_gnu_escaped_names_round_trip_and_sha256sum_accepts(tmp_path: Path) -> N
     if shutil.which("sha256sum"):
         r = subprocess.run(["sha256sum", "-c", "SHA256SUMS"], cwd=d, capture_output=True)
         assert r.returncode == 0, r.stderr
+
+
+def test_verify_ignores_checksum_names_that_leave_their_directory(tmp_path: Path) -> None:
+    outside = _mk(tmp_path, "secret.txt", b"s")
+    d = tmp_path / "d"
+    integrity.record(_mk(d, "ok.jpg", b"1"))
+    h = hashlib.sha256(b"s").hexdigest()
+    with (d / "SHA256SUMS").open("a") as f:
+        f.write(f"{h}  ../secret.txt\n{h}  {outside}\n{h}  sub/x.jpg\n{h}  .hidden\n")
+    rep = integrity.verify(d)
+    assert (rep.checked, rep.ok, rep.missing, rep.mismatched) == (1, 1, [], [])

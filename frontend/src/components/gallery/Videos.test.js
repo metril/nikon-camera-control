@@ -6,6 +6,7 @@ import { useVideosStore } from '@/stores/videos'
 import { useSessionsStore } from '@/stores/sessions'
 import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
+import { useStorageStore } from '@/stores/storage'
 
 vi.mock('@/api', async (orig) => ({
   ...(await orig()),
@@ -96,5 +97,35 @@ describe('Videos', () => {
     await flushPromises()
     expect(v.remove).toHaveBeenCalledWith('s1', 'out.mp4')
     expect(toasts.error).toHaveBeenCalled()
+  })
+
+  it('without a storage shows the No storage empty state, no request and no error toast', async () => {
+    const { v, toasts, pinia } = setup()
+    wrapper.unmount()
+    v.fetch.mockClear()
+    useStorageStore(pinia).loaded = true
+    useStorageStore(pinia).targetId = null
+    wrapper = mount(Videos, { global: { plugins: [pinia] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.find('[data-testid=no-target]').text()).toContain('No storage chosen')
+    expect(v.fetch).not.toHaveBeenCalled()
+    expect(toasts.error).not.toHaveBeenCalled()
+  })
+
+  it('a NO_TARGET refusal shows the same state instead of a toast', async () => {
+    const { v, toasts } = setup()
+    wrapper.unmount()
+    const { pinia } = setup()
+    const videos = useVideosStore(pinia)
+    videos.fetch.mockRestore?.()
+    vi.spyOn(videos, 'fetch').mockRejectedValue(
+      Object.assign(new Error('x'), { code: 'NO_TARGET' }),
+    )
+    wrapper.unmount()
+    wrapper = mount(Videos, { global: { plugins: [pinia] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.find('[data-testid=no-target]').exists()).toBe(true)
+    expect(toasts.error).not.toHaveBeenCalled()
+    void v
   })
 })

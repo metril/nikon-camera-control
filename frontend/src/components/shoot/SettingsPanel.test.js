@@ -6,6 +6,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useSettingsStore } from '@/stores/settings'
 import { useToastsStore } from '@/stores/toasts'
 import { api } from '@/api'
+import { useLayoutMode, resetLayoutMode } from '@/composables/useLayoutMode'
 
 vi.mock('@/api', async (importOriginal) => {
   const orig = await importOriginal()
@@ -60,6 +61,24 @@ describe('SettingsPanel', () => {
     expect(w.find('[data-setting="batterylevel"] [data-testid="readonly-value"]').text()).toBe(
       '80%',
     )
+  })
+
+  it('Show all focuses the search on desktop but not on touch (no phone keyboard pop-up)', async () => {
+    for (const [pref, focused] of [
+      ['desktop', true],
+      ['touch', false],
+    ]) {
+      resetLayoutMode()
+      useLayoutMode().setPref(pref)
+      const { pinia } = setup()
+      const w = mount(SettingsPanel, { global: { plugins: [pinia] }, attachTo: document.body })
+      await w.find('[aria-expanded]').trigger('click')
+      await flushPromises()
+      const input = w.find('[data-testid="all-settings"] input').element
+      expect(document.activeElement === input, pref).toBe(focused)
+      w.unmount()
+    }
+    resetLayoutMode()
   })
 
   it('shows an empty state when disconnected', () => {

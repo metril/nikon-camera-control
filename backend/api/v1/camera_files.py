@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.types import Receive, Scope, Send
 
 from backend.api.deps import service_dep
@@ -85,6 +85,19 @@ async def list_camera_files(
     return Page[CameraFileEntry](
         items=entries[start : start + limit], total=len(entries), page=page, limit=limit
     )
+
+
+@router.get(
+    "/thumbnail",
+    operation_id="get_camera_thumbnail",
+    response_class=Response,
+    responses=binary_response("image/jpeg", "The camera's own preview JPEG of the file"),
+)
+async def get_camera_thumbnail(svc: FilesDep, folder: str, name: str) -> Response:
+    data = await svc.fetch_preview(validate_camera_folder(folder), validate_camera_name(name))
+    # short: the body reuses file names, so a long cache could show another photo
+    headers = {"Cache-Control": "private, max-age=60"}
+    return Response(data, media_type="image/jpeg", headers=headers)
 
 
 @router.post(

@@ -18,19 +18,22 @@ export const useFilesStore = defineStore('files', () => {
   const inflight = new Map()
 
   /** Load a page; `params` are merged into (and remembered as) the current query. */
+  let loadSeq = 0
   async function load(params = {}) {
     query.value = { ...query.value, ...params }
     loading.value = true
+    const seq = ++loadSeq
     try {
       return await guard(lastError, async () => {
         const page = await api.listFiles({ query: { ...query.value } })
+        if (seq !== loadSeq) return page // a newer load superseded this one
         items.value = page.items
         folders.value = page.folders || []
         total.value = page.total
         return page
       })
     } finally {
-      loading.value = false
+      if (seq === loadSeq) loading.value = false
     }
   }
   const reload = () => load()

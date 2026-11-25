@@ -215,7 +215,7 @@ describe('NO_TARGET handling', () => {
     useCameraStore().state = 'idle'
     const w = mnt(CaptureSide, pinia)
     expect(w.find('[data-testid="capture-btn"]').attributes('aria-disabled')).toBe('true')
-    expect(w.text()).toContain('No storage target')
+    expect(w.text()).toContain('No storage chosen')
   })
 
   it('gallery shows the state instead of an error toast on NO_TARGET', async () => {

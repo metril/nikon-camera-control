@@ -28,9 +28,7 @@ from backend.core.errors import (
     AppError,
     CameraBusy,
     CameraNotConnected,
-    CameraOperationFailed,
     FeatureUnsupported,
-    FocusLimit,
     InvalidState,
     SettingInvalid,
     SettingNotFound,
@@ -55,7 +53,6 @@ _LVAF_SERVO = (
 )
 _LVAF_SINGLE = "Single-servo AF"
 _LVAF_MANUAL = "Manual Focus"  # prefix: the D500 refuses manualfocusdrive in these modes too
-_LIMIT_HINTS = ("unspecified error", "could not complete")  # what a move past the end returns
 _RETRY_S = 0.3  # retry of a restore the camera was too busy for
 _SIZE = re.compile(r"(\d+)x(\d+)")
 _MODEL_SIZES = {"D500": (5568, 3712)}
@@ -136,9 +133,8 @@ class FocusService:
         mode = str(w.value or "").strip().upper()
         if mode in _NO_MF_DRIVE:
             raise InvalidState(
-                f"Manual focus drive and focus stacking need focus mode AF-S or MF; "
-                f"the camera is in {w.value}. Change the focus mode on the body.",
-                details={"focusmode": w.value, "needs": ["AF-S", "MF"]},
+                f"Manual focus drive is not attempted in focus mode {w.value}",
+                details={"focusmode": w.value},
             )
 
     def _lva_switch(self, b: Any) -> None:
@@ -153,10 +149,8 @@ class FocusService:
         try:
             b.set_config(_LVAF, _LVAF_SINGLE)
         except AppError as e:
-            raise InvalidState(
-                "Manual focus needs single-servo: set Live View AF to AF-S on the camera",
-                details={**e.details, "liveviewaffocus": cur},
-            ) from e
+            e.details = {**e.details, "liveviewaffocus": cur}  # camera's own message stays
+            raise
         if self._lva_orig is None:
             self._lva_orig = cur
         with contextlib.suppress(AppError):
@@ -358,17 +352,7 @@ class FocusService:
                     self._lva_switch(b)
                     b.set_config("manualfocusdrive", steps)
 
-                try:
-                    await self._drive_tracked(_drive, steps, owner)
-                except CameraOperationFailed as e:
-                    if e.details.get("operation") == "set_config(manualfocusdrive)" and any(
-                        h in str(e).lower() for h in _LIMIT_HINTS
-                    ):
-                        end = "closest" if steps < 0 else "farthest"
-                        raise FocusLimit(
-                            f"The lens is at its {end} focus", details={"steps": steps}
-                        ) from e
-                    raise
+                await self._drive_tracked(_drive, steps, owner)
             finally:
                 self._flush_lva()
                 if owner is None:  # a running stack restores at its end

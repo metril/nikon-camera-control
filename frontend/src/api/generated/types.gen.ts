@@ -3496,7 +3496,7 @@ export type StorageCardOut = {
     /**
      * Free Images
      */
-    free_images: number;
+    free_images?: number | null;
     /**
      * Free Kb
      */
@@ -3512,12 +3512,6 @@ export type StorageCardOut = {
  */
 export type StorageConfigPatch = {
     /**
-     * Backup Ids
-     *
-     * Locations used for backups.
-     */
-    backup_ids?: Array<string> | null;
-    /**
      * Backup Interval Min
      *
      * How often backups run.
@@ -3530,69 +3524,11 @@ export type StorageConfigPatch = {
      */
     deep_verify?: boolean | null;
     /**
-     * Locations
-     *
-     * Configured storage locations.
-     */
-    locations?: Array<StorageLocation> | null;
-    /**
      * Sidecars
      *
      * Save a SHA-256 checksum file next to every photo.
      */
     sidecars?: boolean | null;
-    /**
-     * Target Id
-     *
-     * Location that receives every photo.
-     */
-    target_id?: string | null;
-};
-
-/**
- * StorageLocation
- *
- * A configured storage location. Passwords are never stored here (see SecretStore).
- */
-export type StorageLocation = {
-    /**
-     * Auto Mount
-     *
-     * Mount automatically when available
-     */
-    auto_mount?: boolean;
-    /**
-     * Domain
-     */
-    domain?: string | null;
-    /**
-     * Id
-     *
-     * usb-<fs uuid> or smb-<slug>
-     */
-    id: string;
-    /**
-     * Kind
-     */
-    kind: 'usb' | 'smb';
-    /**
-     * Name
-     *
-     * Display name
-     */
-    name?: string;
-    /**
-     * Unc
-     */
-    unc?: string | null;
-    /**
-     * Username
-     */
-    username?: string | null;
-    /**
-     * Uuid
-     */
-    uuid?: string | null;
 };
 
 /**
@@ -4967,6 +4903,60 @@ export type GetCameraSummaryResponses = {
 
 export type GetCameraSummaryResponse = GetCameraSummaryResponses[keyof GetCameraSummaryResponses];
 
+export type GetCameraThumbnailData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Folder
+         */
+        folder: string;
+        /**
+         * Name
+         */
+        name: string;
+    };
+    url: '/api/v1/camera/thumbnail';
+};
+
+export type GetCameraThumbnailErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetCameraThumbnailError = GetCameraThumbnailErrors[keyof GetCameraThumbnailErrors];
+
+export type GetCameraThumbnailResponses = {
+    /**
+     * The camera's own preview JPEG of the file
+     */
+    200: Blob | File;
+};
+
+export type GetCameraThumbnailResponse = GetCameraThumbnailResponses[keyof GetCameraThumbnailResponses];
+
 export type CapturePhotoData = {
     body: CaptureRequest;
     path?: never;
@@ -5588,7 +5578,7 @@ export type ListFilesData = {
         /**
          * Kind
          */
-        kind?: 'image' | 'raw' | 'video' | 'all';
+        kind?: 'image' | 'raw' | 'video' | 'photos' | 'all';
         /**
          * Sort
          */

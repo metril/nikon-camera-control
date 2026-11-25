@@ -66,6 +66,10 @@ def _optional_model(name: str, model: type[BaseModel], skip: frozenset[str] = fr
     return create_model(name, __config__=ConfigDict(extra="forbid"), **fields)
 
 
+# Managed through /storage (busy checks, events, secrets); a raw config patch would bypass them.
+_NOT_PATCHABLE = {"storage": frozenset({"locations", "target_id", "backup_ids"})}
+
+
 def _build_patch() -> type[BaseModel]:
     fields: dict[str, Any] = {}
     for n, f in AppConfig.model_fields.items():
@@ -73,7 +77,8 @@ def _build_patch() -> type[BaseModel]:
             continue
         ann = f.annotation
         if isinstance(ann, type) and issubclass(ann, BaseModel):
-            sub = _optional_model(f"{ann.__name__}Patch", ann)
+            skip = _NOT_PATCHABLE.get(n, frozenset())
+            sub = _optional_model(f"{ann.__name__}Patch", ann, skip)
             fields[n] = (sub | None, Field(default=None, description=f.description))
         else:
             fields[n] = (_opt(ann), Field(default=None, description=f.description))

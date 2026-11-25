@@ -36,7 +36,7 @@ class StorageCardOut(BaseModel):
     base_dir: str
     capacity_kb: int
     free_kb: int
-    free_images: int
+    free_images: int | None = None
     access: str
 
 

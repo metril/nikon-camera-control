@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 
 from backend.api.schemas.common import EventType
-from backend.camera.backend import parse_property_change, parse_property_event
+from backend.camera.backend import parse_property_change
 from backend.camera.fake import FakeCamera
 from backend.core import camera_service, property_sync
 
@@ -37,23 +37,6 @@ async def _changes(app: FastAPI, name: str, action, wait_s: float = 0.5) -> list
     return seen
 
 
-@pytest.mark.parametrize(
-    ("text", "code"),
-    [
-        ('PTP Property 0000500f changed, "iso" to "800"', 0x500F),
-        ('PTP Property 0000d100 changed, "shutterspeed2" to "1/80"', 0xD100),
-        ('PTP Property 0000d0b5 changed, "ISOControlSensitivity" to "320"', 0xD0B5),
-        ('PTP Property 500f changed, "ISO Speed" to "400"', 0x500F),
-        ("PTP Property d1a2 changed", 0xD1A2),
-        ('PTP Property 500D changed, "Exposure Time"', 0x500D),
-        ("Unknown event 4004", None),
-        ("", None),
-    ],
-)
-def test_parse_property_event(text: str, code: int | None) -> None:
-    assert parse_property_event(text) == code
-
-
 async def test_body_change_publishes_new_value(
     app: FastAPI, connected_client, fake_camera: FakeCamera
 ) -> None:
@@ -69,7 +52,7 @@ async def test_unmapped_property_code_is_ignored(
 ) -> None:
     svc = app.state.camera_service
     gets = fake_camera.calls.get("get_config", 0)
-    svc._prop_sync.on_codes([0x9999])
+    svc._prop_sync.on_event(0x9999)
     await asyncio.sleep(0.3)
     assert fake_camera.calls.get("get_config", 0) == gets
 
@@ -105,7 +88,8 @@ async def test_unknown_names_are_never_refreshed_and_no_full_tree_read(
     svc._name_cache = {}
     gets = fake_camera.calls.get("get_config", 0)
     lists = fake_camera.calls.get("list_config", 0)
-    svc._prop_sync.on_codes([0x500E, 0x500B])
+    svc._prop_sync.on_event(0x500E)
+    svc._prop_sync.on_event(0x500B)
     await asyncio.sleep(0.4)
     assert fake_camera.calls.get("get_config", 0) == gets
     assert fake_camera.calls.get("list_config", 0) == lists

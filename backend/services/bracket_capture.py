@@ -85,11 +85,13 @@ class BracketCaptureService:
     async def _job(
         self, ctx: JobContext, req: BracketRequest, steps: list[BracketStep], held: HeldContext
     ) -> dict[str, Any]:
-        out_root = self._capture.output_dir
-        dest = out_root / "brackets" / local_now().strftime("%Y-%m-%d-%H%M%S-%f")
         prefix = sanitize_prefix(req.filename_prefix or self._config.config.camera.filename_prefix)
         shots: list[BracketShot] = []
+        out_root = dest = None
         try:
+            if req.download:  # the storage root is only needed (and may be missing) for downloads
+                out_root = self._capture.output_dir
+                dest = out_root / "brackets" / local_now().strftime("%Y-%m-%d-%H%M%S-%f")
             snapshot = await self._settings.snapshot(touched_settings(steps))
             try:
                 for i, step in enumerate(steps):
@@ -104,7 +106,7 @@ class BracketCaptureService:
                     shot = BracketShot(
                         index=i, label=step.label, settings=dict(step.settings), files=[]
                     )
-                    if req.download:
+                    if dest is not None and out_root is not None:
                         local = await self._capture.capture_to(
                             dest, owner=OWNER, name_prefix=f"{prefix}{i + 1:02d}-"
                         )
@@ -118,7 +120,9 @@ class BracketCaptureService:
         finally:
             await held.release()
         return {
-            "directory": _rel(dest, out_root) if req.download else None,
+            "directory": _rel(dest, out_root)
+            if dest is not None and out_root is not None
+            else None,
             "shots": [s.model_dump() for s in shots],
         }
 

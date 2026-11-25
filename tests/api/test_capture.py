@@ -365,10 +365,12 @@ async def test_capture_card_unusable_is_typed(
     assert (await connected_client.get("/api/v1/camera")).json()["state"] == "idle"
 
 
-async def test_capture_stale_precheck_maps_failure(
+async def test_capture_stale_precheck_keeps_camera_error_and_adds_card_facts(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     assert (await connected_client.post(C, json={})).status_code == 200  # primes the cache
     fake_camera.card_state("ro")
     r = await connected_client.post(C, json={})
-    assert r.json()["error"]["code"] == "CARD_LOCKED"
+    err = r.json()["error"]
+    assert err["code"] == "CAMERA_OPERATION_FAILED"  # never relabelled as an inferred cause
+    assert err["details"]["card"]["writable"] == 0

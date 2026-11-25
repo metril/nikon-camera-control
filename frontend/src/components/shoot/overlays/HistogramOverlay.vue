@@ -39,7 +39,7 @@ const pct = (v) => `${((v || 0) * 100).toFixed(1)}%`
 <template>
   <div class="lv-hist" data-testid="lv-hist" role="img" aria-label="Luminance histogram">
     <canvas ref="cv" width="256" height="70" />
-    <div class="flex justify-between font-mono text-[10.5px] font-medium tabular-nums">
+    <div class="flex justify-between font-mono text-xs font-medium tabular-nums">
       <span class="text-camera-cold" data-testid="lv-clip-shadow"
         >Shadows {{ pct(histogram?.lo) }}</span
       >

@@ -86,7 +86,7 @@ export function buildSections(schema) {
   }
   if (general.length)
     sections.push({
-      key: '_general',
+      key: 'general',
       title: 'General',
       description: '',
       fields: general,
@@ -134,7 +134,7 @@ export function pathTitles(sections) {
   const out = {}
   for (const s of sections)
     for (const f of s.fields)
-      out[s.path(f)] = s.key === '_general' ? f.title : `${s.title} › ${f.title}`
+      out[s.path(f)] = s.key === 'general' ? f.title : `${s.title} › ${f.title}`
   return out
 }
 export function titleForPath(titles, path) {

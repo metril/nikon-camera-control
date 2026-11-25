@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
@@ -33,7 +35,13 @@ from backend.core.errors import InvalidState, PathNotAllowed
 from backend.core.jobs import JobContext
 from backend.core.security import require_api_key
 from backend.services import integrity
-from backend.services.backup import BackupService, dest_lock, offload_files, select_files
+from backend.services.backup import (
+    BackupService,
+    dest_lock,
+    offload_files,
+    select_files,
+    session_of,
+)
 from backend.services.locations import LocationInfo, LocationService
 from backend.services.storage import safe_join
 
@@ -208,6 +216,25 @@ async def start_offload(
     sidecars = store.config.storage.sidecars
     loop = asyncio.get_running_loop()
 
+    verdict: list[Any] = [float("-inf"), frozenset()]  # checked-at, in-use ids (worker thread only)
+
+    def session_started(path: Path) -> bool:
+        """A session that began after the file list was taken must not lose frames. Asked per
+        file; the in-use set is global so it is re-read at most every 2 s, not per folder."""
+        sid = session_of(path, src)
+        if sid is None or body.from_id != svc.target_id:
+            return False
+        now = time.monotonic()
+        if now - verdict[0] >= 2.0:
+            try:
+                verdict[1] = asyncio.run_coroutine_threadsafe(sessions.in_use_ids(), loop).result(
+                    30
+                )
+            except (TimeoutError, concurrent.futures.TimeoutError):
+                return True  # cannot tell: leave this file alone, keep the offload going
+            verdict[0] = now
+        return sid in verdict[1]
+
     async def run(ctx: JobContext) -> dict[str, Any]:
         cancel = threading.Event()
         try:
@@ -221,6 +248,7 @@ async def start_offload(
                     sidecars=sidecars,
                     cancel=cancel,
                     progress=_progress(loop, ctx, "Offloading"),
+                    skip=session_started,
                 )
         except asyncio.CancelledError:
             cancel.set()
@@ -229,6 +257,7 @@ async def start_offload(
             "total": len(files),
             "copied": rep.copied,
             "skipped": rep.skipped,
+            "vetoed": rep.vetoed,
             "deleted_source": rep.deleted_source,
             "failed": [f"{p}: {m}" for p, m in rep.failed[:RESULT_LIST_CAP]],
             "failed_count": len(rep.failed),
