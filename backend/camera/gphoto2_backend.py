@@ -499,8 +499,10 @@ class Gphoto2Backend:
                 self._enable_viewfinder()
             if self._pv_file is None:
                 self._pv_file = gp.CameraFile()
-            f = cam.capture_preview(self._pv_file, self._ctx)  # ctx: keeps the camera's error text
-            return bytes(f.get_data_and_size())
+            # Given a CameraFile, python-gphoto2 fills it and returns None (ctx keeps the
+            # camera's error text), so the frame is read from the reused file.
+            cam.capture_preview(self._pv_file, self._ctx)
+            return bytes(self._pv_file.get_data_and_size())
         except gp.GPhoto2Error as e:
             self._viewfinder_on = False  # re-enable (with retry) on the next frame
             raise self._translate(e, "capture_preview") from e
