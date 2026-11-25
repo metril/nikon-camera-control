@@ -207,14 +207,11 @@ def test_binding_calls_match_installed_signatures(tmp_path: Path) -> None:
 
     class Cam:
         def capture_preview(self, *args: Any) -> Any:
+            # like python-gphoto2: given a CameraFile it fills that file and returns None
             assert len(args) == 2 and args[1] is b._ctx
             seen.append(args[0])
-
-            class F:
-                def get_data_and_size(self) -> bytes:
-                    return b"jpg"
-
-            return F()
+            args[0].set_data_and_size(b"jpg")
+            return None
 
         def file_get(self, folder: str, name: str, t: int, *args: Any) -> Any:
             assert args[0] is None and args[1] is b._ctx
@@ -423,12 +420,9 @@ def test_invalidate_preview_makes_next_preview_reenable() -> None:
     )
 
     class Cam(FakeCamera):
-        def capture_preview(self, *_a: Any) -> Any:
-            class F:
-                def get_data_and_size(self) -> bytes:
-                    return b"j"
-
-            return F()
+        def capture_preview(self, *a: Any) -> Any:
+            a[0].set_data_and_size(b"j")  # fills the given CameraFile, returns None
+            return None
 
     c2 = Cam(root)
     b = _backend(c2)
@@ -535,12 +529,8 @@ def _vf_cam(busy_times: int, preview_ok: bool = True) -> Any:
         def capture_preview(self, *_a: Any) -> Any:
             if not preview_ok:
                 raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_BUSY)
-
-            class F:
-                def get_data_and_size(self) -> bytes:
-                    return b"j"
-
-            return F()
+            _a[0].set_data_and_size(b"j")  # like python-gphoto2: fills the file, returns None
+            return None
 
     return Cam(root)
 
