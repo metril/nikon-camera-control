@@ -7,6 +7,9 @@ import { useToastsStore } from '@/stores/toasts'
 import { useJobsStore } from '@/stores/jobs'
 import { useAuthStore } from '@/stores/auth'
 import { useEventsStore } from '@/stores/events'
+import { useConfigStore } from '@/stores/config'
+import { useStorageStore } from '@/stores/storage'
+import { useLayoutMode } from '@/composables/useLayoutMode'
 import AppHeader from './AppHeader.vue'
 import CameraGate from './CameraGate.vue'
 import { jobSummary } from './jobSummary'
@@ -56,6 +59,20 @@ describe('AppHeader and camera chip', () => {
     w.unmount()
   })
 
+  it('shows an unknown shots-left count as a dash, never 0', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
+    camera.connected = true
+    camera.state = 'idle'
+    camera.storage = { cards: [{ free_images: null, free_kb: 1024 * 1024 }] }
+    const w = mountHeader(p)
+    expect(w.find('[data-test="shots"]').text()).toBe('–')
+    await w.find('[data-test="chip"]').trigger('click')
+    expect(w.find('[data-test="storage"]').text()).toMatch(/^– shots left/)
+    w.unmount()
+  })
+
   it('says No permission when connecting failed because the camera cannot be opened', () => {
     const p = pinia()
     const camera = useCameraStore()
@@ -82,6 +99,24 @@ describe('AppHeader and camera chip', () => {
     w.unmount()
   })
 
+  it('shows the serial number without its zero padding, full value on hover', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
+    camera.connected = true
+    camera.state = 'idle'
+    camera.serial = '00000000000000000000000003034192'
+    const w = mountHeader(p)
+    await w.find('[data-test="chip"]').trigger('click')
+    const dd = w.find('[data-test="serial"]')
+    expect(dd.text()).toBe('3034192')
+    expect(dd.attributes('title')).toBe('00000000000000000000000003034192')
+    camera.serial = '0000'
+    await nextTick()
+    expect(w.find('[data-test="serial"]').text()).toBe('0')
+    w.unmount()
+  })
+
   it('opens the camera popover when connected; Esc closes it and Disconnect works', async () => {
     const p = pinia()
     const camera = useCameraStore()
@@ -99,19 +134,69 @@ describe('AppHeader and camera chip', () => {
     expect(w.find('[data-test="camera-popover"]').exists()).toBe(false)
     await w.find('[data-test="chip"]').trigger('click')
     await w.find('[data-test="toggle"]').trigger('click')
+    expect(camera.disconnect).not.toHaveBeenCalled() // first click only asks
+    expect(w.find('[data-test="toggle"]').text()).toContain('Disconnect the camera?')
+    await w.find('[data-test="toggle"]').trigger('click')
     expect(camera.disconnect).toHaveBeenCalled()
     w.unmount()
   })
 
-  it('switches the layout from the header', async () => {
+  it('popover: Saves to links to Settings › Storage, reads "Card only" when downloads are off, battery loads', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
+    let resolveBattery
+    camera.fetchBattery = vi.fn(
+      () => new Promise((r) => (resolveBattery = () => r((camera.battery = { percent: 55 })))),
+    )
+    camera.connected = true
+    camera.state = 'idle'
+    const storage = useStorageStore()
+    storage.loaded = true
+    const navigate = vi.fn()
+    const w = mount(AppHeader, {
+      props: { activeTab: 'shoot' },
+      global: { plugins: [p], provide: { navigate } },
+      attachTo: document.body,
+    })
+    await w.find('[data-test="chip"]').trigger('click')
+    expect(w.find('[data-test="battery-loading"]').exists()).toBe(true)
+    resolveBattery()
+    await flushPromises()
+    expect(w.find('[data-test="battery"]').text()).toContain('55%')
+    await w.find('[data-test="storage-link"]').trigger('click')
+    expect(navigate).toHaveBeenCalledWith('settings', { section: 'storage' })
+    useConfigStore().config = { camera: { download_photos: false } }
+    await w.find('[data-test="chip"]').trigger('click')
+    expect(w.find('[data-test="saves-card"]').text()).toBe('Card only')
+    w.unmount()
+  })
+
+  it('phone chip shows the short model; Jobs button is labelled', async () => {
+    const p = pinia()
+    const camera = useCameraStore()
+    camera.fetchStorage = vi.fn(async () => {})
+    camera.connected = true
+    camera.state = 'idle'
+    camera.model = 'Nikon DSC D500'
+    const w = mountHeader(p)
+    expect(w.find('.short').text()).toBe('D500')
+    expect(w.find('[data-test="jobs-button"]').attributes('aria-label')).toBe('Jobs')
+    expect(w.find('[data-test="jobs-button"]').attributes('title')).toBe('Jobs')
+    w.unmount()
+  })
+
+  it('switches the layout from the header on desktop; the toggle is gone in touch layout', async () => {
     const p = pinia()
     useCameraStore().fetchStorage = vi.fn(async () => {})
     const w = mountHeader(p)
     await w.find('[data-test="layout-touch"]').trigger('click')
     expect(document.documentElement.dataset.layout).toBe('touch')
-    expect(w.find('[data-test="layout-touch"]').attributes('aria-pressed')).toBe('true')
-    await w.find('[data-test="layout-desktop"]').trigger('click')
-    expect(document.documentElement.dataset.layout).toBe('desktop')
+    await nextTick()
+    expect(w.find('[data-test="layout-desktop"]').exists()).toBe(false)
+    useLayoutMode().setPref('desktop')
+    await nextTick()
+    expect(w.find('[data-test="layout-touch"]').exists()).toBe(true)
     w.unmount()
   })
 })

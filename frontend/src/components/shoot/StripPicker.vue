@@ -26,10 +26,13 @@ function place() {
   if (isTouch.value || !props.anchor?.getBoundingClientRect) return
   const r = props.anchor.getBoundingClientRect()
   const width = props.twoLine ? 300 : 240
+  const below = window.innerHeight - r.bottom - 20
+  const above = r.top - 20
+  const flip = below < 160 && above > below // too little room under the cell: open upwards
   style.value = {
     left: `${Math.min(window.innerWidth - width - 16, Math.max(8, r.left))}px`,
-    top: `${r.bottom + 6}px`,
-    maxHeight: `${Math.max(160, Math.min(340, window.innerHeight - r.bottom - 20))}px`,
+    ...(flip ? { bottom: `${window.innerHeight - r.top + 6}px` } : { top: `${r.bottom + 6}px` }),
+    maxHeight: `${Math.max(80, Math.min(340, flip ? above : below))}px`,
   }
 }
 
@@ -53,9 +56,16 @@ function onKeydown(e) {
   list[next].focus()
 }
 
+// capture-phase: any scrolling ancestor moves the anchor, but the panel's own list does not
+const onScroll = (e) => {
+  if (!panel.value?.contains(e.target)) place()
+}
+
 const locked = computed(() => !!props.lockedReason)
 onMounted(async () => {
   place()
+  window.addEventListener('resize', place)
+  window.addEventListener('scroll', onScroll, true)
   await nextTick()
   const sel = panel.value?.querySelector('[aria-selected="true"]')
   sel?.scrollIntoView?.({ block: 'center' })
@@ -64,6 +74,8 @@ onMounted(async () => {
   })
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', place)
+  window.removeEventListener('scroll', onScroll, true)
   if (props.anchor?.isConnected) props.anchor.focus?.({ preventScroll: true })
 })
 </script>

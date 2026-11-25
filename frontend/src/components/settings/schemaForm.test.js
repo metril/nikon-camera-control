@@ -35,7 +35,7 @@ const schema = {
 describe('schemaForm', () => {
   const sections = buildSections(schema)
   it('builds sections from $ref objects and groups root scalars', () => {
-    expect(sections.map((s) => s.key)).toEqual(['video', '_general'])
+    expect(sections.map((s) => s.key)).toEqual(['video', 'general'])
     expect(sections[0].title).toBe('Video')
     expect(sections[0].fields.map((f) => f.name)).toEqual(['crf', 'codec', 'path', 'timeout_s'])
     expect(sections[1].fields.map((f) => f.name)).toEqual(['cors_origins', 'new_flag'])

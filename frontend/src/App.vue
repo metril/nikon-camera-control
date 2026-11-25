@@ -38,6 +38,11 @@ const VIEWS = {
 }
 const { activeTab, select } = useTabs()
 const current = computed(() => VIEWS[activeTab.value])
+const tabLabel = computed(() => TABS.find((t) => t.id === activeTab.value)?.label || '')
+const mainEl = ref(null)
+const focusMain = () => mainEl.value?.focus()
+// Views emit open-settings with an optional section id ('storage', 'api-key', ...).
+const openQuery = (section) => (typeof section === 'string' ? { section } : undefined)
 provide('activeTab', readonly(activeTab))
 // Cross-tab navigation for views: inject('navigate')('gallery'). Also handled: open-gallery/open-timelapse/open-settings events.
 provide('navigate', select)
@@ -85,6 +90,9 @@ const SHORTCUTS = [
 
 <template>
   <div class="flex min-h-screen flex-col bg-camera-bg">
+    <a href="#main" class="skip" data-test="skip" @click.prevent="focusMain"
+      >Skip to main content</a
+    >
     <AppHeader
       :active-tab="activeTab"
       @select="select"
@@ -96,9 +104,10 @@ const SHORTCUTS = [
     <a
       v-if="auth.authEnabled === false"
       :ref="measureBanner"
-      href="#/settings"
+      href="#/settings?section=api-key"
       class="warn-bar"
       data-test="no-key-warning"
+      @click.prevent="select('settings', { section: 'api-key' })"
     >
       <UiIcon name="TriangleAlert" :size="16" />
       No API key set. Anyone on the network can control the camera. Set one in Settings.
@@ -112,17 +121,20 @@ const SHORTCUTS = [
     >
       The server rejected this page's address. Add it to Allowed origins in Settings, then reload.
       <template #action>
-        <UiButton size="sm" @click="select('settings')">Open Settings</UiButton>
+        <UiButton size="sm" @click="select('settings', { section: 'general' })">
+          Open settings
+        </UiButton>
       </template>
     </UiAlert>
 
-    <main class="main">
+    <main id="main" ref="mainEl" class="main" tabindex="-1">
+      <h1 class="sr-only" data-test="view-title">{{ tabLabel }}</h1>
       <KeepAlive>
         <component
           :is="current"
           @open-gallery="select('gallery')"
           @open-timelapse="select('timelapse')"
-          @open-settings="select('settings')"
+          @open-settings="(section) => select('settings', openQuery(section))"
         />
       </KeepAlive>
     </main>
@@ -178,6 +190,23 @@ html[data-layout='touch'] {
 .stripe.busy {
   background: theme('colors.camera.warn');
 }
+.skip {
+  position: absolute;
+  left: 8px;
+  top: -100px;
+  z-index: 60;
+  padding: 10px 14px;
+  border-radius: theme('borderRadius.control');
+  background: theme('colors.camera.accent');
+  color: theme('colors.camera.accent-ink');
+  font-weight: 600;
+}
+.skip:focus {
+  top: 8px;
+}
+.main:focus {
+  outline: none;
+}
 .warn-bar {
   display: flex;
   align-items: center;
@@ -189,6 +218,9 @@ html[data-layout='touch'] {
   color: theme('colors.camera.warn');
   font-size: 13px;
   text-align: center;
+}
+html[data-layout='touch'] .warn-bar {
+  min-height: 44px;
 }
 .main {
   flex: 1;
@@ -232,7 +264,7 @@ kbd {
   padding: 6px 0;
   border-radius: theme('borderRadius.inner');
   color: theme('colors.camera.muted');
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   text-decoration: none;
 }

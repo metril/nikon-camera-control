@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import RunPanel from './RunPanel.vue'
-import { resetDraft } from './useDraft'
+import { draft, resetDraft } from './useDraft'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { useCameraStore } from '@/stores/camera'
 import { useFilesStore } from '@/stores/files'
@@ -125,5 +125,12 @@ describe('RunPanel', () => {
     })
     expect(w.text()).toContain('4 of 10 frames')
     expect(w.text()).toContain('12')
+  })
+
+  it('before the first frame the bar reads "0 of <planned>" from the draft', () => {
+    draft.limit = 'frames'
+    draft.totalFrames = 120
+    const { w } = setup('idle', { counters: {} })
+    expect(w.text()).toContain('0 of 120 frames')
   })
 })

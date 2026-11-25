@@ -13,26 +13,50 @@ const capture = useCaptureStore()
 const files = useFilesStore()
 
 const thumbs = ref({}) // path -> src
-const releases = []
+const releases = new Map() // path -> release
+const pending = new Set() // paths being fetched
+const root = ref(null)
+const shown = ref(typeof IntersectionObserver !== 'function') // false while display:none (touch landscape): no fetches
 let gone = false
+let io = null
+onMounted(() => {
+  if (typeof IntersectionObserver !== 'function') return
+  io = new IntersectionObserver(([e]) => (shown.value = e.isIntersecting))
+  io.observe(root.value)
+})
 onUnmounted(() => {
   gone = true
-  releases.splice(0).forEach((r) => r())
+  io?.disconnect()
+  releases.forEach((r) => r())
+  releases.clear()
 })
 
 watch(
-  () => capture.recent,
-  (list) => {
+  () => [capture.recent, shown.value],
+  ([list, on]) => {
+    // free the blob URLs of captures that left the strip
+    const keep = new Set(list.map((f) => f.path))
+    const next = { ...thumbs.value }
+    for (const [path, release] of releases)
+      if (!keep.has(path)) {
+        release()
+        releases.delete(path)
+        delete next[path]
+      }
+    thumbs.value = next
+    if (!on) return
     for (const f of list) {
-      if (thumbs.value[f.path]) continue
+      if (thumbs.value[f.path] || pending.has(f.path)) continue
+      pending.add(f.path)
       files
         .acquireThumbnail(f.path, 200)
         .then((h) => {
-          if (gone) return h.release()
-          releases.push(h.release)
+          pending.delete(f.path)
+          if (gone || !capture.recent.some((r) => r.path === f.path)) return h.release()
+          releases.set(f.path, h.release)
           thumbs.value = { ...thumbs.value, [f.path]: h.url }
         })
-        .catch(() => {})
+        .catch(() => pending.delete(f.path))
     }
   },
   { immediate: true },
@@ -52,7 +76,7 @@ const newest = (i) =>
 </script>
 
 <template>
-  <div class="film" data-testid="recent-captures">
+  <div ref="root" class="film" data-testid="recent-captures">
     <div class="flex items-center justify-between gap-2">
       <span class="eyebrow">Recent captures</span>
       <UiButton variant="ghost" size="sm" class="-mr-2.5" @click="emit('open-gallery')">

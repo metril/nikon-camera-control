@@ -1,7 +1,7 @@
 """Live sync of settings changed on the camera body.
 
 libgphoto2 reports a PTP DevicePropChanged as an UNKNOWN event whose text starts
-``PTP Property <code> changed`` (see ``parse_property_event``). The backend hands the code to
+``PTP Property <code> changed`` (see ``parse_property_change``). The backend hands the code to
 ``CameraService``, which feeds it here: codes are mapped to widget names, collected for
 ``DEBOUNCE_S``, then each widget is re-read through the normal settings path and announced as
 SETTING_CHANGED. A widget is refreshed at most once per ``MIN_GAP_S`` and not at all within
@@ -56,11 +56,6 @@ class PropertySync:
         """The app just wrote ``name``: ignore the body's echo of it for ``ECHO_S``."""
         self._written[name] = time.monotonic()
         self._pending.pop(name, None)
-
-    def on_codes(self, codes: list[int]) -> None:
-        """Loop thread. Queue the widgets behind these property codes."""
-        for code in codes:
-            self.on_event(code)
 
     def on_event(self, code: int, name: str | None = None, value: str | None = None) -> None:
         """Loop thread. Queue one property change. The reported widget ``name`` wins over the

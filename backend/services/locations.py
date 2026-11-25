@@ -50,9 +50,18 @@ Runner = Callable[..., Awaitable[tuple[int, str, str]]]  # (args, stdin=None)
 Listener = Callable[[str, str | None], None]
 
 
-async def sudo_runner(args: Sequence[str], stdin: str | None = None) -> tuple[int, str, str]:
+FSCK_TIMEOUT_S = 3600.0  # a repair of a big drive legitimately takes long
+TERM_GRACE_S = 10.0
+LIVE_MOUNT_TTL_S = 0.25  # how long root_of() trusts its last read of the mount table
+
+
+async def sudo_runner(
+    args: Sequence[str], stdin: str | None = None, limit_s: float = 180.0
+) -> tuple[int, str, str]:
     """Run the helper as root via sudo (the only privileged operation the app performs).
-    ``stdin`` carries secrets (SMB credentials); they never touch the filesystem."""
+    ``stdin`` carries secrets (SMB credentials); they never touch the filesystem.
+    On timeout/cancel sudo gets SIGTERM, which it relays to the helper (a SIGKILL of sudo
+    would orphan the root process), and is killed only if it ignores that."""
     proc = await asyncio.create_subprocess_exec(
         "sudo",
         "-n",
@@ -64,11 +73,17 @@ async def sudo_runner(args: Sequence[str], stdin: str | None = None) -> tuple[in
     )
     try:
         out, err = await asyncio.wait_for(
-            proc.communicate(None if stdin is None else stdin.encode()), timeout=180
+            proc.communicate(None if stdin is None else stdin.encode()), timeout=limit_s
         )
     except BaseException:
         with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+            proc.terminate()
+            try:
+                await asyncio.wait_for(asyncio.shield(proc.wait()), TERM_GRACE_S)
+            except (TimeoutError, asyncio.CancelledError):
+                proc.kill()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(asyncio.shield(proc.wait()), TERM_GRACE_S)  # reap
         raise
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
@@ -147,7 +162,6 @@ class LocationService:
         runner: Runner = sudo_runner,
         mount_base: Path = Path("/mnt/loc"),
         mountinfo: Path = Path("/proc/self/mountinfo"),
-        ismount: Callable[[str], bool] = os.path.ismount,
         busy: Callable[[], bool] = lambda: False,
         poll_interval_s: float = 3.0,
         fixed_target: Path | None = None,
@@ -158,7 +172,9 @@ class LocationService:
         self._run = runner
         self._base = Path(mount_base)
         self._mountinfo = Path(mountinfo)
-        self._ismount = ismount
+        self._points: set[str] = set()  # mount points seen by the last live read / mount / unmount
+        self._live_at = float("-inf")
+        self._fsck_busy: set[str] = set()
         self.busy = busy
         self._poll = poll_interval_s
         self._fixed = Path(fixed_target) if fixed_target is not None else None
@@ -191,9 +207,18 @@ class LocationService:
         rt = self._rt.get(location_id)
         if rt is None or not rt.mounted or rt.root is None:
             return None
-        if not self._ismount(str(self.mount_point(location_id))):
+        if str(self.mount_point(location_id)) not in self._live_points():
             return None
         return rt.root
+
+    def _live_points(self) -> set[str]:
+        """Mount table read straight from mountinfo (a procfs read: never touches the mounts,
+        so a dead SMB share cannot hang it), cached for a fraction of a second. Catches a
+        vanished mount before the next poll so writes never land in the bare mount dir."""
+        now = time.monotonic()
+        if now - self._live_at >= LIVE_MOUNT_TTL_S:
+            self._points, self._live_at = self._mounted_points(), now
+        return self._points
 
     def root(self) -> Path:
         if self._fixed is not None:
@@ -411,10 +436,10 @@ class LocationService:
         return self._info(new)
 
     async def remove(self, location_id: str) -> None:
-        cfg = self._store.config.storage
         self._cfg(location_id)
         if self._state(location_id).mounted:
             await self.unmount(location_id)
+        cfg = self._store.config.storage  # after the await: the config may have changed meanwhile
         self._store.update(
             {
                 "storage": {
@@ -455,7 +480,12 @@ class LocationService:
         self._changed("backups", None)
 
     # ---- mount / unmount ----------------------------------------------------------------
+    def _check_not_checking(self, location_id: str) -> None:
+        if location_id in self._fsck_busy:
+            raise LocationBusy("The drive is being checked", details={"id": location_id})
+
     async def mount(self, location_id: str, *, user: bool = True) -> LocationInfo:
+        self._check_not_checking(location_id)
         async with self._lock:
             return await self._mount(location_id, user=user)
 
@@ -486,6 +516,8 @@ class LocationService:
             rt.error = "Unexpected helper output"
             raise MountFailed(rt.error) from exc
         rt.mounted, rt.root, rt.error, rt.backoff = True, root, None, 2.0
+        self._points.add(str(self.mount_point(location_id)))
+        self._live_at = float("-inf")
         rt.encrypted = data.get("encrypted") if isinstance(data.get("encrypted"), bool) else None
         self._gen[location_id] = self._gen.get(location_id, 0) + 1
         rt.fstype = fstype or rt.fstype
@@ -510,6 +542,7 @@ class LocationService:
         return await self._run(["mount-smb", slug, loc.unc or ""], stdin=creds)
 
     async def unmount(self, location_id: str, *, lazy: bool = False, user: bool = True) -> None:
+        self._check_not_checking(location_id)
         async with self._lock:
             await self._unmount(location_id, lazy=lazy, user=user)
 
@@ -526,6 +559,8 @@ class LocationService:
         if rc != 0:
             raise MountFailed((err.strip() or out.strip() or "unmount failed")[:500])
         rt.mounted, rt.root, rt.free, rt.encrypted = False, None, None, None
+        self._points.discard(str(self.mount_point(location_id)))
+        self._live_at = float("-inf")
         if user:
             rt.user_unmounted = True
         self._changed("unmounted", location_id)
@@ -534,10 +569,21 @@ class LocationService:
         loc = self._cfg(location_id)
         if loc.kind != "usb":
             raise InvalidState("Only USB drives can be checked")
-        async with self._lock:
-            if self._state(location_id).mounted:
-                raise InvalidState("Unmount the drive before checking it")
-            rc, out, err = await self._run(["fsck", loc.uuid or ""])
+        self._check_not_checking(location_id)
+        if self._state(location_id).mounted:
+            raise InvalidState("Unmount the drive before checking it")
+        # Not under self._lock: a check can take an hour and must not stall polling,
+        # unplug detection or other locations. Only this id is refused meanwhile.
+        self._fsck_busy.add(location_id)
+        try:
+            rc, out, err = await self._run(["fsck", loc.uuid or ""], limit_s=FSCK_TIMEOUT_S)
+        except TimeoutError as exc:
+            raise MountFailed(
+                "The drive check did not finish in time and was stopped",
+                details={"id": location_id},
+            ) from exc
+        finally:
+            self._fsck_busy.discard(location_id)
         return rc, (out + err).strip()
 
     async def test_smb(
@@ -631,7 +677,8 @@ class LocationService:
             self._detected = _Detected(
                 {str(i.get("uuid") or i.get("name")): i for i in items if isinstance(i, dict)}, True
             )
-        points = await asyncio.to_thread(self._mounted_points)
+        points = self._points = await asyncio.to_thread(self._mounted_points)
+        self._live_at = time.monotonic()
         for loc in list(self._store.config.storage.locations):
             await self._reconcile(loc, points, usb_ok)
 
@@ -683,7 +730,12 @@ class LocationService:
                 rt.retry_at = time.monotonic() + rt.backoff
                 self._changed("unreachable", loc.id)
             return
-        want = loc.auto_mount and not rt.user_unmounted and time.monotonic() >= rt.retry_at
+        want = (
+            loc.auto_mount
+            and not rt.user_unmounted
+            and time.monotonic() >= rt.retry_at
+            and loc.id not in self._fsck_busy
+        )
         if loc.kind == "usb":
             want = want and rt.present and rt.supported
         if want:

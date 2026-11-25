@@ -82,6 +82,21 @@ describe('settings write queue', () => {
     expect(s.get('iso')).toBe(640)
   })
 
+  it('drops each echo of a sent value once, so a real dial change back to it still applies', async () => {
+    const d1 = deferred()
+    const d2 = deferred()
+    api.setSetting.mockReturnValueOnce(d1.promise).mockReturnValueOnce(d2.promise)
+    s.set('iso', 200)
+    const p2 = s.set('iso', 300)
+    d1.resolve({ name: 'iso', value: 200 })
+    await vi.waitFor(() => expect(api.setSetting).toHaveBeenCalledTimes(2))
+    s.onSettingChanged({ name: 'iso', value: 200 }) // echo of our own first write
+    s.onSettingChanged({ name: 'iso', value: 200 }) // the dial really went back to 200
+    d2.resolve({ name: 'iso', value: 300 })
+    await p2
+    expect(s.get('iso')).toBe(200)
+  })
+
   it('rolls back to the last CONFIRMED value when a coalesced later write fails', async () => {
     const d1 = deferred()
     const d2 = deferred()

@@ -332,7 +332,7 @@ async def test_stack_and_mf_refused_in_af_c_with_clear_error(
     del fake_camera._specs["liveviewaffocus"]  # body without the live view AF widget
     fake_camera._values["focusmode"] = "AF-C"
     r = await connected_client.post(f"{F}/stack", json=STACK)
-    assert r.status_code == 409 and "AF-S" in r.json()["error"]["message"]
+    assert r.status_code == 409 and "AF-C" in r.json()["error"]["message"]
     r = await connected_client.post(f"{F}/mf", json={"steps": 3})
     assert r.status_code == 409
     assert (await connected_client.get("/api/v1/camera")).json()["leased_by"] is None
@@ -428,7 +428,7 @@ async def test_mf_switch_failure_is_clear(
     fake_camera._values["liveviewaffocus"] = SERVO
     fake_camera._specs["liveviewaffocus"].readonly = True
     r = await connected_client.post(f"{F}/mf", json={"steps": 10})
-    assert r.status_code == 409 and "Live View AF" in r.json()["error"]["message"]
+    assert r.status_code == 403  # the camera's own refusal, not rewritten into guidance
 
 
 async def test_stack_switches_servo_and_restores(
@@ -490,8 +490,8 @@ async def test_restore_kept_while_leased_then_retried(
         await cam.transition(CameraState.IDLE)
         await asyncio.sleep(0.5)
         assert svc._lva_orig == SERVO and fake_camera._values["liveviewaffocus"] == SINGLE
-    await _until(lambda: fake_camera._values["liveviewaffocus"] == SERVO)
-    assert svc._lva_orig is None
+    # the camera thread writes the value before the service clears _lva_orig on the loop
+    await _until(lambda: fake_camera._values["liveviewaffocus"] == SERVO and svc._lva_orig is None)
 
 
 async def test_user_change_of_mode_is_not_overwritten(
@@ -583,16 +583,14 @@ async def test_cancelled_stack_keeps_partial_result(
     assert j["result"]["returned_to_start"] is True and j["result"]["net_steps"] == 0
 
 
-async def test_drive_past_end_of_travel_is_focus_limit(
+async def test_drive_past_end_of_travel_shows_camera_error_not_invented_limit(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
     install(app)
     fake_camera.focus_travel = 200
     r = await connected_client.post(f"{F}/mf", json={"steps": -50})
-    assert r.status_code == 409 and r.json()["error"]["code"] == "FOCUS_LIMIT"
-    assert "closest" in r.json()["error"]["message"]
-    r = await connected_client.post(f"{F}/mf", json={"steps": 300})
-    assert r.status_code == 409 and "farthest" in r.json()["error"]["message"]
+    assert r.status_code == 502 and r.json()["error"]["code"] == "CAMERA_OPERATION_FAILED"
+    assert "lens is at" not in r.json()["error"]["message"]
 
 
 async def test_drive_switches_manual_focus_liveview_af_and_restores(

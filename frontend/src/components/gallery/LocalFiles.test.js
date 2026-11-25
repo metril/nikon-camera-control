@@ -20,13 +20,18 @@ const item = (n, extra = {}) => ({
 
 let wrapper
 const release = vi.fn()
-function setup({ items = [item('one'), item('two'), item('three')], total } = {}) {
+function setup({
+  items = [item('one'), item('two'), item('three')],
+  total,
+  target = 'loc',
+  openPath,
+} = {}) {
   const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
   const files = useFilesStore(pinia)
   vi.spyOn(files, 'load').mockImplementation(async (p = {}) => {
     files.query = { ...files.query, ...p }
   })
-  useStorageStore(pinia).targetId = 'loc'
+  useStorageStore(pinia).targetId = target
   files.items = items
   files.total = total ?? items.length
   vi.spyOn(files, 'loadCounts').mockResolvedValue()
@@ -35,7 +40,11 @@ function setup({ items = [item('one'), item('two'), item('three')], total } = {}
   const toasts = useToastsStore(pinia)
   vi.spyOn(toasts, 'error')
   vi.spyOn(toasts, 'success')
-  wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
+  wrapper = mount(LocalFiles, {
+    props: openPath ? { openPath } : {},
+    global: { plugins: [pinia] },
+    attachTo: document.body,
+  })
   return { files, toasts, pinia }
 }
 const btn = (text) => wrapper.findAll('button').find((b) => b.text().includes(text))
@@ -78,7 +87,10 @@ describe('LocalFiles', () => {
     // fall back to eager loading when no IntersectionObserver
     vi.stubGlobal('IntersectionObserver', undefined)
     wrapper.unmount()
-    wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
+    wrapper = mount(LocalFiles, {
+      global: { plugins: [pinia] },
+      attachTo: document.body,
+    })
     await flushPromises()
     expect(wrapper.findAll('[data-testid=thumb-placeholder]')).toHaveLength(1)
     expect(wrapper.findAll('[data-testid=grid] li')).toHaveLength(3)
@@ -89,7 +101,10 @@ describe('LocalFiles', () => {
     const { files, pinia } = setup({ items: [item('x', { has_thumbnail: false })] })
     vi.stubGlobal('IntersectionObserver', undefined)
     wrapper.unmount()
-    wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
+    wrapper = mount(LocalFiles, {
+      global: { plugins: [pinia] },
+      attachTo: document.body,
+    })
     await flushPromises()
     expect(files.acquireThumbnail).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid=thumb-placeholder]').exists()).toBe(true)
@@ -104,7 +119,7 @@ describe('LocalFiles', () => {
     await btn('Videos').trigger('click')
     expect(files.load).toHaveBeenLastCalledWith({ kind: 'video', page: 1 })
     await btn('Photos').trigger('click')
-    expect(files.load).toHaveBeenLastCalledWith({ kind: 'all', page: 1 })
+    expect(files.load).toHaveBeenLastCalledWith({ kind: 'photos', page: 1 })
     await wrapper.find('select').setValue('oldest')
     expect(files.load).toHaveBeenLastCalledWith({ sort: 'oldest', page: 1 })
   })
@@ -187,7 +202,10 @@ describe('LocalFiles', () => {
     vi.stubGlobal('IntersectionObserver', undefined)
     wrapper.unmount()
     release.mockClear()
-    wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
+    wrapper = mount(LocalFiles, {
+      global: { plugins: [pinia] },
+      attachTo: document.body,
+    })
     await flushPromises()
     expect(release).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -200,7 +218,10 @@ describe('LocalFiles', () => {
     const { files, toasts, pinia } = setup({ items: [] })
     files.load.mockRejectedValueOnce(new Error('down'))
     wrapper.unmount()
-    wrapper = mount(LocalFiles, { global: { plugins: [pinia] }, attachTo: document.body })
+    wrapper = mount(LocalFiles, {
+      global: { plugins: [pinia] },
+      attachTo: document.body,
+    })
     await flushPromises()
     expect(toasts.error).toHaveBeenCalled()
     expect(wrapper.text()).toContain('Could not load files')
@@ -242,15 +263,51 @@ describe('LocalFiles', () => {
     vi.useRealTimers()
   })
 
-  it('Photos hides videos on the page; tiles show kind badges', async () => {
-    setup({ items: [item('a'), item('b', { kind: 'raw' }), item('c', { kind: 'video' })] })
+  it('tiles show kind badges; Photos asks the server for photos (pages stay exact)', async () => {
+    const { files } = setup({
+      items: [item('a'), item('b', { kind: 'raw' }), item('c', { kind: 'video' })],
+    })
     await flushPromises()
     const badges = wrapper.findAll('[data-testid=grid] li').map((li) => li.text())
     expect(badges.join(' ')).toMatch(/JPEG/)
     expect(badges.join(' ')).toMatch(/RAW/)
     expect(badges.join(' ')).toMatch(/Video/)
     await btn('Photos').trigger('click')
-    expect(wrapper.findAll('[data-testid=grid] li')).toHaveLength(2)
+    expect(files.load).toHaveBeenLastCalledWith({ kind: 'photos', page: 1 })
+    // the page the server returns is shown as is, without a second client-side narrowing
+    expect(wrapper.findAll('[data-testid=grid] li')).toHaveLength(3)
+  })
+
+  it('open-path deep link opens that file in the lightbox, loading its folder first', async () => {
+    const { files } = setup()
+    await wrapper.setProps({ openPath: 'a/two.jpg' })
+    await flushPromises()
+    expect(files.load).toHaveBeenCalledWith({ folder: 'a', kind: 'all', page: 1 })
+    expect(document.body.querySelector('[data-testid=lightbox-position]').textContent.trim()).toBe(
+      '2 of 3',
+    )
+  })
+
+  it('open-path on a cold load waits for the storage target, then opens the file once', async () => {
+    const { files, pinia } = setup({ target: null, openPath: 'a/two.jpg' })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid=lightbox-position]')).toBeNull()
+    useStorageStore(pinia).targetId = 'loc'
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid=lightbox-position]').textContent.trim()).toBe(
+      '2 of 3',
+    )
+    // no root reload afterwards that would swap the open file
+    expect(files.load).not.toHaveBeenCalledWith({ folder: '', page: 1 })
+  })
+
+  it('open-path for a file that is not on the page still opens it', async () => {
+    setup()
+    await wrapper.setProps({ openPath: 'a/gone.jpg' })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid=lightbox-position]').textContent.trim()).toBe(
+      '1 of 1',
+    )
   })
 
   it('lightbox: Escape closes, double-click zooms to 250%, filmstrip jumps', async () => {

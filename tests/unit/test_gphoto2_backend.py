@@ -202,10 +202,13 @@ def test_unknown_widget_type_is_unknown() -> None:
 
 
 def test_binding_calls_match_installed_signatures(tmp_path: Path) -> None:
-    # capture_preview/file_get take an optional CameraFile, NOT the context, in this binding.
+    # Both take (camera_file, context): the context must be passed so camera error text is kept.
+    seen: list[Any] = []
+
     class Cam:
         def capture_preview(self, *args: Any) -> Any:
-            assert not args
+            assert len(args) == 2 and args[1] is b._ctx
+            seen.append(args[0])
 
             class F:
                 def get_data_and_size(self) -> bytes:
@@ -214,7 +217,7 @@ def test_binding_calls_match_installed_signatures(tmp_path: Path) -> None:
             return F()
 
         def file_get(self, folder: str, name: str, t: int, *args: Any) -> Any:
-            assert not args
+            assert args[0] is None and args[1] is b._ctx
 
             class F:
                 def save(self, path: str) -> None:
@@ -223,8 +226,11 @@ def test_binding_calls_match_installed_signatures(tmp_path: Path) -> None:
             return F()
 
     b = _backend(Cam())
+    b._ctx = object()
     b._viewfinder_on = True
     assert b.capture_preview() == b"jpg"
+    b.capture_preview()
+    assert seen[0] is seen[1]  # one CameraFile reused across frames
     dest = tmp_path / "p.jpg"
     b.read_file("/f", "a.jpg", FileKind.PREVIEW, dest)
     assert dest.read_bytes() == b"x"
@@ -417,7 +423,7 @@ def test_invalidate_preview_makes_next_preview_reenable() -> None:
     )
 
     class Cam(FakeCamera):
-        def capture_preview(self) -> Any:
+        def capture_preview(self, *_a: Any) -> Any:
             class F:
                 def get_data_and_size(self) -> bytes:
                     return b"j"
@@ -526,7 +532,7 @@ def _vf_cam(busy_times: int, preview_ok: bool = True) -> Any:
                 raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_BUSY)
             super().set_single_config(name, w, ctx)
 
-        def capture_preview(self) -> Any:
+        def capture_preview(self, *_a: Any) -> Any:
             if not preview_ok:
                 raise gp.GPhoto2Error(gp.GP_ERROR_CAMERA_BUSY)
 

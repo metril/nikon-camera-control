@@ -1,4 +1,4 @@
-import { reactive, computed, ref } from 'vue'
+import { reactive, computed } from 'vue'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { bracketTypes, stepFromApi, stepToApi, newStep, sortValues } from './bracketUtils'
 
@@ -37,7 +37,6 @@ export function resetDraft() {
   Object.assign(applied, { result: null, key: null, errors: {}, busy: false })
   Object.assign(preview, { result: null, key: null, errors: {}, busy: false })
   previewSeq++
-  baselineKey.value = draftKey.value
 }
 let previewSeq = 0
 
@@ -110,11 +109,6 @@ export const draftKey = computed(() => {
   return s ? JSON.stringify(s) : null
 })
 export const dirty = computed(() => draftKey.value !== applied.key)
-
-/** The untouched form's key: "Unsaved changes" only shows once the draft differs from it (or was saved). */
-const baselineKey = ref(null)
-export const edited = computed(() => applied.key != null || draftKey.value !== baselineKey.value)
-baselineKey.value = draftKey.value
 
 export function fieldErrors(e) {
   const out = {}

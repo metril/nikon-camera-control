@@ -39,7 +39,11 @@ onMounted(() => auth.fetchInfo().catch(() => {}))
       <dd class="tabular-nums" data-test="disk">{{ formatBytes(info.output_free_bytes) }}</dd>
       <dt class="text-camera-muted">API docs</dt>
       <dd>
-        <a href="/docs" target="_blank" rel="noopener" class="text-camera-accent underline"
+        <a
+          href="/docs"
+          target="_blank"
+          rel="noopener"
+          class="inline-flex min-h-[var(--ctl-sm)] items-center text-camera-accent underline"
           >Open the API docs</a
         >
       </dd>

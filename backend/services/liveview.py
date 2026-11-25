@@ -38,6 +38,7 @@ log = logging.getLogger(__name__)
 _S = CameraState
 _POLL_S = 0.05
 _ERROR_BACKOFF_S = 0.2
+_CRASH_RESTART_S = 2.0  # delay before restarting a producer that crashed
 _MAX_WIDTH = {"small": 640, "medium": 1024, "large": None}
 _FPS_WINDOW = 30
 
@@ -261,19 +262,31 @@ class LiveViewService:
         return bool(self._subs) or self._sticky
 
     async def _run(self) -> None:
+        crashed = False
         try:
             await self._loop()
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("live view producer crashed")
+            crashed = True
         else:
             await self._release()
         finally:
-            if self._task is asyncio.current_task():
+            ended = self._task is asyncio.current_task()
+            if ended:
                 self._task = None
             self._set_phase("stopped", None)
             self._announce_stopped()
+            if ended and not self._closed and self._demand():
+                if crashed:  # back off: never a tight crash/restart loop
+                    asyncio.get_running_loop().call_later(_CRASH_RESTART_S, self._restart_if_wanted)
+                else:
+                    self._ensure_producer()  # someone subscribed while we were releasing the camera
+
+    def _restart_if_wanted(self) -> None:
+        if not self._closed and self._demand() and not self.running:
+            self._ensure_producer()
 
     def _announce_stopped(self) -> None:
         if self._announced:

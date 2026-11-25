@@ -17,7 +17,7 @@ from backend.api.schemas.events import TypedEvent
 from backend.app import create_app
 from backend.camera.fake import FakeCamera
 from backend.core.config_store import AppConfig, ConfigStore
-from tests.fake_helper import FakeHelper
+from tests.fake_helper import FakeHelper, wait_backup_idle
 
 V = "/api/v1"
 UUID = "ABCD-1234"
@@ -44,7 +44,6 @@ async def env(tmp_path: Path, app_config: AppConfig, fake_camera: FakeCamera) ->
             "runner": helper.runner,
             "mount_base": helper.base,
             "mountinfo": helper.mountinfo,
-            "ismount": helper.ismount,
             "poll_interval_s": 3600.0,
         },
         backend_factory=lambda: fake_camera,
@@ -225,7 +224,7 @@ async def test_backup_follows_target_and_resumes_after_outage(env: Env) -> None:
     await env.c.post(f"{V}/capture", json={})
     r = await env.c.post(f"{V}/backup/run")
     assert r.status_code == 202
-    await env.app.state.backup.wait_idle()
+    await wait_backup_idle(env.app.state.backup)
     st = (await env.c.get(f"{V}/backup/status")).json()
     assert st["backups_online"] == [] and st["backup_ids"] == [bid]
     # the NAS returns: coming online triggers a run that copies what is missing
@@ -235,7 +234,7 @@ async def test_backup_follows_target_and_resumes_after_outage(env: Env) -> None:
     await env.app.state.storage.refresh()
     for _ in range(200):
         await asyncio.sleep(0.02)
-        await env.app.state.backup.wait_idle()
+        await wait_backup_idle(env.app.state.backup)
         if list((env.helper.base / bid).glob("*.JPG")):
             break
     dest = env.helper.base / bid
@@ -271,7 +270,7 @@ async def test_events_are_typed(env: Env) -> None:
     adapter: TypeAdapter[Any] = TypeAdapter(TypedEvent)
     async with env.app.state.event_bus.subscribe() as sub:
         await _setup_target(env)
-        await env.app.state.backup.wait_idle()
+        await wait_backup_idle(env.app.state.backup)
         seen = {}
         await asyncio.sleep(0.05)
         for _ in range(50):

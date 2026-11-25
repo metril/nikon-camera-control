@@ -46,8 +46,3 @@ def can_transition(from_state: CameraState, to_state: CameraState) -> bool:
     if to_state in UNIVERSAL_TARGETS:
         return True
     return to_state in VALID_TRANSITIONS.get(from_state, frozenset())
-
-
-def allowed_transitions(state: CameraState) -> frozenset[CameraState]:
-    """All states reachable from ``state`` in one step."""
-    return frozenset(s for s in CameraState if can_transition(state, s))

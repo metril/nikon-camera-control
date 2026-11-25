@@ -48,7 +48,8 @@ async function run(key, fn, ok) {
     busy.value = { ...busy.value, [key]: false }
   }
 }
-const isBusy = (action, id = '') => !!busy.value[`${action}:${id}`]
+const isBusy = (action, id = '') => !!busy.value[id ? `${action}:${id}` : action]
+
 const mount = (l) => run(`mount:${l.id}`, () => storage.mount(l.id), `${label(l)} mounted`)
 const unmount = (l) => run(`unmount:${l.id}`, () => storage.unmount(l.id), `${label(l)} unmounted`)
 const register = (l) =>
@@ -106,15 +107,22 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
 </script>
 
 <template>
-  <UiCard
-    title="Storage"
-    subtitle="Where captures are saved, plus backups. Mounted drives only."
-    data-section="storage-locations"
-  >
+  <UiCard title="Storage" subtitle="Where captures are saved, plus backups. Mounted drives only.">
     <div class="flex flex-col gap-5">
       <p v-if="storage.noTarget" class="text-sm text-camera-warn" data-test="no-target-hint">
-        No storage target. Mount a drive and choose it below.
+        No storage chosen. Mount a drive and choose it below.
       </p>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <UiButton
+          size="sm"
+          :loading="isBusy('rescan')"
+          data-test="rescan"
+          @click="run('rescan', () => storage.refresh())"
+        >
+          Rescan drives
+        </UiButton>
+      </div>
 
       <section
         v-for="grp in [
@@ -242,12 +250,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
           <UiText v-model="form.name" label="Name" :maxlength="64" placeholder="Optional" />
           <UiText v-model="form.domain" label="Domain" placeholder="Optional" />
           <UiText v-model="form.username" label="User" />
-          <UiText
-            v-model="form.password"
-            label="Password"
-            type="password"
-            placeholder="Saved but never shown"
-          />
+          <UiText v-model="form.password" label="Password" type="password" placeholder="Optional" />
           <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
             <UiButton
               :disabled="!form.unc.trim()"
@@ -281,7 +284,7 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
       <section v-if="configured.length">
         <h3 class="eyebrow mb-2">Roles</h3>
         <fieldset class="mb-3" data-test="target-group">
-          <legend class="mb-1 text-sm font-medium">Copy each photo to</legend>
+          <legend class="mb-1 text-sm font-medium">Download to storage</legend>
           <label
             v-for="l in storage.mounted.filter((x) => x.configured)"
             :key="l.id"
@@ -351,13 +354,22 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
         <p v-if="actionHint" class="text-xs text-camera-muted" data-test="action-hint">
           {{ actionHint }}
         </p>
-        <p v-if="backup" class="text-xs text-camera-muted" data-test="backup-status">
+        <p
+          v-if="backup && storage.targetId"
+          class="text-xs text-camera-muted"
+          data-test="backup-status"
+        >
           <template v-if="backup.running"
             >Backing up{{ backup.current ? `: ${backup.current}` : '' }}.
           </template>
           {{ backup.pending }} pending · {{ backup.copied }} copied · {{ backup.failed }} failed
           <template v-if="backup.last_error"> · {{ backup.last_error }}</template>
         </p>
+      </section>
+
+      <section v-if="$slots.extra">
+        <h3 class="eyebrow mb-2">Backup and verification</h3>
+        <slot name="extra" />
       </section>
     </div>
     <OffloadDialog :open="offloadOpen" @close="offloadOpen = false" />

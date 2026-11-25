@@ -289,18 +289,17 @@ cmd_fsck() {
     find_usb "$uuid"
     [ -z "$(find_mount "$F_MM" "$MNT/usb-$uuid")" ] || die "$uuid is mounted; unmount it first" 1
     dev=$DEVDIR/$F_NAME
-    rc=0
+    # exec: sudo relays SIGTERM (on timeout/cancel) straight to the repair tool
     case $F_FSTYPE in
-        exfat) fsck.exfat -y "$dev" 2>&1 || rc=$? ;;
-        vfat) fsck.vfat -a "$dev" 2>&1 || rc=$? ;;
-        ntfs) ntfsfix "$dev" 2>&1 || rc=$? ;;
-        ext2 | ext3 | ext4) e2fsck -p "$dev" 2>&1 || rc=$? ;;
-        xfs) xfs_repair "$dev" 2>&1 || rc=$? ;;
-        btrfs) btrfs check "$dev" 2>&1 || rc=$? ;;
-        f2fs) fsck.f2fs -a "$dev" 2>&1 || rc=$? ;;
+        exfat) exec fsck.exfat -y "$dev" 2>&1 ;;
+        vfat) exec fsck.vfat -a "$dev" 2>&1 ;;
+        ntfs) exec ntfsfix "$dev" 2>&1 ;;
+        ext2 | ext3 | ext4) exec e2fsck -p "$dev" 2>&1 ;;
+        xfs) exec xfs_repair "$dev" 2>&1 ;;
+        btrfs) exec btrfs check "$dev" 2>&1 ;;
+        f2fs) exec fsck.f2fs -a "$dev" 2>&1 ;;
         *) die "no repair tool for $F_FSTYPE" 1 ;;
     esac
-    exit "$rc"
 }
 
 [ $# -ge 1 ] || usage

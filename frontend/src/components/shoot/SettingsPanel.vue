@@ -1,12 +1,16 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useSettingsStore } from '@/stores/settings'
 import { useToastsStore } from '@/stores/toasts'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiText from '@/components/ui/UiText.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import { leaseOwner, settingName } from '@/labels'
 import SettingField from './SettingField.vue'
+import { useLayoutMode } from '@/composables/useLayoutMode'
+
+const { isTouch } = useLayoutMode()
 
 const GROUPS = [
   {
@@ -60,9 +64,11 @@ const grouped = computed(() => {
   return out.filter((g) => g.items.length)
 })
 
+const curated = computed(() => new Set(grouped.value.flatMap((g) => g.items.map((s) => s.name))))
+
 const filteredAll = computed(() => {
   const q = search.value.trim().toLowerCase()
-  const list = settings.all.filter(visible)
+  const list = settings.all.filter((s) => visible(s) && !curated.value.has(s.name))
   const hit = q
     ? list.filter((s) =>
         [s.name, s.label, s.path, s.value].some((x) =>
@@ -83,7 +89,7 @@ async function change(name, value) {
     await settings.set(name, value)
   } catch (e) {
     errors[name] = e?.message || 'Failed to change setting'
-    if (pending[name] === 1) toasts.error(`${settingName(name)}: ${errors[name]} (reverted)`)
+    if (pending[name] === 1) toasts.error(e, { prefix: settingName(name), suffix: ' (reverted)' })
   } finally {
     pending[name]--
     if (pending[name] <= 0) delete pending[name]
@@ -107,8 +113,14 @@ function ensureLoaded() {
     load(() => settings.fetchCommon())
 }
 watch(() => camera.connected, ensureLoaded)
-watch(showAll, (open) => {
-  if (open && !settings.all.length) load(() => settings.fetchAll())
+const searchBox = ref(null)
+watch(showAll, async (open) => {
+  if (!open) return
+  if (!settings.all.length) load(() => settings.fetchAll())
+  await nextTick()
+  const el = searchBox.value?.$el || searchBox.value
+  el?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+  if (!isTouch.value) el?.querySelector?.('input')?.focus({ preventScroll: true }) // no phone keyboard
 })
 onMounted(ensureLoaded)
 </script>
@@ -120,14 +132,18 @@ onMounted(ensureLoaded)
         Connect the camera to change settings.
       </p>
       <span v-else />
-      <UiButton
-        size="sm"
-        :loading="refreshing"
-        :disabled="!camera.connected"
+      <button
+        type="button"
+        class="inline-flex h-8 w-8 items-center justify-center rounded text-camera-muted hover:text-camera-text disabled:opacity-[.45] [html[data-layout='touch']_&]:h-11 [html[data-layout='touch']_&]:w-11"
+        :disabled="!camera.connected || refreshing"
+        :aria-busy="refreshing || undefined"
+        aria-label="Refresh settings from camera"
+        title="Refresh settings from camera"
         data-testid="refresh"
         @click="refresh"
-        >Refresh</UiButton
       >
+        <UiIcon name="RefreshCw" :size="18" :class="{ 'animate-spin': refreshing }" />
+      </button>
     </div>
 
     <div v-if="camera.connected" class="flex flex-col gap-5">
@@ -167,7 +183,12 @@ onMounted(ensureLoaded)
           >{{ showAll ? 'Hide all settings' : 'Show all settings' }}</UiButton
         >
         <div v-if="showAll" class="mt-3 flex flex-col gap-3" data-testid="all-settings">
-          <UiText v-model="search" label="Search settings" placeholder="Name, label or value" />
+          <UiText
+            ref="searchBox"
+            v-model="search"
+            label="Search settings"
+            placeholder="Name, label or value"
+          />
           <p v-if="settings.loading" class="text-sm text-camera-muted">Loading…</p>
           <div class="grid gap-4 sm:grid-cols-2">
             <SettingField

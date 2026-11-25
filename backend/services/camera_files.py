@@ -387,6 +387,20 @@ class CameraFilesService:
             raise
         return tmp_dir, dest
 
+    async def fetch_preview(self, folder: str, name: str) -> bytes:
+        """The camera's embedded preview JPEG of one file (needs no storage target)."""
+        tmp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="ncc-thumb-"))
+        dest = tmp_dir / "preview.jpg"
+        try:
+            await self._camera.call(
+                lambda b: b.read_file(folder, name, FileKind.PREVIEW, dest),
+                priority=Priority.PREVIEW,  # lowest: never ahead of live view frames
+                timeout=_READ_TIMEOUT_S,
+            )
+            return await asyncio.to_thread(dest.read_bytes)
+        finally:
+            await asyncio.to_thread(_rm, tmp_dir)
+
     async def delete(self, folder: str, name: str) -> None:
         try:
             await self._camera.call(

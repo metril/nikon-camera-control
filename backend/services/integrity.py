@@ -192,6 +192,8 @@ def verify(
         sums = read_sums(d)
         present = {f.name for f in dirs[d]}
         for name, want in sorted(sums.items()):
+            if "/" in name or name.startswith(".") or os.path.isabs(name):
+                continue  # a checksum file only describes its own directory
             rel = (d / name).relative_to(root).as_posix()
             if name not in present and not (d / name).is_file():
                 rep.missing.append(rel)

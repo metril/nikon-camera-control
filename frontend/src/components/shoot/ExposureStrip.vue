@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useShootStore } from '@/stores/shoot'
 import { useToastsStore } from '@/stores/toasts'
 import { leaseOwner } from '@/labels'
+import { shotsLeftOf } from '@/components/shell/shotsLeft'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import StripPicker from './StripPicker.vue'
@@ -48,7 +49,7 @@ const writable = (s) => !!s && s.writable && !s.readonly && !!s.choices?.length
 const shotsLeft = computed(() => {
   const cards = camera.storage?.cards
   if (!cards?.length) return null
-  return cards.reduce((n, c) => n + (c.free_images || 0), 0)
+  return shotsLeftOf(cards)
 })
 const meter = computed(() => {
   const n = Number(settings.get('lightmeter'))
@@ -69,7 +70,14 @@ const FULL = {
 const SHORT = { comp: 'EV', wb: 'WB', shutter: 'Shutter' }
 
 const cells = computed(() => {
-  const keys = ['mode', 'shutter', 'aperture', 'iso', letter.value === 'M' ? 'meter' : 'comp']
+  // Meter replaces EV in M; hidden when the camera reports no reading
+  const keys = [
+    'mode',
+    'shutter',
+    'aperture',
+    'iso',
+    letter.value === 'M' ? 'meter' : 'comp',
+  ].filter((k) => k !== 'meter' || meter.value != null)
   keys.push('wb', 'shots', 'preset')
   return keys.map((key) => {
     const s = settingFor(key)
@@ -82,9 +90,9 @@ const cells = computed(() => {
       value = shotsLeft.value == null ? '–' : shotsLeft.value.toLocaleString('en-GB')
       hint = 'Shots left on the card'
     } else if (key === 'meter') {
-      value = meter.value == null ? '–' : formatValue('comp', Math.round(meter.value * 3) / 3)
+      value = formatValue('comp', Math.round(meter.value * 3) / 3)
       tone = meter.value > 0.2 ? 'pos' : meter.value < -0.2 ? 'neg' : ''
-      hint = meter.value == null ? 'Not reported by this camera' : 'Light meter reading'
+      hint = 'Light meter reading'
     } else if (key === 'preset') {
       value = shoot.appliedPreset || 'None'
       editable = true
@@ -157,7 +165,7 @@ async function change(key, value) {
     await settings.set(s.name, value)
     shoot.appliedPreset = null
   } catch (e) {
-    toasts.error(`${FULL[key]}: ${e?.message || 'Could not change it'} (reverted)`)
+    toasts.error(e, { prefix: FULL[key], suffix: ' (reverted)' })
   }
 }
 async function applyPreset(id) {
@@ -319,7 +327,7 @@ watch(open, async (k, was) => {
   border: 0;
   background: none;
   text-align: left;
-  padding: 12px 16px;
+  padding: 12px clamp(8px, 1.2vw, 16px);
   display: grid;
   gap: 2px;
   cursor: pointer;
@@ -347,7 +355,7 @@ watch(open, async (k, was) => {
 }
 .cell .k {
   font:
-    500 10.5px ui-monospace,
+    500 12px ui-monospace,
     SFMono-Regular,
     Menlo,
     monospace;
@@ -388,12 +396,12 @@ watch(open, async (k, was) => {
   flex: none;
   display: inline-flex;
   align-items: center;
-  height: 16px;
+  height: 18px;
   padding: 0 4px;
   border: 1px solid theme('colors.camera.border');
   border-radius: 4px;
   font:
-    500 9px ui-monospace,
+    500 12px ui-monospace,
     SFMono-Regular,
     Menlo,
     monospace;

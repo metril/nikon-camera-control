@@ -20,6 +20,8 @@ import { formatSize, formatDate, kindTone } from './media'
 
 const LONG_PRESS_MS = 480
 
+const props = defineProps({ openPath: { type: String, default: '' } })
+
 const files = useFilesStore()
 const capture = useCaptureStore()
 const jobs = useJobsStore()
@@ -38,6 +40,9 @@ const selecting = ref(false)
 const selected = ref(new Set())
 const confirmDelete = ref(false)
 const lightboxIndex = ref(-1)
+// A deep-linked file that is not on the current page is shown on its own.
+const linked = ref(null)
+const lightboxItems = computed(() => (linked.value ? [linked.value] : shown.value))
 const deleting = ref(false)
 const failedLoad = ref(false)
 const noTarget = computed(
@@ -52,13 +57,9 @@ const crumbs = computed(() => {
 })
 const firstLoad = computed(() => files.loading && !files.items.length)
 
-// The server filters by one kind; "Photos" (JPEG and RAW) is narrowed here.
+// The server filters by kind ("photos" is JPEG + RAW), so pages and totals are exact.
 const MEDIA = new Set(['image', 'raw', 'video'])
-const shown = computed(() =>
-  files.items.filter((f) =>
-    mode.value === 'photos' ? f.kind === 'image' || f.kind === 'raw' : MEDIA.has(f.kind),
-  ),
-)
+const shown = computed(() => files.items.filter((f) => MEDIA.has(f.kind)))
 const count = (n) => (n == null ? '' : ` ${n}`)
 const modeOptions = computed(() => {
   const { photos, videos } = files.counts
@@ -94,14 +95,59 @@ const setFilter = (key, value) => load({ [key]: value, page: 1 })
 const setMode = (m) => {
   mode.value = m
   selected.value = new Set()
-  return setFilter('kind', m === 'videos' ? 'video' : 'all')
+  return setFilter('kind', { videos: 'video', photos: 'photos' }[m] || 'all')
 }
 const goPage = (page) => load({ page })
 
-onMounted(() => load())
+const EXT_KIND = { nef: 'raw', nrw: 'raw', mp4: 'video', mov: 'video' }
+let pendingOpen = '' // a deep link seen before the storage target is known
+async function openLinked(path) {
+  if (!path) return
+  if (!storage.targetId) {
+    pendingOpen = path
+    return
+  }
+  pendingOpen = ''
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+  if (q.value.folder !== dir || q.value.kind !== 'all' || q.value.page !== 1)
+    await load({ folder: dir, kind: 'all', page: 1 })
+  mode.value = 'all'
+  const i = shown.value.findIndex((f) => f.path === path)
+  if (i >= 0) {
+    linked.value = null
+    lightboxIndex.value = i
+    return
+  }
+  const name = path.split('/').pop()
+  linked.value = {
+    path,
+    name,
+    folder: dir,
+    size: 0,
+    modified: null,
+    kind: EXT_KIND[name.split('.').pop().toLowerCase()] || 'image',
+    has_thumbnail: true,
+  }
+  lightboxIndex.value = 0
+}
+const closeLightbox = () => {
+  lightboxIndex.value = -1
+  linked.value = null
+}
+onMounted(async () => {
+  await load()
+  openLinked(props.openPath)
+})
+watch(() => props.openPath, openLinked)
 watch(
   () => storage.targetId,
-  (v, old) => v !== old && load({ folder: '', page: 1 }),
+  (v, old) => {
+    if (v === old) return
+    // first target after a cold load: the pending link loads its own folder
+    if (!old && pendingOpen) return openLinked(pendingOpen)
+    if (!old) return load()
+    return load({ folder: '', page: 1 })
+  },
 )
 
 // Refresh when a capture lands or a job completes.
@@ -161,7 +207,10 @@ function onTile(f, i) {
     return
   }
   if (selecting.value) toggle(f.path)
-  else lightboxIndex.value = i
+  else {
+    linked.value = null
+    lightboxIndex.value = i
+  }
 }
 
 async function download(item) {
@@ -205,7 +254,7 @@ async function deleteFromLightbox(item) {
   const idx = lightboxIndex.value
   const ok = await deleteMany([item.path])
   if (!ok) return
-  if (!shown.value.length) lightboxIndex.value = -1
+  if (!shown.value.length || linked.value) closeLightbox()
   else lightboxIndex.value = Math.min(idx, shown.value.length - 1)
 }
 
@@ -403,11 +452,11 @@ const emptyHint = computed(() =>
 
     <Lightbox
       :open="lightboxIndex >= 0"
-      :items="shown"
+      :items="lightboxItems"
       :index="Math.max(0, lightboxIndex)"
       :busy="deleting"
       @update:index="lightboxIndex = $event"
-      @close="lightboxIndex = -1"
+      @close="closeLightbox"
       @download="download"
       @delete="deleteFromLightbox"
     />

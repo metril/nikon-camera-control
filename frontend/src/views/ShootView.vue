@@ -13,6 +13,11 @@ import RecentCaptures from '@/components/shoot/RecentCaptures.vue'
 // Emitted so the shell can switch tabs ('gallery' / 'timelapse' / 'settings').
 const emit = defineEmits(['open-gallery', 'open-timelapse', 'open-settings'])
 const go = (tab) => emit(`open-${tab}`)
+// Deep link: the Gallery opens that file in its lightbox (#/gallery?open=<encoded path>)
+function openGallery(file) {
+  if (file?.path) location.hash = `#/gallery?open=${encodeURIComponent(file.path)}`
+  else go('gallery')
+}
 
 const camera = useCameraStore()
 const settings = useSettingsStore()
@@ -80,8 +85,12 @@ onBeforeUnmount(unlisten)
         <LiveViewPanel v-if="camera.connected" />
         <div v-else class="gate" data-test="lv-gate"><CameraGate /></div>
       </div>
-      <CaptureSide class="side-area" @navigate="go" @open-settings="go('settings')" />
-      <RecentCaptures class="film-area" @open-gallery="go('gallery')" />
+      <CaptureSide
+        class="side-area"
+        @navigate="go"
+        @open-settings="(section) => emit('open-settings', section)"
+      />
+      <RecentCaptures class="film-area" @open-gallery="openGallery" />
     </div>
   </div>
 </template>
@@ -193,12 +202,14 @@ html[data-layout='touch'] .strip-area :deep(.cell .v) {
   }
 }
 
-/* Touch, landscape (kiosk screens): live view and controls side by side with no scrolling */
+/* Touch, landscape (kiosk screens): exposure strip over the live view, controls in the side column,
+   no scrolling. --lvh is the height left for the live view (LiveViewPanel sizes the frame from it). */
 @media (min-width: 900px) and (orientation: landscape) {
   html[data-layout='touch'] .shoot {
-    --lvw: min(
-      100%,
-      calc((100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 64px - 64px - 40px) * 1.5)
+    --stripH: 60px;
+    --lvh: calc(
+      100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 16px - 24px - var(--stripH) - 16px -
+        4px
     );
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas:
@@ -210,41 +221,52 @@ html[data-layout='touch'] .strip-area :deep(.cell .v) {
   html[data-layout='touch'] .film-area {
     display: none;
   }
+  /* one row of cells (no filler cells); wraps to more rows only when the values would not fit */
   html[data-layout='touch'] .strip-area {
     display: flex;
-    gap: 0;
-    width: var(--lvw);
+    flex-wrap: wrap;
+    min-height: var(--stripH);
     background: theme('colors.camera.surface');
     border: 1px solid theme('colors.camera.subtle');
     border-radius: theme('borderRadius.card');
     overflow: hidden;
   }
   html[data-layout='touch'] .strip-area :deep(.cell) {
+    flex: 1 1 84px;
     border: 0;
     border-radius: 0;
     background: none;
-    min-height: 64px;
-  }
-  html[data-layout='touch'] .strip-area :deep(.cell + .cell) {
-    border-left: 1px solid theme('colors.camera.subtle');
+    box-shadow: 1px 0 0 0 theme('colors.camera.subtle');
+    min-height: 0;
+    padding: 4px 7px;
+    align-content: center;
   }
   html[data-layout='touch'] .strip-area :deep(.cell .v) {
-    font-size: 19px;
+    font-size: 18px;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  html[data-layout='touch'] .strip-area :deep(.cell .k) {
+    font-size: 11px;
+    letter-spacing: 0.04em;
   }
   html[data-layout='touch'] .strip-area :deep(.cell .auto) {
     display: none;
   }
-  html[data-layout='touch'] .lvwrap {
-    width: var(--lvw);
-  }
   html[data-layout='touch'] .side-area {
     position: sticky;
     top: 76px;
-    max-height: calc(100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 32px);
+    max-height: calc(100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 40px);
     overflow-y: auto;
     /* overflow-y makes this a scroll container on both axes; room for the ghost buttons' -10px bleed */
     padding-inline: 10px;
     margin-inline: -10px;
+  }
+}
+/* Strip too narrow for one row of 7 cells: two rows */
+@media (min-width: 900px) and (max-width: 979px) and (orientation: landscape) {
+  html[data-layout='touch'] .shoot {
+    --stripH: 108px;
   }
 }
 </style>

@@ -1,8 +1,9 @@
 <script setup>
 /** Side column: capture mode, shutter, that mode's settings, and the last capture. */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useStorageStore } from '@/stores/storage'
+import { useToastsStore } from '@/stores/toasts'
 import { useCaptureStore } from '@/stores/capture'
 import { CAPTURE_MODES, useShootStore } from '@/stores/shoot'
 import { useKeyboardHints } from '@/composables/useKeyboardHints'
@@ -11,7 +12,6 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModal from '@/components/ui/UiModal.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
-import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
 import BracketSettings from './BracketSettings.vue'
 import BulbSettings from './BulbSettings.vue'
 import RecordingCard from './RecordingCard.vue'
@@ -23,11 +23,44 @@ const capture = useCaptureStore()
 const shoot = useShootStore()
 const config = useConfigStore()
 const storage = useStorageStore()
+const toasts = useToastsStore()
+// When the column scrolls on its own (touch landscape), fade its bottom edge while more is below
+const root = ref(null)
+const moreBelow = ref(false)
+function measure() {
+  const el = root.value
+  moreBelow.value = !!el && el.scrollTop + el.clientHeight < el.scrollHeight - 2
+}
+let ro = null
 onMounted(() => {
   if (!config.config) config.fetch().catch(() => {})
+  measure()
+  if (typeof ResizeObserver !== 'undefined' && root.value) {
+    ro = new ResizeObserver(measure)
+    ro.observe(root.value)
+    if (root.value.firstElementChild) ro.observe(root.value.firstElementChild)
+  }
 })
+onBeforeUnmount(() => ro?.disconnect())
+watch(
+  () => shoot.mode,
+  () => nextTick(measure),
+)
 const triggerOnly = computed(() => !shoot.downloads && shoot.mode === 'single')
 const whereName = computed(() => storage.target?.name || storage.target?.label || 'your storage')
+const STORAGE_LINK = '#/settings?section=storage'
+const savingCardOnly = ref(false)
+/** One tap: stop downloading photos, so Single can shoot to the card with no storage chosen. */
+async function shootToCardOnly() {
+  savingCardOnly.value = true
+  try {
+    await config.patch({ camera: { download_photos: false } })
+  } catch (e) {
+    toasts.error(e, { prefix: 'Could not switch to card only' })
+  } finally {
+    savingCardOnly.value = false
+  }
+}
 const { hints } = useKeyboardHints()
 
 const modes = CAPTURE_MODES.map(({ value, label }) => ({ value, label }))
@@ -48,7 +81,7 @@ const recordingOpen = ref(false)
 </script>
 
 <template>
-  <div class="side">
+  <div ref="root" class="side" :class="{ fade: moreBelow }" @scroll.passive="measure">
     <div class="sidecard" :class="{ has: !!settingsView }">
       <UiSegmented
         v-model="shoot.mode"
@@ -74,16 +107,31 @@ const recordingOpen = ref(false)
         />
         <span class="slabel tabular-nums" data-testid="shutter-label">{{ shoot.label }}</span>
         <span class="chip" data-testid="download-chip">
-          <template v-if="triggerOnly"><i class="dot" />Trigger only · stays on card</template>
+          <template v-if="shoot.noTargetBlocks">Not saving to storage</template>
+          <template v-else-if="triggerOnly"><i class="dot" />Trigger only · stays on card</template>
           <template v-else>Downloads to {{ whereName }}</template>
         </span>
         <span id="shutter-reason" class="reason" aria-live="polite" data-testid="shutter-reason">
-          <NoTargetNotice
-            v-if="shoot.noTargetBlocks"
-            compact
-            class="justify-center"
-            @open-settings="emit('open-settings')"
-          />
+          <span v-if="shoot.noTargetBlocks" class="notarget" role="status" data-test="no-target">
+            <span class="text-camera-warn"
+              >No storage chosen. Choose one in Settings › Storage.</span
+            >
+            <a
+              :href="STORAGE_LINK"
+              class="inline-flex min-h-[var(--ctl-sm)] items-center underline [html[data-layout='touch']_&]:min-h-11"
+              @click.prevent="emit('open-settings', 'storage')"
+            >
+              Open storage settings
+            </a>
+            <UiButton
+              v-if="shoot.mode === 'single'"
+              size="sm"
+              :loading="savingCardOnly"
+              @click="shootToCardOnly"
+            >
+              Shoot to card only
+            </UiButton>
+          </span>
           <template v-else-if="shoot.blockedReason && !shoot.stoppable">{{
             shoot.blockedReason
           }}</template>
@@ -129,11 +177,12 @@ const recordingOpen = ref(false)
     <UiModal
       :open="cameraSettingsOpen"
       title="All camera settings"
+      class="[html[data-layout='touch']_&]:!max-w-3xl"
       @close="cameraSettingsOpen = false"
     >
       <SettingsPanel />
     </UiModal>
-    <UiModal :open="recordingOpen" title="Video recording" @close="recordingOpen = false">
+    <UiModal :open="recordingOpen" title="Record video" @close="recordingOpen = false">
       <RecordingCard />
     </UiModal>
   </div>
@@ -194,6 +243,12 @@ const recordingOpen = ref(false)
   color: theme('colors.camera.muted');
   text-align: center;
 }
+.notarget {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
 .msettings {
   display: grid;
   gap: 16px;
@@ -227,7 +282,7 @@ const recordingOpen = ref(false)
 }
 kbd {
   font:
-    500 11px ui-monospace,
+    500 12px ui-monospace,
     SFMono-Regular,
     Menlo,
     monospace;
@@ -273,6 +328,10 @@ html[data-layout='touch'] .msettings {
     border-top: 1px solid theme('colors.camera.subtle');
     padding-top: 16px;
   }
+}
+.side.fade {
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
 }
 html[data-layout='touch'] .kbdonly {
   display: none;

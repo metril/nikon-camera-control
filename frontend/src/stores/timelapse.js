@@ -26,7 +26,7 @@ export const useTimelapseStore = defineStore('timelapse', () => {
   const state = computed(() => status.value?.state ?? 'idle')
   const isActive = computed(() => ['running', 'paused', 'stopping'].includes(state.value))
 
-  const apply = (s) => (status.value = s)
+  const apply = (s) => ((status.value = s), (progress.value = null)) // status.counters is authoritative
   const fetchStatus = () =>
     guard(lastError, async () => (apply(await api.getTimelapseStatus()), status.value))
   const act = (fn) => guard(lastError, async () => (apply(await fn()), status.value))
@@ -48,6 +48,7 @@ export const useTimelapseStore = defineStore('timelapse', () => {
     if (next && status.value) status.value = { ...status.value, state: next }
     if (type === 'timelapse_frame') lastFrame.value = data
     if (type === 'timelapse_warning') warning.value = data
+    if (type === 'timelapse_started') progress.value = null
     if (data.frames_done !== undefined) progress.value = { ...progress.value, ...data }
     if (next) fetchStatus().catch(() => {}) // authoritative refresh; failure is kept in lastError
   }

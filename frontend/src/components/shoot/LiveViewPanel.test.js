@@ -259,36 +259,7 @@ describe('LiveViewPanel', () => {
     w.unmount()
   })
 
-  it('focus limit: no toast, that direction disabled, re-enabled by the opposite step', async () => {
-    const { pinia } = setup()
-    const focus = useFocusStore()
-    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
-    const s = await started(w)
-    status(s)
-    s.handlers.onFrame(new ArrayBuffer(4))
-    await nextTick()
-    const limitErr = Object.assign(new Error('The lens is at its closest focus'), {
-      status: 409,
-      code: 'FOCUS_LIMIT',
-    })
-    vi.spyOn(focus, 'manual').mockRejectedValueOnce(limitErr).mockResolvedValue()
-    const near = w.find('[data-testid="lv-focus-near-small"]')
-    await near.trigger('click')
-    await flushPromises()
-    expect(useToastsStore().items).toHaveLength(0)
-    expect(near.attributes('aria-disabled')).toBe('true')
-    expect(near.attributes('title')).toBe('Closest focus')
-    expect(w.find('[data-testid="lv-focus-near-large"]').attributes('aria-disabled')).toBe('true')
-    expect(w.find('[data-testid="lv-focus-far-small"]').attributes('aria-disabled')).toBeUndefined()
-    await near.trigger('click') // blocked locally
-    expect(focus.manual).toHaveBeenCalledTimes(1)
-    await w.find('[data-testid="lv-focus-far-small"]').trigger('click')
-    await flushPromises()
-    expect(near.attributes('aria-disabled')).toBeUndefined()
-    w.unmount()
-  })
-
-  it('a non-limit focus step error still toasts', async () => {
+  it('a focus step error toasts the camera message', async () => {
     const { pinia } = setup()
     const focus = useFocusStore()
     const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
@@ -299,10 +270,7 @@ describe('LiveViewPanel', () => {
     vi.spyOn(focus, 'manual').mockRejectedValue(new Error('boom'))
     await w.find('[data-testid="lv-focus-near-small"]').trigger('click')
     await flushPromises()
-    expect(useToastsStore().items.at(-1).message).toBe('boom')
-    expect(
-      w.find('[data-testid="lv-focus-near-small"]').attributes('aria-disabled'),
-    ).toBeUndefined()
+    expect(useToastsStore().items.at(-1).message).toContain('boom')
     w.unmount()
   })
 
@@ -358,7 +326,9 @@ describe('LiveViewPanel', () => {
     await ov.trigger('pointerup', { clientX: 0, clientY: 0 })
     await flushPromises()
     expect(focus.autofocus).toHaveBeenCalledTimes(2)
-    expect(useToastsStore().items.some((t) => t.kind === 'warn')).toBe(true)
+    expect(
+      useToastsStore().items.some((t) => t.kind === 'error' && t.message.includes('no widget')),
+    ).toBe(true)
     focus.setPoint.mockClear()
     focus.setPoint.mockRejectedValue(Object.assign(new Error('x'), { status: 501 }))
     for (let i = 0; i < 2; i++) {
@@ -377,6 +347,88 @@ describe('LiveViewPanel', () => {
     w.unmount()
   })
 
+  it('follows liveview.running from events (no Start press needed)', async () => {
+    const { pinia, lv } = setup()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    expect(w.find('[data-testid="lv-stop"]').exists()).toBe(false)
+    lv.onStarted() // liveview_started with no status fetched yet
+    await flushPromises()
+    expect(w.find('[data-testid="lv-stop"]').exists()).toBe(true)
+    expect(sockets[0].start).toHaveBeenCalled()
+    lv.onStopped()
+    await flushPromises()
+    expect(w.find('[data-testid="lv-start"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  describe('canvas path', () => {
+    let ctx
+    beforeEach(() => {
+      ctx = new Proxy(
+        {
+          getImageData: vi.fn((x, y, w, h) => ({
+            data: new Uint8ClampedArray(w * h * 4),
+            width: w,
+            height: h,
+          })),
+        },
+        { get: (t, k) => (k in t ? t[k] : (t[k] = vi.fn())), set: () => true },
+      )
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ctx)
+      vi.stubGlobal(
+        'ImageData',
+        class {
+          constructor(d, w, h) {
+            this.data = d
+            this.width = w
+            this.height = h
+          }
+        },
+      )
+    })
+    afterEach(() => vi.restoreAllMocks())
+
+    it('decodes one frame at a time and keeps only the newest waiting one', async () => {
+      const resolvers = []
+      const bmp = { width: 8, height: 6, close: vi.fn() }
+      vi.stubGlobal(
+        'createImageBitmap',
+        vi.fn(() => new Promise((r) => resolvers.push(r))),
+      )
+      const { pinia } = setup()
+      const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+      const s = await started(w)
+      for (let i = 0; i < 4; i++) s.handlers.onFrame(new ArrayBuffer(4))
+      expect(createImageBitmap).toHaveBeenCalledTimes(1)
+      resolvers[0](bmp)
+      await vi.waitFor(() => expect(createImageBitmap).toHaveBeenCalledTimes(2)) // newest, not 3
+      resolvers[1](bmp)
+      await flushPromises()
+      expect(createImageBitmap).toHaveBeenCalledTimes(2)
+      w.unmount()
+    })
+
+    it('skips the pixel read-back when no analysis tool is on', async () => {
+      vi.stubGlobal(
+        'createImageBitmap',
+        vi.fn(async () => ({ width: 8, height: 6, close: vi.fn() })),
+      )
+      const { pinia } = setup()
+      const lv = useLiveViewStore()
+      lv.tools = { ...lv.tools, hist: false, clip: false, peak: false }
+      const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+      const s = await started(w)
+      s.handlers.onFrame(new ArrayBuffer(4))
+      await new Promise((r) => setTimeout(r, 100))
+      expect(ctx.clearRect).toHaveBeenCalled() // overlays did render
+      expect(ctx.getImageData).not.toHaveBeenCalled()
+      lv.tools = { ...lv.tools, hist: true }
+      s.handlers.onFrame(new ArrayBuffer(4))
+      await vi.waitFor(() => expect(ctx.getImageData).toHaveBeenCalled())
+      w.unmount()
+    })
+  })
+
   it('labels the fullscreen button', async () => {
     const { pinia } = setup()
     const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
@@ -386,5 +438,31 @@ describe('LiveViewPanel', () => {
     await nextTick()
     expect(w.find('[data-testid="lv-fullscreen"]').attributes('aria-label')).toBe('Fullscreen')
     w.unmount()
+  })
+})
+
+describe('LiveViewPanel touch layout', () => {
+  it('keeps only Stop and Fullscreen on the image; tools, focus and snapshot sit outside it', async () => {
+    const { resetLayoutMode } = await import('@/composables/useLayoutMode')
+    localStorage.setItem('layout', 'touch')
+    resetLayoutMode()
+    const { pinia } = setup()
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    const frame = w.find('.lv-frame')
+    expect(frame.find('[data-testid="lv-stop"]').exists()).toBe(true)
+    expect(frame.find('[data-testid="lv-fullscreen"]').exists()).toBe(true)
+    for (const id of ['lv-toolbar', 'lv-focus', 'lv-snapshot'])
+      expect(frame.find(`[data-testid="${id}"]`).exists()).toBe(false)
+    const ctl = w.find('.lv-controls')
+    for (const id of ['lv-toolbar', 'lv-focus', 'lv-snapshot'])
+      expect(ctl.find(`[data-testid="${id}"]`).exists()).toBe(true)
+    expect(ctl.find('[data-testid="lv-more"]').exists()).toBe(true)
+    w.unmount()
+    localStorage.removeItem('layout')
+    resetLayoutMode()
   })
 })

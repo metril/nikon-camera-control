@@ -47,7 +47,7 @@ const remove = (v) =>
           type="button"
           :aria-label="`Remove ${v}`"
           :disabled="disabled"
-          class="inline-flex text-camera-muted hover:text-camera-text"
+          class="inline-flex items-center justify-center text-camera-muted hover:text-camera-text [html[data-layout='touch']_&]:h-11 [html[data-layout='touch']_&]:w-11"
           @click="remove(v)"
         >
           <UiIcon name="X" :size="12" />
@@ -58,7 +58,7 @@ const remove = (v) =>
         v-model="draft"
         :placeholder="placeholder"
         :disabled="disabled"
-        class="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm outline-offset-4"
+        class="min-h-[var(--ctl-sm)] min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm outline-offset-4"
         @keydown="onKey"
         @blur="add"
       />

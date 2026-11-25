@@ -5,6 +5,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
 import { useSettingsStore } from '@/stores/settings'
 import { useShootStore } from '@/stores/shoot'
+import { useStorageStore } from '@/stores/storage'
 import { mountCard } from '@/components/shoot/testing'
 
 vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {}, downloadBlob: vi.fn() }))
@@ -136,5 +137,22 @@ describe('ShootView', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('a recent capture opens that file in the Gallery through the deep link', async () => {
+    setup()
+    useCaptureStore().recent = [{ path: 'a b/DSC 1.JPG', name: 'DSC 1.JPG' }]
+    await flushPromises()
+    await wrapper.find('.thumb').trigger('click')
+    expect(location.hash).toBe('#/gallery?open=' + encodeURIComponent('a b/DSC 1.JPG'))
+  })
+
+  it('the no-storage link goes to the Storage section of Settings', async () => {
+    setup()
+    useStorageStore().loaded = true
+    useStorageStore().targetId = null
+    await flushPromises()
+    const a = wrapper.find('[data-test="no-target"] a')
+    expect(a.attributes('href')).toBe('#/settings?section=storage')
   })
 })

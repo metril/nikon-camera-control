@@ -72,7 +72,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function set(name, value) {
     let q = queues.get(name)
     if (!q) {
-      q = { latest: value, base: get(name), event: null, waiters: [], running: false }
+      q = { latest: value, base: get(name), event: null, sent: [], waiters: [], running: false }
       queues.set(name, q)
     } else {
       q.latest = value
@@ -91,6 +91,7 @@ export const useSettingsStore = defineStore('settings', () => {
       for (;;) {
         const sent = q.latest
         q.event = null
+        q.sent.push(JSON.stringify(sent))
         out = await api.setSetting({ path: { name }, body: { value: sent } })
         // the camera's canonical value is the new rollback point for a later failed write
         q.base = out && typeof out === 'object' && 'value' in out ? out.value : sent
@@ -113,6 +114,13 @@ export const useSettingsStore = defineStore('settings', () => {
   function onSettingChanged({ name, value }) {
     const q = queues.get(name)
     if (q) {
+      // each send is echoed at most once: consume it (and older, never-echoed sends) so a later
+      // real change back to the same value is not mistaken for an echo
+      const i = q.sent.indexOf(JSON.stringify(value))
+      if (i >= 0) {
+        q.sent.splice(0, i + 1)
+        return
+      }
       q.event = { value } // our own write is in flight; applied when the queue drains
       return
     }

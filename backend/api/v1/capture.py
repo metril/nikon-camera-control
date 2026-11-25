@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -49,16 +50,21 @@ async def capture_photo(body: CaptureRequest, svc: CaptureDep) -> CaptureOut:
         filename_prefix=body.filename_prefix,
     )
     root = svc.output_dir
-    return CaptureOut(
-        files=[
+
+    def describe() -> list[CapturedFile]:  # blocking stat/resolve: off the event loop
+        base = root.resolve()
+        return [
             CapturedFile(
                 name=p.name,
-                path=p.resolve().relative_to(root.resolve()).as_posix(),
+                path=p.resolve().relative_to(base).as_posix(),
                 size=p.stat().st_size,
                 kind=classify(p.name),
             )
             for p in res.local
-        ],
+        ]
+
+    return CaptureOut(
+        files=await asyncio.to_thread(describe),
         camera_files=[CameraFileOut(folder=f.folder, name=f.name) for f in res.camera_files],
     )
 

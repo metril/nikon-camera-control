@@ -1,10 +1,12 @@
 <script setup>
-/** Top-left pill of live view tools (icon + label); scrolls horizontally when narrow. */
+/** Top-left pill of live view tools (icon + label); scrolls horizontally when narrow.
+ * `compact` (touch, outside the image): two tools inline, the rest under a More button. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
 
+const props = defineProps({ compact: Boolean })
 const lv = useLiveViewStore()
 const toasts = useToastsStore()
 const GRID_LABEL = { thirds: 'Thirds', golden: 'Golden', centre: 'Centre', off: 'Grid off' }
@@ -29,6 +31,13 @@ const items = computed(() => [
   { key: 'onion', icon: 'Layers', label: 'Last shot overlay' },
 ])
 
+const INLINE = 2
+const inline = computed(() => (props.compact ? items.value.slice(0, INLINE) : items.value))
+const rest = computed(() => (props.compact ? items.value.slice(INLINE) : []))
+const moreOpen = ref(false)
+const anyOn = computed(() => rest.value.some((t) => t.pressed ?? lv.tools[t.key]))
+const run = (t) => (t.click ? t.click() : lv.toggleTool(t.key))
+
 // A fade at the right edge shows there is more to scroll to
 const bar = ref(null)
 const more = ref(false)
@@ -48,32 +57,89 @@ onBeforeUnmount(() => ro?.disconnect())
 </script>
 
 <template>
-  <div
-    ref="bar"
-    class="lv-toolbar"
-    :class="{ more }"
-    role="toolbar"
-    aria-label="Live view tools"
-    data-testid="lv-toolbar"
-    @scroll.passive="measure"
-  >
-    <button
-      v-for="t in items"
-      :key="t.key"
-      type="button"
-      :data-testid="`lv-tool-${t.key}`"
-      :aria-pressed="t.pressed ?? lv.tools[t.key]"
-      :title="t.title || t.label"
-      :aria-label="t.aria"
-      @click="t.click ? t.click() : lv.toggleTool(t.key)"
+  <div class="lv-tools" @keydown.esc="moreOpen = false">
+    <div
+      ref="bar"
+      class="lv-toolbar"
+      :class="{ more: more && !compact, wrap: compact }"
+      role="toolbar"
+      aria-label="Live view tools"
+      data-testid="lv-toolbar"
+      @scroll.passive="measure"
     >
-      <UiIcon :name="t.icon" :size="16" />
-      <span>{{ t.label }}</span>
-    </button>
+      <button
+        v-for="t in inline"
+        :key="t.key"
+        type="button"
+        :data-testid="`lv-tool-${t.key}`"
+        :aria-pressed="t.pressed ?? lv.tools[t.key]"
+        :title="t.title || t.label"
+        :aria-label="t.aria"
+        @click="run(t)"
+      >
+        <UiIcon :name="t.icon" :size="16" />
+        <span>{{ t.label }}</span>
+      </button>
+      <button
+        v-if="compact"
+        type="button"
+        class="more-btn"
+        :class="{ on: anyOn }"
+        data-testid="lv-more"
+        aria-haspopup="true"
+        :aria-expanded="moreOpen"
+        @click="moreOpen = !moreOpen"
+      >
+        <UiIcon name="SlidersHorizontal" :size="16" />
+        <span>More</span>
+      </button>
+    </div>
+    <div
+      v-if="compact && moreOpen"
+      class="lv-morepop"
+      role="group"
+      aria-label="More live view tools"
+    >
+      <button
+        v-for="t in rest"
+        :key="t.key"
+        type="button"
+        :data-testid="`lv-tool-${t.key}`"
+        :aria-pressed="t.pressed ?? lv.tools[t.key]"
+        :title="t.title || t.label"
+        @click="run(t)"
+      >
+        <UiIcon :name="t.icon" :size="16" />
+        <span>{{ t.label }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.lv-tools {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  justify-items: start;
+}
+.lv-morepop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: 22px;
+  background: theme('colors.camera.overlay');
+  border: 1px solid theme('colors.camera.border');
+}
+.more-btn.on::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: theme('colors.camera.accent');
+}
 .lv-toolbar {
   display: flex;
   gap: 2px;
@@ -85,6 +151,12 @@ onBeforeUnmount(() => ro?.disconnect())
   backdrop-filter: blur(6px);
   overflow-x: auto;
   scrollbar-width: none;
+}
+.lv-toolbar.wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+  border-radius: 24px;
+  max-width: 100%;
 }
 .lv-toolbar.more {
   -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);

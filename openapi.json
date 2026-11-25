@@ -5821,8 +5821,15 @@
             "type": "integer"
           },
           "free_images": {
-            "title": "Free Images",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Images"
           },
           "free_kb": {
             "title": "Free Kb",
@@ -5838,7 +5845,6 @@
           "base_dir",
           "capacity_kb",
           "free_kb",
-          "free_images",
           "access"
         ],
         "title": "StorageCardOut",
@@ -5847,21 +5853,6 @@
       "StorageConfigPatch": {
         "additionalProperties": false,
         "properties": {
-          "backup_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Locations used for backups.",
-            "title": "Backup Ids"
-          },
           "backup_interval_min": {
             "anyOf": [
               {
@@ -5886,21 +5877,6 @@
             "description": "Check every file already on the backup against its checksum on each run.",
             "title": "Deep Verify"
           },
-          "locations": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/StorageLocation"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Configured storage locations.",
-            "title": "Locations"
-          },
           "sidecars": {
             "anyOf": [
               {
@@ -5912,110 +5888,9 @@
             ],
             "description": "Save a SHA-256 checksum file next to every photo.",
             "title": "Sidecars"
-          },
-          "target_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Location that receives every photo.",
-            "title": "Target Id"
           }
         },
         "title": "StorageConfigPatch",
-        "type": "object"
-      },
-      "StorageLocation": {
-        "additionalProperties": false,
-        "description": "A configured storage location. Passwords are never stored here (see SecretStore).",
-        "properties": {
-          "auto_mount": {
-            "default": true,
-            "description": "Mount automatically when available",
-            "title": "Auto Mount",
-            "type": "boolean"
-          },
-          "domain": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "pattern": "^[^\\x00-\\x1f,]*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Domain"
-          },
-          "id": {
-            "description": "usb-<fs uuid> or smb-<slug>",
-            "pattern": "^(usb-[0-9A-Za-z-]{1,64}|smb-[a-z0-9][a-z0-9_-]{0,31})$",
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "enum": [
-              "usb",
-              "smb"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "name": {
-            "default": "",
-            "description": "Display name",
-            "maxLength": 64,
-            "title": "Name",
-            "type": "string"
-          },
-          "unc": {
-            "anyOf": [
-              {
-                "pattern": "^//[A-Za-z0-9._-]+/[A-Za-z0-9._ $-]+(/[A-Za-z0-9._ $-]+)*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unc"
-          },
-          "username": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "pattern": "^[^\\x00-\\x1f,]*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          },
-          "uuid": {
-            "anyOf": [
-              {
-                "pattern": "^[0-9A-Za-z-]{1,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Uuid"
-          }
-        },
-        "required": [
-          "id",
-          "kind"
-        ],
-        "title": "StorageLocation",
         "type": "object"
       },
       "StorageOut": {
@@ -7024,7 +6899,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.4.7"
+    "version": "0.5.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -8617,6 +8492,113 @@
         ]
       }
     },
+    "/api/v1/camera/thumbnail": {
+      "get": {
+        "operationId": "get_camera_thumbnail",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "folder",
+            "required": true,
+            "schema": {
+              "title": "Folder",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The camera's own preview JPEG of the file"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Camera Thumbnail",
+        "tags": [
+          "camera-files"
+        ]
+      }
+    },
     "/api/v1/capture": {
       "post": {
         "operationId": "capture_photo",
@@ -9860,6 +9842,7 @@
                 "image",
                 "raw",
                 "video",
+                "photos",
                 "all"
               ],
               "title": "Kind",

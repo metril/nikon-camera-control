@@ -46,9 +46,15 @@ const perFrame = computed(
     status.value?.config?.bracketing?.steps?.length ||
     1,
 )
-const plannedFrames = computed(() =>
-  Math.round((status.value?.counters?.frames_planned ?? 0) / perFrame.value),
-)
+// Before the first frame the plan comes from the draft's estimate, so the card reads "0 of N".
+const plannedFrames = computed(() => {
+  const running = Math.round((status.value?.counters?.frames_planned ?? 0) / perFrame.value)
+  if (running > 0) return running
+  const est = resultNow.value?.estimate?.total_sets
+  if (Number.isFinite(est) && est > 0) return est
+  if (draft.limit === 'frames' && Number.isFinite(draft.totalFrames)) return draft.totalFrames
+  return 0
+})
 const doneFrames = computed(() => counters.value.sets_done ?? 0)
 const fraction = computed(() =>
   plannedFrames.value > 0
@@ -71,7 +77,7 @@ watch(state, () => (confirmStop.value = false))
 const isActive = computed(() => timelapse.isActive)
 const startBlock = computed(() => {
   if (!camera.connected) return 'Camera not connected'
-  if (storage.noTarget) return 'No storage target'
+  if (storage.noTarget) return 'No storage chosen'
   if (camera.leasedBy && camera.leasedBy !== 'timelapse')
     return `Busy: ${leaseOwner(camera.leasedBy)}`
   if (!draftKey.value) return 'Fix the configuration first'

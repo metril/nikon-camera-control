@@ -604,3 +604,20 @@ async def test_slow_sets_warn_once_and_expose_measured_duration(rig: Rig) -> Non
     assert len(slow_w) == 1
     assert slow_w[0]["measured_set_duration_s"] >= 12 and slow_w[0]["suggested_min_interval_s"] > 12
     assert st.measured_set_duration_s is not None and st.measured_set_duration_s >= 12
+
+
+def test_disk_full_is_found_through_wrapped_causes() -> None:
+    import errno
+
+    from backend.core.errors import DownloadFailed
+    from backend.services.timelapse.runner import _is_disk_full
+
+    try:
+        try:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        except OSError as e:
+            raise DownloadFailed(details={"cause": str(e)}) from e
+    except DownloadFailed as wrapped:
+        assert _is_disk_full(wrapped)
+    assert not _is_disk_full(DownloadFailed())
+    assert not _is_disk_full(OSError(errno.EIO, "io"))

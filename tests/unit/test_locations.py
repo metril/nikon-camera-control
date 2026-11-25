@@ -1,4 +1,5 @@
 import asyncio
+import os
 import stat
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -46,7 +47,6 @@ async def env(tmp_path: Path) -> AsyncIterator[Env]:
         runner=helper.runner,
         mount_base=helper.base,
         mountinfo=helper.mountinfo,
-        ismount=helper.ismount,
         busy=lambda: e.busy[0],
     )
     yield e
@@ -70,11 +70,14 @@ async def test_no_target_raises_until_one_is_mounted(env: Env) -> None:
     assert env.svc.cache() == env.helper.base / UID / ".ncc"
 
 
-async def test_ismount_guard_blocks_writes_when_mount_vanishes(env: Env) -> None:
+async def test_mount_guard_blocks_writes_once_the_poll_sees_the_mount_vanish(env: Env) -> None:
     _usb(env)
     env.svc.set_target(UID)
     await env.svc.refresh()
-    env.helper.mounted.clear()  # the mount disappeared but the app has not noticed yet
+    env.helper.mounted.clear()
+    env.helper._sync()
+    env.svc._state(UID).retry_at = float("inf")  # no auto-remount
+    await env.svc.refresh()  # root_of() reads the poller's cached mountinfo, never the disk
     with pytest.raises(NoTargetError):
         env.svc.root()
 
@@ -366,3 +369,103 @@ async def test_pending_probe_is_skipped_not_stacked(
     gate.set()
     await asyncio.sleep(0.1)
     assert await env.svc._probe(key, lambda p: 2, Path(".")) == 2
+
+
+async def test_fsck_gets_its_own_long_timeout_and_maps_timeouts_to_an_app_error(env: Env) -> None:
+    from backend.services import locations as loc_mod
+
+    _usb(env)
+    seen: list[float | None] = []
+
+    async def runner(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        seen.append(limit_s)
+        raise TimeoutError
+
+    env.svc._run = runner
+    with pytest.raises(MountFailed):
+        await env.svc.fsck(UID)
+    assert seen == [loc_mod.FSCK_TIMEOUT_S] and loc_mod.FSCK_TIMEOUT_S > 180
+    assert not env.svc._lock.locked()
+
+
+async def test_remove_uses_config_read_after_the_unmount_await(env: Env) -> None:
+    _usb(env)
+    env.svc.set_target(UID)
+    await env.svc.refresh()
+    real = env.svc.unmount
+
+    async def unmount_and_retarget(lid: str, **kw):  # type: ignore[no-untyped-def]
+        await real(lid, **kw)
+        env.store.update({"storage": {"backup_interval_min": 77}})  # concurrent config write
+
+    env.svc.unmount = unmount_and_retarget  # type: ignore[method-assign]
+    await env.svc.remove(UID)
+    st = env.store.config.storage
+    assert st.backup_interval_min == 77 and st.target_id is None and st.locations == []
+
+
+async def test_root_of_sees_a_yanked_mount_between_polls(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import locations as loc_mod
+
+    monkeypatch.setattr(loc_mod, "LIVE_MOUNT_TTL_S", 0.0)
+    _usb(env)
+    env.svc.set_target(UID)
+    await env.svc.refresh()
+    assert env.svc.root()
+    env.helper.mounted.clear()
+    env.helper._sync()  # no poll runs: only the live check can notice
+    with pytest.raises(NoTargetError):
+        env.svc.root()
+
+
+async def test_fsck_runs_outside_the_lock_and_blocks_only_its_own_location(env: Env) -> None:
+    _usb(env)
+    other = "2222-2222"
+    env.helper.plug(other)
+    env.svc.add(kind="usb", uuid=other)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    started, gate = asyncio.Event(), asyncio.Event()
+
+    async def runner(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        started.set()
+        await gate.wait()
+        return 0, "clean", ""
+
+    real = env.svc._run
+    env.svc._run = runner
+    task = asyncio.create_task(env.svc.fsck(UID))
+    await started.wait()
+    assert not env.svc._lock.locked()
+    for op in (env.svc.mount(UID), env.svc.unmount(UID), env.svc.fsck(UID)):
+        with pytest.raises(LocationBusy):
+            await op
+    env.svc._run = real
+    await env.svc.refresh()  # polling is not blocked and does not auto-mount the busy drive
+    assert not env.svc.get(UID).mounted and env.svc.get(f"usb-{other}").mounted
+    gate.set()
+    assert await task == (0, "clean")
+
+
+async def test_sudo_runner_terminates_then_kills_a_real_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time as _t
+
+    from backend.services import locations as loc_mod
+
+    script = tmp_path / "helper"
+    script.write_text("#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 0.05; done\n")
+    script.chmod(0o755)
+    shim = tmp_path / "sudo"
+    shim.write_text('#!/bin/sh\nshift\nexec "$@"\n')  # sudo -n HELPER args
+    shim.chmod(0o755)
+    monkeypatch.setattr(loc_mod, "HELPER", str(script))
+    monkeypatch.setattr(loc_mod, "TERM_GRACE_S", 0.3)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+    t0 = _t.monotonic()
+    with pytest.raises(TimeoutError):
+        await loc_mod.sudo_runner(["x"], limit_s=0.2)
+    assert _t.monotonic() - t0 < 3  # TERM ignored -> killed after the grace period

@@ -6,7 +6,7 @@ import { useToastsStore } from '@/stores/toasts'
 import { useCameraStore } from '@/stores/camera'
 import { leaseOwner } from '@/labels'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiNumber from '@/components/ui/UiNumber.vue'
+import UiText from '@/components/ui/UiText.vue'
 import UiToggle from '@/components/ui/UiToggle.vue'
 import UiProgress from '@/components/ui/UiProgress.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
@@ -19,9 +19,19 @@ const jobs = useJobsStore()
 const toasts = useToastsStore()
 
 const form = reactive({ max: null, download: false })
+const maxText = ref('')
 const starting = ref(false)
 const stopping = ref(false)
 const startError = ref(null)
+/** '90' or '1:30' (mm:ss) -> seconds; null when empty, NaN when malformed. */
+function parseLimit(raw) {
+  const t = raw.trim()
+  if (!t) return null
+  const m = /^(\d+):([0-5]?\d)$/.exec(t)
+  if (m) return Number(m[1]) * 60 + Number(m[2])
+  return /^\d+$/.test(t) ? Number(t) : NaN
+}
+watch(maxText, (t) => (form.max = parseLimit(t)))
 const maxOk = computed(
   () => form.max === null || (Number.isInteger(form.max) && form.max >= 1 && form.max <= MAX_S),
 )
@@ -118,16 +128,13 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
       {{ reason }}
     </p>
     <div v-if="!active" class="flex flex-col gap-4">
-      <UiNumber
-        v-model="form.max"
+      <UiText
+        v-model="maxText"
         label="Longest recording (optional)"
-        unit="s"
-        :min="1"
-        :max="1799"
-        :step="1"
+        placeholder="mm:ss, or seconds"
         :disabled="disabled"
       />
-      <p class="text-xs text-camera-muted">Up to 29 min 59 s, the camera's clip limit.</p>
+      <p class="text-xs text-camera-muted">Up to 29:59, the camera's clip limit.</p>
       <UiToggle
         v-model="form.download"
         label="Download clip to server when done"
@@ -144,12 +151,12 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
         Start recording
       </UiButton>
       <p v-if="!maxOk" id="rec-max" class="-mt-2 text-xs text-camera-warn">
-        Enter a whole number of seconds from 1 to 1799.
+        Enter a time from 0:01 to 29:59 (mm:ss), or whole seconds.
       </p>
     </div>
     <div v-else class="flex flex-col gap-4" aria-live="polite">
       <p class="flex items-center gap-2 text-3xl font-mono tabular-nums">
-        <span class="h-3 w-3 animate-pulse rounded-full bg-camera-danger-fill" aria-hidden="true" />
+        <span class="h-3 w-3 animate-pulse rounded-full bg-camera-danger" aria-hidden="true" />
         <span data-testid="elapsed">{{ fmtDuration(elapsed) }}</span>
         <span v-if="status?.max_seconds" class="text-base text-camera-muted"
           >/ {{ fmtDuration(status.max_seconds) }}</span
@@ -174,7 +181,7 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
       {{ status.warning }}
     </p>
     <p
-      v-if="!active && status?.ended_reason"
+      v-if="!active && status?.ended_reason && status.ended_reason !== 'user'"
       class="text-sm text-camera-muted"
       data-testid="ended-reason"
     >
@@ -186,7 +193,7 @@ onMounted(() => recording.fetchStatus().catch(() => {}))
 
     <div v-if="clip" class="space-y-1 text-sm" data-testid="last-clip">
       <p>
-        Last clip: <strong>{{ clip.folder }}/{{ clip.name }}</strong>
+        Last clip: <strong>{{ clip.name }}</strong>
         <span v-if="clip.size" class="text-camera-muted">
           ({{ (clip.size / 1048576).toFixed(1) }} MB)</span
         >

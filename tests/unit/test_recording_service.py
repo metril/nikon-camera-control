@@ -377,3 +377,34 @@ async def test_shutdown_during_recording_stops_camera_and_releases(rig: Rig) -> 
     assert not rig.rec.info().active and rig.rec.info().reason == "shutdown"
     assert rig.cam.state == S.IDLE and rig.cam.status().leased_by is None
     assert not rig.fake.get_config("movie").value
+
+
+async def test_ffprobe_timeout_kills_and_reaps_the_process(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from backend.services import recording
+
+    class Proc:
+        killed = waited = False
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            await asyncio.sleep(60)
+            return b"", b""
+
+        def kill(self) -> None:
+            self.killed = True
+
+        async def wait(self) -> int:
+            self.waited = True
+            return -9
+
+    proc = Proc()
+
+    async def fake_exec(*a: object, **k: object) -> Proc:
+        return proc
+
+    monkeypatch.setattr(recording.shutil, "which", lambda _n: "/usr/bin/ffprobe")
+    monkeypatch.setattr(recording.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(recording, "FFPROBE_TIMEOUT_S", 0.05)
+    assert await recording.ffprobe_duration(tmp_path / "x.mov") is None
+    assert proc.killed and proc.waited

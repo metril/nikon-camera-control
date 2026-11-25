@@ -14,8 +14,11 @@ export const useCaptureStore = defineStore('capture', () => {
   const recent = ref([]) // newest saved files, for the strip under the live view
   const lastError = ref(null)
 
+  let pendingRequests = 0 // blocking capture() calls awaiting their HTTP response
+
   /** Blocking capture; body: {download, delete_from_camera, filename_prefix}. */
   async function capture(body = {}) {
+    pendingRequests++
     inFlight.value = true
     try {
       return await guard(
@@ -23,6 +26,7 @@ export const useCaptureStore = defineStore('capture', () => {
         async () => (lastCapture.value = await api.capturePhoto({ body })),
       )
     } finally {
+      pendingRequests--
       inFlight.value = false
     }
   }
@@ -53,6 +57,13 @@ export const useCaptureStore = defineStore('capture', () => {
     loadRecent().catch(() => {})
   }
 
+  /** Camera gone or events lost: nothing is in flight any more. */
+  function reset() {
+    // a long exposure's own request is still running: it clears inFlight when it returns
+    if (!pendingRequests) inFlight.value = false
+    bulbActive.value = false
+  }
+
   return {
     lastCapture,
     lastFiles,
@@ -66,5 +77,6 @@ export const useCaptureStore = defineStore('capture', () => {
     bracket,
     onStarted,
     onComplete,
+    reset,
   }
 })

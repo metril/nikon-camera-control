@@ -1,7 +1,8 @@
 <script setup>
-/** Top bar: brand, tabs, camera status chip, battery, shots left, Jobs and the layout switch. */
+/** Top bar: brand, tabs, camera status chip, battery, shots left, Jobs and (desktop only) the layout switch. */
 import { computed, onMounted, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
+import { useCaptureStore } from '@/stores/capture'
 import { useJobsStore } from '@/stores/jobs'
 import { useStorageStore } from '@/stores/storage'
 import { useVisiblePolling } from '@/composables'
@@ -9,11 +10,13 @@ import { useLayoutMode } from '@/composables/useLayoutMode'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import CameraChip from './CameraChip.vue'
 import { TABS } from './useTabs'
+import { shotsLeftOf } from './shotsLeft'
 
 defineProps({ activeTab: { type: String, required: true } })
 const emit = defineEmits(['select', 'jobs', 'shortcuts'])
 
 const camera = useCameraStore()
+const capture = useCaptureStore()
 const jobs = useJobsStore()
 const storage = useStorageStore()
 const { layout, forced, setPref } = useLayoutMode()
@@ -27,7 +30,8 @@ const battery = computed(() => {
 const shotsLeft = computed(() => {
   const cards = camera.storage?.cards
   if (!cards?.length) return null
-  return cards.reduce((n, c) => n + (c.free_images || 0), 0).toLocaleString('en-GB')
+  const n = shotsLeftOf(cards)
+  return n == null ? '–' : n.toLocaleString('en-GB') // a camera that does not report it: unknown, not 0
 })
 
 const refresh = () => {
@@ -35,6 +39,10 @@ const refresh = () => {
   if (camera.connected && !camera.leasedBy) camera.fetchStorage().catch(() => {})
 }
 watch(() => [camera.connected, camera.leasedBy], refresh)
+watch(
+  () => capture.inFlight,
+  (busy, was) => was && !busy && refresh(), // a shot just landed: shots left changed
+)
 onMounted(() => {
   refresh()
   if (!storage.loaded) storage.refresh().catch(() => {})
@@ -89,7 +97,8 @@ const LAYOUTS = [
       <button
         type="button"
         class="iconbtn"
-        aria-label="Jobs"
+        :aria-label="jobs.active.length ? `Jobs, ${jobs.active.length} running` : 'Jobs'"
+        title="Jobs"
         data-test="jobs-button"
         @click="emit('jobs')"
       >
@@ -98,7 +107,7 @@ const LAYOUTS = [
           jobs.active.length
         }}</span>
       </button>
-      <div v-if="!forced" class="seg" role="group" aria-label="Layout">
+      <div v-if="!forced && layout !== 'touch'" class="seg" role="group" aria-label="Layout">
         <button
           v-for="l in LAYOUTS"
           :key="l.value"
@@ -235,7 +244,7 @@ const LAYOUTS = [
   background: theme('colors.camera.accent');
   color: theme('colors.camera.accent-ink');
   font:
-    600 10px/16px system-ui,
+    600 12px/16px system-ui,
     sans-serif;
   text-align: center;
 }

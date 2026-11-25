@@ -235,6 +235,7 @@ function signedEv(n) {
 /** A camera setting value as people read it: × in sizes, true-minus EV, sentence case words. */
 export function settingValueLabel(name, value) {
   if (value == null || value === '') return '–'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   const v = String(value)
   const key = String(name || '').toLowerCase()
   if (/^\d+\s*x\s*\d+$/i.test(v)) return v.replace(/\s*x\s*/i, ' \u00d7 ').replace(/ /g, '')

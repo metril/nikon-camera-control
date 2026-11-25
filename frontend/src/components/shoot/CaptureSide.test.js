@@ -106,10 +106,10 @@ describe('CaptureSide', () => {
     storage.targetId = null
     await flushPromises()
     expect(shutter().attributes('aria-disabled')).toBe('true')
-    expect(wrapper.find('[data-testid="shutter-reason"]').text()).toContain('No storage target')
+    expect(wrapper.find('[data-testid="shutter-reason"]').text()).toContain('No storage chosen')
   })
 
-  it('trigger-only Single stays enabled without a storage target', async () => {
+  it('trigger-only Single stays enabled without storage chosen', async () => {
     setup()
     const storage = useStorageStore()
     storage.loaded = true
@@ -158,5 +158,63 @@ describe('CaptureSide', () => {
     const t = wrapper.find('[data-testid="last-capture"]').text()
     expect(t).toContain('DSC_0001.JPG')
     expect(t).toContain('JPEG + RAW')
+  })
+
+  it('without storage chosen: says photos are not saved, offers card-only and the Storage link', async () => {
+    setup()
+    const storage = useStorageStore()
+    storage.loaded = true
+    storage.targetId = null
+    const config = useConfigStore()
+    config.config = { camera: { download_photos: true } }
+    config.patch = vi.fn().mockResolvedValue({})
+    await flushPromises()
+    expect(wrapper.find('[data-testid="download-chip"]').text()).toBe('Not saving to storage')
+    expect(wrapper.find('[data-test="no-target"] a').attributes('href')).toBe(
+      '#/settings?section=storage',
+    )
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    wrapper.find('[data-test="no-target"] a').element.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true) // the emit navigates; the href must not add a second entry
+    expect(wrapper.emitted('open-settings')[0]).toEqual(['storage'])
+    await button(wrapper, 'Shoot to card only').trigger('click')
+    expect(config.patch).toHaveBeenCalledWith({ camera: { download_photos: false } })
+  })
+
+  it('does not offer card-only for modes that need storage chosen', async () => {
+    setup()
+    const storage = useStorageStore()
+    storage.loaded = true
+    storage.targetId = null
+    useConfigStore().config = { camera: { download_photos: true } }
+    useShootStore().mode = 'bracket'
+    await flushPromises()
+    expect(button(wrapper, 'Shoot to card only')).toBeUndefined()
+  })
+
+  it('toasts when saving card-only fails', async () => {
+    const { pinia } = setup()
+    const storage = useStorageStore()
+    storage.loaded = true
+    storage.targetId = null
+    const config = useConfigStore()
+    config.config = { camera: { download_photos: true } }
+    config.patch = vi.fn().mockRejectedValue(new Error('nope'))
+    await flushPromises()
+    await button(wrapper, 'Shoot to card only').trigger('click')
+    await flushPromises()
+    expect(useToastsStore(pinia).items.at(-1).message).toContain('nope')
+  })
+
+  it('fades the bottom edge while the column has more below, not once scrolled to the end', async () => {
+    setup()
+    const el = wrapper.find('.side').element
+    Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true })
+    Object.defineProperty(el, 'scrollHeight', { value: 700, configurable: true })
+    await wrapper.find('.side').trigger('scroll')
+    expect(wrapper.find('.side').classes()).toContain('fade')
+    el.scrollTop = 300
+    await wrapper.find('.side').trigger('scroll')
+    expect(wrapper.find('.side').classes()).not.toContain('fade')
   })
 })

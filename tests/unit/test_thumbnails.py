@@ -1,3 +1,4 @@
+import asyncio
 import io
 import random
 import struct
@@ -134,3 +135,77 @@ def test_largest_candidate_wins_and_garbage_is_ignored(tmp_path: Path) -> None:
 def test_truncated_tiff_offsets_do_not_crash(tmp_path: Path) -> None:
     data = _synthetic_nef(_jpeg_bytes((100, 80)))[:150]
     assert _tiff_jpeg_ranges(data) == []  # bounds-checked, no struct.error escapes
+
+
+async def test_renders_are_capped_and_cache_is_pruned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from backend.services import thumbnails as th
+
+    srcs = []
+    for i in range(6):
+        p = tmp_path / f"{i}.jpg"
+        _jpg(p, (300 + i, 200))
+        srcs.append(p)
+    svc = ThumbnailService(tmp_path / "d", lambda: 100)
+    live = peak = 0
+    lock = threading.Lock()
+    real = th._render
+
+    def counting(src: Path, dest: Path, size: int) -> None:
+        nonlocal live, peak
+        with lock:
+            live += 1
+            peak = max(peak, live)
+        try:
+            import time
+
+            time.sleep(0.05)
+            real(src, dest, size)
+        finally:
+            with lock:
+                live -= 1
+
+    monkeypatch.setattr(th, "_render", counting)
+    await asyncio.gather(*(svc.get(p) for p in srcs))
+    assert 1 <= peak <= th.MAX_CONCURRENT_RENDERS
+    th._prune(tmp_path / "d" / "thumbs", 2)
+    assert len(list((tmp_path / "d" / "thumbs").glob("*.jpg"))) == 2
+
+
+def test_jpeg_thumbnail_uses_draft_mode_and_keeps_size(tmp_path: Path) -> None:
+    src = tmp_path / "big.jpg"
+    _jpg(src, (4000, 3000))
+    dest = tmp_path / "t.jpg"
+    from backend.services.thumbnails import _render
+
+    _render(src, dest, 200)
+    with Image.open(dest) as im:
+        assert max(im.size) == 200
+
+
+def test_draft_is_requested_before_the_jpeg_is_decoded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PIL import JpegImagePlugin
+
+    f = tmp_path / "big.jpg"
+    f.write_bytes(_jpeg_bytes((2000, 1500)))
+    order: list[str] = []
+    real_draft, real_load = JpegImagePlugin.JpegImageFile.draft, JpegImagePlugin.JpegImageFile.load
+
+    def draft(self, *a):  # type: ignore[no-untyped-def]
+        order.append("draft")
+        return real_draft(self, *a)
+
+    def load(self):  # type: ignore[no-untyped-def]
+        order.append("load")
+        return real_load(self)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "draft", draft)
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "load", load)
+    im = load_full_image(f, draft_size=100)
+    assert order[:2] == ["draft", "load"]
+    assert im.size[0] < 2000  # decoded at reduced scale

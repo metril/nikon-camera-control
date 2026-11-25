@@ -51,14 +51,8 @@ describe('ConfigForm', () => {
     await w.vm.$nextTick()
     expect(w.find('[data-test="total-shots"]').text()).toBe('100')
     expect(w.find('[data-test="disk"]').text()).toBe('4.8 MB')
-    expect(w.text()).toContain('Unsaved') // previewed, not saved
-    const apply = w.findAll('button').find((b) => b.text() === 'Apply configuration')
-    await apply.trigger('click')
-    await vi.runAllTimersAsync()
-    expect(tl.setConfig).toHaveBeenCalledTimes(1)
-    expect(tl.setConfig.mock.calls[0][0].interval_s).toBe(5)
-    await w.vm.$nextTick()
-    expect(w.text()).not.toContain('Unsaved')
+    expect(w.text()).toContain('applied when you press Start') // previewed, applied on Start
+    expect(w.findAll('button').some((b) => b.text() === 'Apply configuration')).toBe(false)
   })
 
   it('shows dashes, not NaN, and sends nothing for an empty field', async () => {
@@ -71,7 +65,7 @@ describe('ConfigForm', () => {
     expect(w.text()).toContain('Enter an interval above 0')
   })
 
-  it('shows server errors at the field and unsaved state', async () => {
+  it('shows server errors at the field', async () => {
     const { tl, w } = setup()
     tl.previewDraft.mockRejectedValue({
       message: 'bad',
@@ -79,10 +73,18 @@ describe('ConfigForm', () => {
     })
     draft.intervalS = 1
     await w.vm.$nextTick()
-    expect(w.text()).toContain('Unsaved changes')
     vi.advanceTimersByTime(700)
     await vi.runAllTimersAsync()
     await w.vm.$nextTick()
     expect(w.text()).toContain('below camera minimum')
+  })
+
+  it('labels the Stop-after value input for the chosen limit', async () => {
+    const { w } = setup()
+    const labels = () => w.findAll('label').map((l) => l.text())
+    expect(labels()).toContain('Frames')
+    draft.limit = 'duration'
+    await w.vm.$nextTick()
+    expect(labels()).toContain('Duration')
   })
 })

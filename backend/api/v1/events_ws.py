@@ -25,7 +25,11 @@ async def events_ws(websocket: WebSocket) -> None:
     if not await ws_authorize(websocket):
         return
     watch = KeyWatch(websocket)
-    await websocket.accept(subprotocol=ws_subprotocol(websocket))
+    try:
+        await websocket.accept(subprotocol=ws_subprotocol(websocket))
+    except BaseException:
+        watch.close()  # the handler's finally is not reached yet
+        raise
     sub = ws_get_event_bus(websocket).subscribe()  # before the snapshot: no gap
     send_lock = asyncio.Lock()
 

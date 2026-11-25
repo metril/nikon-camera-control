@@ -364,3 +364,21 @@ async def test_listing_fetches_file_info_in_small_batches(
     r = await connected_client.get(F, params={"folder": CARD_FOLDER})
     assert r.json()["total"] == 5
     assert fake_camera.calls.get("file_info", 0) - before == 5
+
+
+async def test_camera_thumbnail_serves_preview_jpeg(
+    connected_client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    await _shoot(connected_client, app, "JPEG Fine")
+    f = (await connected_client.get(F, params={"recursive": "true"})).json()["items"][0]
+    r = await connected_client.get(
+        "/api/v1/camera/thumbnail", params={"folder": f["folder"], "name": f["name"]}
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert r.content
+    assert "max-age" in r.headers["cache-control"]
+    r = await connected_client.get(
+        "/api/v1/camera/thumbnail", params={"folder": f["folder"], "name": "nope.jpg"}
+    )
+    assert r.status_code == 404

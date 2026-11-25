@@ -66,6 +66,14 @@ const picker = () => document.body.querySelector('[data-test="picker"]')
 const options = () => [...document.body.querySelectorAll('[role="option"]')]
 
 describe('ExposureStrip', () => {
+  it('shows unknown shots left as a dash, not 0', async () => {
+    setup()
+    useCameraStore().storage = { cards: [{ free_images: null, free_kb: 100 }] }
+    await wrapper.vm.$nextTick()
+    expect(cell('shots').text()).toContain('–')
+    expect(cell('shots').text()).not.toContain('0')
+  })
+
   it('shows mode, shutter, aperture, ISO, EV, WB, shots left and preset with short labels', () => {
     setup()
     const labels = wrapper.findAll('.cell .k').map((n) => n.text())
@@ -99,11 +107,19 @@ describe('ExposureStrip', () => {
     expect(cell('aperture').element.tagName).toBe('BUTTON')
   })
 
-  it('shows Meter instead of EV in manual mode', () => {
+  it('shows Meter instead of EV in manual mode', async () => {
     setup({ mode: 'M' })
+    useSettingsStore().common.push(S('lightmeter', '0.3', [], { readonly: true, writable: false }))
+    await flushPromises()
     expect(wrapper.find('[data-k="comp"]').exists()).toBe(false)
     expect(cell('meter').text()).toContain('Meter')
     expect(cell('shutter').find('.auto').exists()).toBe(false)
+  })
+
+  it('hides the Meter cell in manual mode when the camera reports no reading', () => {
+    setup({ mode: 'M' })
+    expect(wrapper.find('[data-k="meter"]').exists()).toBe(false)
+    expect(wrapper.findAll('.cell')).toHaveLength(7)
   })
 
   it('opens a picker with the camera values; choosing one writes the setting', async () => {

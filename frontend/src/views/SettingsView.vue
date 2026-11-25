@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
 import { useStorageStore } from '@/stores/storage'
 import { useCameraStore } from '@/stores/camera'
 import { useCameraAdminStore } from '@/stores/cameraAdmin'
 import { useLayoutMode } from '@/composables/useLayoutMode'
+import { routeQuery } from '@/components/shell/useTabs'
 import { useKeyboardHints } from '@/composables/useKeyboardHints'
 import { captureTarget, sampleName } from '@/labels'
 import UiText from '@/components/ui/UiText.vue'
@@ -40,7 +41,7 @@ const toasts = useToastsStore()
 const storage = useStorageStore()
 const camera = useCameraStore()
 const admin = useCameraAdminStore()
-const { pref: layoutPref, setPref: setLayoutPref } = useLayoutMode()
+const { pref: layoutPref, setPref: setLayoutPref, isTouch } = useLayoutMode()
 const { hints, setHints } = useKeyboardHints()
 
 const draft = ref({})
@@ -56,6 +57,22 @@ const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
 // Shown in Display.
 const DISPLAY_OWNED = ['timezone']
 const CAPTURE_OWNED = ['camera.keep_card_copy', 'camera.download_photos', 'camera.filename_prefix']
+// Expert knobs live behind the Advanced disclosure.
+const ADVANCED = [
+  'camera.keepalive_enabled',
+  'camera.keepalive_interval_s',
+  'camera.connect_timeout_s',
+  'camera.connect_retries',
+  'camera.reconnect_interval_s',
+  'camera.capture_timeout_s',
+  'camera.event_quiet_window_s',
+  'video.ffmpeg_path',
+  'video.crf',
+  'video.preset',
+  'video.timeout_s',
+  'liveview.jpeg_quality',
+  'timelapse.failure_budget',
+]
 const sections = computed(() =>
   buildSections(config.schema).map((s) =>
     s.key === 'storage'
@@ -63,15 +80,36 @@ const sections = computed(() =>
       : s,
   ),
 )
+const withFields = (s, keep) => ({ ...s, fields: s.fields.filter((f) => keep(s.path(f))) })
 const shownSections = computed(() =>
   sections.value
-    .map((s) => ({
-      ...s,
-      fields: s.fields.filter(
-        (f) => !CAPTURE_OWNED.includes(s.path(f)) && !DISPLAY_OWNED.includes(s.path(f)),
+    .map((s) =>
+      withFields(
+        s,
+        (p) => !CAPTURE_OWNED.includes(p) && !DISPLAY_OWNED.includes(p) && !ADVANCED.includes(p),
       ),
-    }))
-    .filter((s) => s.fields.length || s.key === 'camera'),
+    )
+    .filter((s) => (s.fields.length || s.key === 'camera') && s.key !== 'storage'),
+)
+// The remaining storage fields (backup interval, verification) render inside the Storage card.
+const storageSection = computed(() =>
+  sections.value.find((s) => s.key === 'storage')
+    ? withFields(
+        sections.value.find((s) => s.key === 'storage'),
+        () => true,
+      )
+    : null,
+)
+const advancedGroups = computed(() =>
+  sections.value
+    .map((s) => withFields(s, (p) => ADVANCED.includes(p)))
+    .filter((s) => s.fields.length),
+)
+const advancedOpen = ref(false)
+const advancedBad = computed(() =>
+  advancedGroups.value.some((g) =>
+    g.fields.some((f) => isFieldDirty(g.path(f)) || errors.value[g.path(f)]),
+  ),
 )
 const keepCardField = computed(() =>
   sections.value.find((s) => s.key === 'camera')?.fields.find((f) => f.name === 'keep_card_copy'),
@@ -121,10 +159,43 @@ async function load() {
   try {
     await Promise.all([config.fetch(), config.schema ? null : config.fetchSchema()])
     sync()
+    nextTick(scrollToSection)
   } catch (e) {
     loadError.value = e?.message || 'Could not load settings'
   }
 }
+// Deep link: #/settings?section=<id> scrolls to that section once it is rendered.
+const root = ref(null)
+let pendingSection = routeQuery.value.section || null
+function scrollToSection() {
+  if (!pendingSection) return
+  const el = root.value?.querySelector(`[data-section="${CSS.escape(pendingSection)}"]`)
+  if (!el) return
+  if (pendingSection === 'advanced') advancedOpen.value = true
+  pendingSection = null
+  el.scrollIntoView({ block: 'start' })
+}
+watch(
+  () => routeQuery.value.section,
+  (id) => {
+    pendingSection = id || null
+    nextTick(scrollToSection)
+  },
+)
+const goSection = (id) => {
+  pendingSection = id
+  scrollToSection()
+}
+const index = computed(() => [
+  { id: 'display', label: 'Display' },
+  { id: 'capture', label: 'Capture' },
+  { id: 'storage', label: 'Storage' },
+  ...shownSections.value.map((s) => ({ id: s.key, label: s.title })),
+  ...(advancedGroups.value.length ? [{ id: 'advanced', label: 'Advanced' }] : []),
+  { id: 'demo_camera', label: 'Demo camera' },
+  { id: 'api-key', label: 'API key' },
+  { id: 'about', label: 'About' },
+])
 onMounted(() => {
   load()
   if (!storage.loaded) storage.fetch().catch(() => {})
@@ -251,8 +322,25 @@ async function setLocation(id) {
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-[760px] flex-col gap-4">
+  <div ref="root" class="mx-auto flex max-w-[760px] flex-col gap-4">
     <h2 class="text-xl font-semibold">Settings</h2>
+
+    <nav
+      v-if="config.config && sections.length"
+      class="chips"
+      aria-label="Settings sections"
+      data-test="section-index"
+    >
+      <button
+        v-for="i in index"
+        :key="i.id"
+        type="button"
+        :data-chip="i.id"
+        @click="goSection(i.id)"
+      >
+        {{ i.label }}
+      </button>
+    </nav>
 
     <UiAlert
       v-if="config.restartRequired.length"
@@ -312,6 +400,7 @@ async function setLocation(id) {
           </template>
         </SettingRow>
         <SettingRow
+          v-if="!isTouch"
           title="Keyboard hints"
           description="Show shortcut hints such as Space to capture."
           natural
@@ -360,13 +449,13 @@ async function setLocation(id) {
           />
         </SettingRow>
         <SettingRow
-          title="Copy each photo to"
+          title="Download to storage"
           description="Every photo is copied here, whichever option the camera uses."
         >
           <UiSelect
             :model-value="storage.targetId"
             :options="locationOptions"
-            label="Copy each photo to"
+            label="Download to storage"
             :disabled="!downloads || savingLocation || !locationOptions.length"
             data-test="photo-location"
             @update:model-value="setLocation"
@@ -418,7 +507,19 @@ async function setLocation(id) {
         />
       </SettingsSection>
 
-      <StorageSection />
+      <StorageSection data-section="storage">
+        <template v-if="storageSection?.fields.length" #extra>
+          <SchemaField
+            v-for="f in storageSection.fields"
+            :key="storageSection.path(f)"
+            :field="f"
+            :model-value="value(storageSection, f)"
+            :dirty="isFieldDirty(storageSection.path(f))"
+            :error="errors[storageSection.path(f)] || ''"
+            @update:model-value="setValue(storageSection, f, $event)"
+          />
+        </template>
+      </StorageSection>
 
       <SettingsSection
         v-for="s in shownSections"
@@ -439,12 +540,40 @@ async function setLocation(id) {
         <CameraClockRow v-if="s.key === 'camera'" />
       </SettingsSection>
 
+      <details
+        v-if="advancedGroups.length"
+        class="adv rounded-card border border-camera-border bg-camera-surface"
+        data-section="advanced"
+        data-test="advanced"
+        :open="advancedOpen || advancedBad"
+        @toggle="advancedOpen = $event.target.open"
+      >
+        <summary class="adv-sum">
+          <span class="text-sm font-semibold">Advanced</span>
+          <span class="text-xs text-camera-muted">Timeouts, keep-alive, ffmpeg and encoding</span>
+        </summary>
+        <div class="grid gap-5 px-4 pb-4">
+          <section v-for="g in advancedGroups" :key="g.key">
+            <h3 class="eyebrow mb-2">{{ g.title }}</h3>
+            <SchemaField
+              v-for="f in g.fields"
+              :key="g.path(f)"
+              :field="f"
+              :model-value="value(g, f)"
+              :dirty="isFieldDirty(g.path(f))"
+              :error="errors[g.path(f)] || ''"
+              @update:model-value="setValue(g, f, $event)"
+            />
+          </section>
+        </div>
+      </details>
+
       <DemoCameraSection
         :model-value="!!draft.demo_camera"
         :dirty="isFieldDirty('demo_camera')"
         @update:model-value="draft.demo_camera = $event"
       />
-      <ApiKeySection />
+      <ApiKeySection data-section="api-key" />
 
       <UiAlert
         v-if="config.resetChanged?.length"
@@ -473,7 +602,7 @@ async function setLocation(id) {
     </template>
     <p v-else class="text-sm text-camera-muted" aria-live="polite">Loading settings…</p>
 
-    <AboutSection />
+    <AboutSection data-section="about" />
 
     <div
       v-if="config.config && isDirty"
@@ -507,3 +636,48 @@ async function setLocation(id) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.chips {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 59px);
+  z-index: 14;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-inline: -16px;
+  padding: 8px 16px;
+  background: theme('colors.camera.bg');
+  border-bottom: 1px solid theme('colors.camera.subtle');
+}
+html[data-layout='touch'] .chips {
+  top: calc(env(safe-area-inset-top, 0px) + 63px);
+}
+.chips button {
+  flex: none;
+  height: var(--ctl-sm);
+  padding: 0 12px;
+  border: 1px solid theme('colors.camera.border');
+  border-radius: 9999px;
+  background: theme('colors.camera.raised');
+  color: theme('colors.camera.text');
+  font-size: 13px;
+  white-space: nowrap;
+}
+.chips button:active {
+  background: theme('colors.camera.hover');
+}
+[data-section] {
+  scroll-margin-top: 120px;
+}
+.adv-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-height: var(--ctl);
+  padding: 12px 16px;
+  cursor: pointer;
+}
+</style>

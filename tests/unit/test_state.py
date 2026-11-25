@@ -1,7 +1,7 @@
 import pytest
 
 from backend.core.state import CameraState as S
-from backend.core.state import allowed_transitions, can_transition
+from backend.core.state import can_transition
 
 
 @pytest.mark.parametrize(
@@ -47,8 +47,3 @@ def test_disallowed(a: S, b: S) -> None:
 def test_any_to_disconnected_or_error(a: S) -> None:
     for target in (S.DISCONNECTED, S.ERROR):
         assert can_transition(a, target) == (a != target)
-
-
-def test_allowed_transitions_matches_can_transition() -> None:
-    for a in S:
-        assert allowed_transitions(a) == {b for b in S if can_transition(a, b)}

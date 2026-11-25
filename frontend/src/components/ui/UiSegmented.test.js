@@ -31,4 +31,11 @@ describe('UiSegmented', () => {
     await w.findAll('button')[1].trigger('click')
     expect(w.emitted('update:modelValue')).toBeUndefined()
   })
+
+  it('marks the selected segment with an accent underline', () => {
+    const w = mount(UiSegmented, { props: { modelValue: 'a', options } })
+    const [a, b] = w.findAll('button')
+    expect(a.classes().join(' ')).toContain('camera-accent')
+    expect(b.classes().join(' ')).not.toContain('camera-accent')
+  })
 })

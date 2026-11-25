@@ -13,7 +13,8 @@ defineEmits(['update:modelValue'])
     role="switch"
     :aria-checked="modelValue"
     :disabled="disabled"
-    class="inline-flex min-h-[var(--ctl-sm)] items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+    class="inline-flex min-h-[var(--ctl-sm)] items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 [html[data-layout='touch']_&]:min-w-[44px]"
+    :class="{ 'justify-center': !label }"
     @click="$emit('update:modelValue', !modelValue)"
   >
     <span

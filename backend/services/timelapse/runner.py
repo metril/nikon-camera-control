@@ -124,8 +124,16 @@ class _RunFailed(Exception):
     """Ends the run as ``failed`` with ``str(self)`` recorded."""
 
 
-def _is_disk_full(e: BaseException) -> bool:
-    return isinstance(e, StorageFull) or (isinstance(e, OSError) and e.errno == errno.ENOSPC)
+def _is_disk_full(exc: BaseException) -> bool:
+    """Disk full, also when wrapped (e.g. a DownloadFailed caused by an OSError ENOSPC)."""
+    seen: set[int] = set()
+    e: BaseException | None = exc
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        if isinstance(e, StorageFull) or (isinstance(e, OSError) and e.errno == errno.ENOSPC):
+            return True
+        e = e.__cause__ or e.__context__
+    return False
 
 
 class TimelapseRunner:

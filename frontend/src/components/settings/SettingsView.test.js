@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createTestingPinia } from '@pinia/testing'
 import { ApiError } from '@/api'
 import SettingsView from '@/views/SettingsView.vue'
@@ -8,6 +9,8 @@ import { useToastsStore } from '@/stores/toasts'
 import { useAuthStore } from '@/stores/auth'
 import { useCameraAdminStore } from '@/stores/cameraAdmin'
 import { useCameraStore } from '@/stores/camera'
+import { routeQuery } from '@/components/shell/useTabs'
+import { useLayoutMode } from '@/composables/useLayoutMode'
 
 vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {} }))
 
@@ -238,5 +241,57 @@ describe('SettingsView', () => {
     await flushPromises()
     expect(body.querySelector('[data-test="new-key"]')).toBeNull()
     w.unmount()
+  })
+
+  it('puts expert fields (CRF) in a closed Advanced disclosure that opens for unsaved edits', async () => {
+    const { w } = await setup()
+    const adv = w.find('[data-test="advanced"]')
+    expect(adv.attributes('open')).toBeUndefined()
+    expect(adv.find('[data-field="crf"]').exists()).toBe(true)
+    expect(w.find('[data-section="video"] [data-field="crf"]').exists()).toBe(false)
+    expect(w.find('[data-section="video"] [data-field="codec"]').exists()).toBe(true)
+    await adv.find('[data-field="crf"] input').setValue('30')
+    expect(w.find('[data-test="advanced"]').attributes('open')).toBeDefined()
+  })
+
+  it('lists the sections as chips and scrolls to the chosen one', async () => {
+    const { w } = await setup()
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const chips = w
+      .findAll('[data-test="section-index"] button')
+      .map((b) => b.attributes('data-chip'))
+    expect(chips).toEqual(
+      expect.arrayContaining(['display', 'capture', 'storage', 'api-key', 'about']),
+    )
+    await w.find('[data-chip="storage"]').trigger('click')
+    expect(scroll).toHaveBeenCalledTimes(1)
+    expect(scroll.mock.contexts[0].dataset.section).toBe('storage')
+  })
+
+  it('follows a #/settings?section= deep link', async () => {
+    const { w } = await setup()
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    routeQuery.value = { section: 'api-key' }
+    await flushPromises()
+    expect(scroll.mock.contexts[0].dataset.section).toBe('api-key')
+    routeQuery.value = {}
+    w.unmount()
+  })
+
+  it('hides the keyboard hints setting in the touch layout', async () => {
+    useLayoutMode().setPref('desktop')
+    const { w } = await setup()
+    expect(w.find('[data-test="hints"]').exists()).toBe(true)
+    useLayoutMode().setPref('touch')
+    await nextTick()
+    expect(w.find('[data-test="hints"]').exists()).toBe(false)
+    useLayoutMode().setPref('auto')
+  })
+
+  it('renames the photo copy target to Download to storage', async () => {
+    const { w } = await setup()
+    expect(w.find('[data-section="capture"]').text()).toContain('Download to storage')
   })
 })

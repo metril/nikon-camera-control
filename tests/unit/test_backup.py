@@ -236,3 +236,14 @@ def test_select_files_skips_excluded_sessions_and_fresh_files(tmp_path: Path) ->
 async def test_dest_lock_is_shared_per_root(tmp_path: Path) -> None:
     assert backup.dest_lock(tmp_path) is backup.dest_lock(tmp_path)
     assert backup.dest_lock(tmp_path) is not backup.dest_lock(tmp_path / "x")
+
+
+def test_offload_skips_files_the_caller_vetoes(tmp_path: Path) -> None:
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    a = _put(src, "sessions/s1/a.jpg", b"A")
+    b = _put(src, "sessions/s2/b.jpg", b"B")
+    rep = backup.offload_files(
+        [a, b], src, dst, keep_source=False, sidecars=True, skip=lambda p: "s1" in p.parts
+    )
+    assert (rep.copied, rep.skipped, rep.vetoed, rep.deleted_source) == (1, 0, 1, 1)
+    assert a.exists() and not b.exists() and not (dst / "sessions/s1/a.jpg").exists()

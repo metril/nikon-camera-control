@@ -1,27 +1,47 @@
 <script setup>
 /** Status chip in the header. Connected: opens the camera popover. Otherwise: connects. */
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useCameraStore } from '@/stores/camera'
+import { useConfigStore } from '@/stores/config'
 import { useEventsStore } from '@/stores/events'
 import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
 import { leaseOwner } from '@/labels'
 import UiBadge from '@/components/ui/UiBadge.vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import StorageChip from './StorageChip.vue'
+import { shotsLeftOf } from './shotsLeft'
 import { isNoPermission } from './connectError'
 import { formatBytes } from './format'
 import { useCameraStatus } from './useCameraStatus'
 
 const camera = useCameraStore()
+const config = useConfigStore()
 const events = useEventsStore()
 const storage = useStorageStore()
 const toasts = useToastsStore()
 const { status } = useCameraStatus()
 
+const navigate = inject('navigate', null)
 const open = ref(false)
+const batteryLoading = ref(false)
+// With "Download photos" off nothing goes to storage: the camera card is the only copy.
+const cardOnly = computed(() => config.config?.camera?.download_photos === false)
+// Phone chip: the dot plus the model's last word ("D500"); not-ready states keep their short text.
+const shortLabel = computed(() =>
+  status.value.key === 'ready' && camera.model
+    ? camera.model.trim().split(/\s+/).pop()
+    : status.value.short,
+)
+function openStorage() {
+  open.value = false
+  if (navigate) navigate('settings', { section: 'storage' })
+  else location.hash = '#/settings?section=storage'
+}
 const root = ref(null)
 const working = ref(false)
+// The D500 reports its serial zero-padded to 32 characters; show the digits, full value on hover.
+const serialShown = computed(() => camera.serial?.replace(/^0+(?=.)/, ''))
 
 const SOCKET = {
   open: { tone: 'text-camera-ok', text: 'Live' },
@@ -38,7 +58,7 @@ const battery = computed(() => {
   return b.level != null ? String(b.level) : null
 })
 const cards = computed(() => camera.storage?.cards || [])
-const shotsLeft = computed(() => cards.value.reduce((n, c) => n + (c.free_images || 0), 0))
+const shotsLeft = computed(() => shotsLeftOf(cards.value))
 const free = computed(() =>
   cards.value.length
     ? formatBytes(cards.value.reduce((n, c) => n + (c.free_kb || 0), 0) * 1024)
@@ -84,6 +104,18 @@ function onKey(e) {
     root.value?.querySelector('[data-test="chip"]')?.focus()
   }
 }
+watch(open, async (on) => {
+  if (on && camera.connected && !camera.battery && !camera.leasedBy) {
+    batteryLoading.value = true
+    try {
+      await camera.fetchBattery()
+    } catch {
+      /* the row falls back to a dash */
+    } finally {
+      batteryLoading.value = false
+    }
+  }
+})
 watch(open, (on) => {
   if (on) document.addEventListener('pointerdown', outside, true)
   else document.removeEventListener('pointerdown', outside, true)
@@ -108,7 +140,7 @@ watch(
     >
       <i class="dot" :class="status.dot" aria-hidden="true" />
       <span class="txt" data-test="state">{{ status.label }}</span>
-      <span class="short" aria-hidden="true">{{ status.short }}</span>
+      <span class="short" aria-hidden="true">{{ shortLabel }}</span>
     </button>
 
     <div v-if="open" class="pop" role="dialog" aria-label="Camera" data-test="camera-popover">
@@ -119,31 +151,51 @@ watch(
       <dl class="kv">
         <template v-if="camera.serial">
           <dt>Serial number</dt>
-          <dd class="tabular-nums">{{ camera.serial }}</dd>
+          <dd class="tabular-nums" data-test="serial" :title="camera.serial">
+            {{ serialShown }}
+          </dd>
         </template>
         <template v-if="camera.leasedBy">
           <dt>Busy with</dt>
           <dd data-test="lease">{{ leaseOwner(camera.leasedBy) }}</dd>
         </template>
         <dt>Battery</dt>
-        <dd class="tabular-nums" data-test="battery">{{ battery || '–' }}</dd>
+        <dd class="tabular-nums" data-test="battery">
+          <span v-if="!battery && batteryLoading" class="load" data-test="battery-loading"
+            >Loading…</span
+          >
+          <template v-else>{{ battery || '–' }}</template>
+        </dd>
         <dt>Card</dt>
         <dd class="tabular-nums" data-test="storage">
           <template v-if="cards.length"
-            >{{ shotsLeft.toLocaleString('en-GB') }} shots left · {{ free }}</template
+            >{{ shotsLeft == null ? '–' : shotsLeft.toLocaleString('en-GB') }} shots left ·
+            {{ free }}</template
           >
           <template v-else>–</template>
         </dd>
         <template v-if="storage.loaded">
-          <dt>Saves to</dt>
-          <dd><StorageChip /></dd>
+          <dt>
+            <button type="button" class="lnk" data-test="storage-link" @click="openStorage">
+              Saves to
+            </button>
+          </dt>
+          <dd v-if="cardOnly" data-test="saves-card">Card only</dd>
+          <dd v-else><StorageChip /></dd>
         </template>
         <dt>Live updates</dt>
         <dd :class="socket.tone" data-test="socket">{{ socket.text }}</dd>
       </dl>
-      <UiButton class="w-full" :loading="working" data-test="toggle" @click="disconnect">
+      <UiConfirmButton
+        class="w-full"
+        variant="ghost"
+        confirm-text="Disconnect the camera?"
+        :loading="working"
+        data-test="toggle"
+        @confirm="disconnect"
+      >
         Disconnect
-      </UiButton>
+      </UiConfirmButton>
     </div>
   </div>
 </template>
@@ -202,14 +254,50 @@ watch(
   font-size: 13px;
   margin: 0;
 }
+.kv {
+  align-items: center;
+}
 .kv dt {
   color: theme('colors.camera.muted');
 }
+.kv dt,
+.kv dd {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
 .kv dd {
   margin: 0;
+  justify-content: flex-end;
   font-weight: 500;
   text-align: right;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lnk {
+  min-height: inherit;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.load {
+  color: theme('colors.camera.muted');
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .load {
+    animation: none;
+  }
+}
+html[data-layout='touch'] .kv dt,
+html[data-layout='touch'] .kv dd {
+  min-height: var(--ctl-sm);
 }
 .short {
   display: none;

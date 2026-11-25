@@ -442,10 +442,10 @@ class BulbService:
                 )
             finally:
                 self._invalidate()
-        root = self._store.root().resolve()
+        root = self._store.root().resolve() if local else None
         return {
             "seconds": req.seconds,
-            "files": [p.resolve().relative_to(root).as_posix() for p in local],
+            "files": [p.resolve().relative_to(root).as_posix() for p in local] if root else [],
             "camera_files": [f"{f.folder}/{f.name}" for f in files],
         }
 

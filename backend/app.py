@@ -179,6 +179,7 @@ def create_app(
                 log.exception("startup cleanup failed")
 
         housekept: list[tuple[str, int] | None] = [None]
+        bg: set[asyncio.Task[Any]] = set()
 
         def start_housekeeping() -> None:
             """Once per target change / new mount of the target, and never while busy."""
@@ -186,7 +187,9 @@ def create_app(
             if key is None or key == housekept[0] or busy():
                 return
             housekept[0] = key
-            loop.create_task(run_housekeeping(), name="storage-housekeeping")
+            task = loop.create_task(run_housekeeping(), name="storage-housekeeping")
+            bg.add(task)  # strong reference until done (the loop only keeps weak ones)
+            task.add_done_callback(bg.discard)
 
         def on_location(reason: str, location_id: str | None) -> None:
             if reason == "mounted" and location_id != locations.target_id:
@@ -201,7 +204,6 @@ def create_app(
         if target_dir is not None:
             await run_housekeeping()
         await service.start()
-        bg: set[asyncio.Task[Any]] = set()
 
         def spawn(coro: Any, name: str) -> None:
             task = loop.create_task(coro, name=name)

@@ -58,8 +58,7 @@ export const useLiveViewStore = defineStore('liveview', () => {
   const start = () => guard(lastError, async () => set(await api.startLiveview()))
   const stop = () => guard(lastError, async () => set(await api.stopLiveview()))
 
-  const onStarted = () =>
-    status.value && (status.value = { ...status.value, running: true, active: true })
+  const onStarted = () => (status.value = { ...status.value, running: true, active: true })
   const onStopped = () =>
     status.value && (status.value = { ...status.value, running: false, active: false })
   const reset = () => (status.value = null)

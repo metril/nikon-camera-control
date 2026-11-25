@@ -15,7 +15,7 @@ export default {
           subtle: '#262626',
           text: '#ececec',
           muted: '#a3a3a3',
-          faint: '#737373',
+          faint: '#8a8a8a',
           accent: '#f97316', // THE accent colour: the only place it is defined (CSS uses theme('colors.camera.accent'))
           'accent-hover': '#fb8a3c',
           'accent-press': '#e8650c',
