@@ -33,6 +33,8 @@ export const JOB_KINDS = {
   bracket: 'Bracket capture',
   bulb: 'Bulb exposure',
   recording_download: 'Recording download',
+  fsck: 'Drive check',
+  format: 'Drive format',
 }
 export const jobKind = labeller(JOB_KINDS)
 

@@ -24,11 +24,22 @@ class FakeHelper:
         self.cred_seen: list[str] = []  # stdin (credentials) of each mount-smb call
         self.encrypted = True
         self.fstype: dict[str, str] = {}
+        self.formats: list[list[str]] = []
 
-    def plug(self, uuid: str, fstype: str = "exfat", supported: bool = True, **kw: Any) -> None:
+    def plug(
+        self, uuid: str | None, fstype: str = "exfat", supported: bool = True, **kw: Any
+    ) -> None:
+        disk = kw.get("disk", f"sd{(uuid or 'zz')[:2]}")
         self.usb.append(
             {
-                "name": f"sd{uuid[:2]}1",
+                "name": f"{disk}1" if uuid else disk,
+                "disk": {
+                    "name": disk,
+                    "majmin": kw.get("majmin", "8:16"),
+                    "size": kw.get("disk_size", 1 << 30),
+                    "model": kw.get("model", "Ultra"),
+                    "diskseq": kw.get("diskseq", "100"),
+                },
                 "uuid": uuid,
                 "fstype": fstype,
                 "label": kw.get("label"),
@@ -99,6 +110,18 @@ class FakeHelper:
             return 0, "", ""
         if verb == "fsck":
             return 0, "clean", ""
+        if verb == "format-usb":
+            disk, fs, label = args[1], args[5], args[6] if len(args) > 6 else None
+            gone = [u for u in self.usb if u["disk"]["name"] == disk]
+            self.usb = [u for u in self.usb if u not in gone]
+            self.plug(
+                f"F0{len(self.formats):02d}-0000",
+                {"fat32": "vfat"}.get(fs, fs),
+                disk=disk,
+                label=label,
+            )
+            self.formats.append(list(args))
+            return 0, "ok\n", ""
         return 2, "", "bad verb"
 
 

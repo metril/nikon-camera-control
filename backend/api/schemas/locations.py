@@ -5,10 +5,22 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from backend.services.locations import fat32_error, label_error
 
 _NO_CTRL = r"^[^\x00-\x1f,]*$"
 UNC_PATTERN = r"^//[A-Za-z0-9._-]+/[A-Za-z0-9._ $-]+(/[A-Za-z0-9._ $-]+)*$"
+
+
+class DiskRef(BaseModel):
+    name: str = Field(description="Kernel name of the whole physical disk, e.g. sda")
+    majmin: str = Field(description="Device numbers, major:minor")
+    size: int = Field(description="Disk size in bytes")
+    model: str | None = None
+    diskseq: str | None = Field(
+        default=None, description="Kernel sequence number, unique per attach of the disk"
+    )
 
 
 class LocationOut(BaseModel):
@@ -35,6 +47,9 @@ class LocationOut(BaseModel):
     is_backup: bool
     encrypted: bool | None = Field(
         default=None, description="SMB: the session is encrypted (SMB3 seal); false = plaintext"
+    )
+    disk: DiskRef | None = Field(
+        default=None, description="USB: the physical disk this drive or partition is on"
     )
 
 
@@ -88,6 +103,33 @@ class SmbTestResult(BaseModel):
 class FsckResult(BaseModel):
     returncode: int
     output: str
+
+
+class FormatRequest(BaseModel):
+    fstype: Literal["exfat", "fat32", "ntfs", "ext4"] = "exfat"
+    label: str = Field(default="", max_length=32, description="Empty for no label")
+    majmin: str = Field(pattern=r"^[0-9]+:[0-9]+$", description="Expected device numbers")
+    size: int = Field(gt=0, lt=10**18, description="Expected disk size in bytes")
+    diskseq: str = Field(
+        pattern=r"^[0-9]{1,20}$", description="Expected kernel sequence number of the disk"
+    )
+
+    @model_validator(mode="after")
+    def _label(self) -> FormatRequest:
+        if (why := label_error(self.fstype, self.label)) is not None:
+            raise ValueError(why)
+        if (why := fat32_error(self.fstype, self.size)) is not None:
+            raise ValueError(why)
+        return self
+
+
+class FormatResult(BaseModel):
+    disk: str
+    fstype: str
+    label: str
+    removed_locations: list[str] = Field(
+        description="Saved locations that were on the disk and no longer exist"
+    )
 
 
 class TargetSet(BaseModel):

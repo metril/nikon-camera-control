@@ -106,3 +106,36 @@ def _closed_code(ws: WebSocketTestSession) -> int | None:
         if msg["type"] == "websocket.close":
             return int(msg["code"])
     return None
+
+
+@pytest.mark.parametrize("module", ["backend.api.v1.events_ws", "backend.api.v1.liveview"])
+async def test_keywatch_closed_when_accept_fails(
+    module: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib
+
+    mod = importlib.import_module(module)
+    closed: list[bool] = []
+
+    class FakeWatch:
+        def __init__(self, _ws: object) -> None:
+            pass
+
+        def close(self) -> None:
+            closed.append(True)
+
+    class BrokenSocket:
+        scope = {"subprotocols": []}
+
+        async def accept(self, **_kw: object) -> None:
+            raise RuntimeError("client went away")
+
+    async def ok(_ws: object) -> bool:
+        return True
+
+    monkeypatch.setattr(mod, "KeyWatch", FakeWatch)
+    monkeypatch.setattr(mod, "ws_authorize", ok)
+    handler = mod.events_ws if module.endswith("events_ws") else mod.liveview_ws
+    with pytest.raises(RuntimeError):
+        await handler(BrokenSocket())
+    assert closed == [True]

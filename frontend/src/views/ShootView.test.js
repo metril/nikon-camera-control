@@ -155,4 +155,13 @@ describe('ShootView', () => {
     const a = wrapper.find('[data-test="no-target"] a')
     expect(a.attributes('href')).toBe('#/settings?section=storage')
   })
+
+  it('clicking the no-storage link emits open-settings with the storage section, once', async () => {
+    setup()
+    useStorageStore().loaded = true
+    useStorageStore().targetId = null
+    await flushPromises()
+    await wrapper.find('[data-test="no-target"] a').trigger('click')
+    expect(wrapper.emitted('open-settings')).toEqual([['storage']])
+  })
 })

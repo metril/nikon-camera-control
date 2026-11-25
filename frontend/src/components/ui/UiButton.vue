@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import UiSpinner from './UiSpinner.vue'
 
 const props = defineProps({
-  /** primary | secondary | ghost | danger | shutter */
+  /** primary | secondary | ghost | danger | shutter | danger-quiet */
   variant: { type: String, default: 'secondary' },
   /** sm | md (ignored for shutter) */
   size: { type: String, default: 'md' },
@@ -23,6 +23,8 @@ const VARIANTS = {
     'bg-transparent border-transparent text-camera-muted hover:text-camera-text hover:bg-camera-raised active:bg-camera-hover',
   danger:
     'bg-camera-danger-fill border-camera-danger-fill text-white font-medium hover:brightness-110 active:brightness-90',
+  'danger-quiet':
+    'bg-transparent border-camera-danger text-camera-danger font-medium hover:bg-camera-raised active:bg-camera-hover',
 }
 const isShutter = computed(() => props.variant === 'shutter')
 const cls = computed(() => [

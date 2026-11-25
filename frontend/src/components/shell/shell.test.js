@@ -325,6 +325,23 @@ describe('JobsPanel', () => {
   })
 })
 
+describe('JobsPanel fsck', () => {
+  it('toasts a failed drive check once with the error verbatim', async () => {
+    const p = pinia()
+    const jobs = useJobsStore()
+    const toasts = useToastsStore()
+    jobs.upsert({ id: 'f1', kind: 'fsck', status: 'running', created: '1' })
+    const w = mount(JobsPanel, { props: { open: true }, global: { plugins: [p] } })
+    await nextTick()
+    jobs.upsert({ id: 'f1', kind: 'fsck', status: 'failed', error: 'no time', created: '1' })
+    await nextTick()
+    expect(toasts.items.filter((t) => t.kind === 'error').map((t) => t.message)).toEqual([
+      'Drive check failed: no time',
+    ])
+    w.unmount()
+  })
+})
+
 describe('jobSummary', () => {
   it('writes readable summaries and never prints raw result keys', () => {
     expect(jobSummary({ error: 'oops' })).toBe('oops')

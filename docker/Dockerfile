@@ -24,7 +24,7 @@ FROM python:3.12.13-slim-bookworm
 # sudo + the filesystem tools back the storage helper (mounting USB/SMB capture targets).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libusb-1.0-0 \
-       sudo exfatprogs cifs-utils util-linux dosfstools e2fsprogs ntfs-3g xfsprogs btrfs-progs f2fs-tools \
+       sudo exfatprogs cifs-utils util-linux fdisk dosfstools e2fsprogs ntfs-3g xfsprogs btrfs-progs f2fs-tools \
     && rm -rf /var/lib/apt/lists/*
 # Root-only mount helper; the unprivileged app may run only this one command through sudo.
 COPY --chown=root:root --chmod=0755 docker/ncc-storage /usr/local/sbin/ncc-storage

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
+import { useJobsStore } from '@/stores/jobs'
 import UiCard from '@/components/ui/UiCard.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -9,19 +10,36 @@ import UiConfirmButton from '@/components/ui/UiConfirmButton.vue'
 import UiText from '@/components/ui/UiText.vue'
 import { formatBytes } from '@/components/shell/format'
 import OffloadDialog from './OffloadDialog.vue'
+import FormatDriveDialog from './FormatDriveDialog.vue'
 
 const storage = useStorageStore()
 const toasts = useToastsStore()
+const jobs = useJobsStore()
 
 const busy = ref({}) // `${action}:${id}` -> true
-const fsck = ref({}) // id -> {returncode, output}
 const offloadOpen = ref(false)
+/** A drive with no recognisable filesystem is blank or unreadable; other helper reasons stay verbatim. */
+const reasonText = (l) =>
+  l.reason === 'unknown filesystem' ? 'Blank or unreadable — format it to use it' : l.reason
+const formatDisk = ref(null) // section being formatted (dialog open)
 const form = ref({ name: '', unc: '', username: '', password: '', domain: '' })
 const testResult = ref(null)
 const adding = ref(false)
 const testing = ref(false)
 
 const usb = computed(() => storage.locations.filter((l) => l.kind === 'usb'))
+/** USB partitions grouped under their physical disk; drives without disk info stay flat. */
+const usbSections = computed(() => {
+  const disks = new Map()
+  const loose = []
+  for (const l of usb.value) {
+    const d = l.disk
+    if (!d?.name) loose.push(l)
+    else if (disks.has(d.name)) disks.get(d.name).items.push(l)
+    else disks.set(d.name, { key: d.name, disk: d, items: [l] })
+  }
+  return [...disks.values(), ...(loose.length ? [{ key: 'loose', disk: null, items: loose }] : [])]
+})
 const smb = computed(() => storage.locations.filter((l) => l.kind === 'smb'))
 const configured = computed(() => storage.locations.filter((l) => l.configured))
 const backupChoices = computed(() => configured.value.filter((l) => l.id !== storage.targetId))
@@ -57,8 +75,41 @@ const register = (l) =>
 const forget = (l) => run(`remove:${l.id}`, () => storage.remove(l.id), `${label(l)} removed`)
 const check = (l) =>
   run(`check:${l.id}`, async () => {
-    fsck.value = { ...fsck.value, [l.id]: await storage.check(l.id) }
+    await storage.check(l.id)
   })
+const fsckJobs = (id) => jobs.list.filter((j) => j.kind === 'fsck' && j.target === id)
+const isChecking = (id) => fsckJobs(id).some((j) => jobs.active.includes(j))
+const fsckOutcome = (id) => {
+  const j = fsckJobs(id).find((x) => !jobs.active.includes(x))
+  if (!j) return null
+  if (j.status === 'completed')
+    return j.result?.output || (j.result ? `exit ${j.result.returncode}` : '')
+  if (j.status === 'cancelled') return 'Cancelled'
+  return j.error || 'Drive check failed'
+}
+const formatJobs = (disk) => jobs.list.filter((j) => j.kind === 'format' && j.target === disk)
+const isFormatting = (disk) => formatJobs(disk).some((j) => jobs.active.includes(j))
+const formatOutcome = (disk) => {
+  const j = formatJobs(disk).find((x) => !jobs.active.includes(x))
+  if (!j) return null
+  if (j.status === 'completed') return 'Formatted'
+  if (j.status === 'cancelled') return 'Format cancelled'
+  return j.error || 'Drive format failed'
+}
+const diskFormatting = (l) => !!l.disk && isFormatting(l.disk.name)
+/** Why a disk cannot be formatted right now, or ''. */
+const formatBlock = (sec) => {
+  if (sec.items.some((l) => l.mounted)) return 'Unmount every partition first.'
+  if (sec.items.some((l) => l.is_target)) return 'Holds the photo location. Choose another first.'
+  if (sec.items.some((l) => l.is_backup)) return 'Holds a backup. Remove it from the backups first.'
+  if (sec.items.some((l) => isChecking(l.id))) return 'A drive check is running.'
+  return ''
+}
+// a finished format changes which drives exist: do not wait for the next event
+watch(
+  () => jobs.list.filter((j) => j.kind === 'format' && !jobs.active.includes(j)).length,
+  (n, o) => n !== o && storage.fetch().catch(() => {}),
+)
 const setTarget = (id) => run('target', () => storage.setTarget(id))
 function toggleBackup(id, on) {
   const ids = new Set(storage.backupIds)
@@ -103,7 +154,10 @@ async function addSmb() {
   }
 }
 
-onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
+onMounted(() => {
+  storage.refresh().catch((e) => toasts.error(e))
+  jobs.fetch().catch(() => {})
+})
 </script>
 
 <template>
@@ -126,8 +180,8 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
 
       <section
         v-for="grp in [
-          ['USB drives', usb, 'usb'],
-          ['Network shares (SMB)', smb, 'smb'],
+          ['USB drives', usb, 'usb', usbSections],
+          ['Network shares (SMB)', smb, 'smb', [{ key: 'smb', disk: null, items: smb }]],
         ]"
         :key="grp[2]"
       >
@@ -135,107 +189,150 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
         <p v-if="!grp[1].length" class="text-sm text-camera-muted" :data-test="`none-${grp[2]}`">
           {{ grp[2] === 'usb' ? 'No drives detected.' : 'No shares configured.' }}
         </p>
-        <ul class="flex flex-col gap-2">
-          <li
-            v-for="l in grp[1]"
-            :key="l.id"
-            class="rounded-inner border border-camera-border p-3"
-            :data-test="`loc-${l.id}`"
-          >
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="min-w-0 break-all font-medium">{{ label(l) }}</span>
-              <UiBadge :tone="l.mounted ? 'ok' : 'neutral'">{{
-                l.mounted ? 'Mounted' : 'Not mounted'
-              }}</UiBadge>
-              <UiBadge v-if="l.is_target" tone="accent">Photo location</UiBadge>
-              <UiBadge v-if="l.is_backup" tone="accent">Backup</UiBadge>
-              <UiBadge v-if="!l.supported" tone="warn" data-test="unsupported">Unsupported</UiBadge>
-              <UiBadge
-                v-if="l.kind === 'smb' && l.mounted && l.encrypted === false"
-                tone="warn"
-                title="This share does not support SMB3 encryption; traffic is not encrypted"
-                data-test="unencrypted"
-                >Unencrypted</UiBadge
-              >
-              <UiBadge v-if="l.kind === 'usb' && !l.present" tone="warn">Not connected</UiBadge>
-            </div>
-            <p class="mt-1 text-xs text-camera-muted">
-              <template v-if="l.fstype">{{ l.fstype }} · </template>
-              <template v-if="l.unc">{{ l.unc }} · </template>
-              <template v-if="l.size != null">{{ formatBytes(l.size) }} total</template>
-              <template v-if="l.mounted && l.free != null">
-                · {{ formatBytes(l.free) }} free</template
-              >
-            </p>
-            <p v-if="l.reason" class="mt-1 text-xs text-camera-warn">{{ l.reason }}</p>
-            <p
-              v-if="l.error"
-              class="mt-1 break-words text-xs text-camera-danger"
-              data-test="loc-error"
+        <div
+          v-for="sec in grp[3]"
+          :key="sec.key"
+          class="mb-3 flex flex-col gap-2"
+          :data-test="sec.disk ? `disk-${sec.disk.name}` : undefined"
+        >
+          <div v-if="sec.disk" class="flex flex-wrap items-center gap-2">
+            <span class="min-w-0 break-words text-sm font-medium">{{
+              sec.disk.model || 'USB drive'
+            }}</span>
+            <span class="text-xs text-camera-muted">{{ formatBytes(sec.disk.size) }}</span>
+            <UiButton
+              size="sm"
+              variant="danger-quiet"
+              class="ml-auto"
+              :disabled="!!formatBlock(sec) || isFormatting(sec.disk.name)"
+              :loading="isFormatting(sec.disk.name)"
+              :data-test="`format-${sec.disk.name}`"
+              @click="formatDisk = { ...sec.disk, items: sec.items }"
+              >{{ isFormatting(sec.disk.name) ? 'Formatting…' : 'Format…' }}</UiButton
             >
-              {{ l.error }}
+            <p
+              v-if="formatBlock(sec) && !isFormatting(sec.disk.name)"
+              class="basis-full text-xs text-camera-muted"
+              data-test="format-reason"
+            >
+              {{ formatBlock(sec) }}
             </p>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <UiButton
-                v-if="!l.configured"
-                size="sm"
-                variant="primary"
-                :disabled="!l.supported"
-                :loading="isBusy('add', l.id)"
-                data-test="register"
-                @click="register(l)"
-                >Add</UiButton
+            <p
+              v-if="formatOutcome(sec.disk.name) && !isFormatting(sec.disk.name)"
+              class="basis-full break-words text-xs"
+              data-test="format-out"
+            >
+              {{ formatOutcome(sec.disk.name) }}
+            </p>
+          </div>
+          <ul class="flex flex-col gap-2">
+            <li
+              v-for="l in sec.items"
+              :key="l.id"
+              class="rounded-inner border border-camera-border p-3"
+              :data-test="`loc-${l.id}`"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="min-w-0 break-all font-medium">{{ label(l) }}</span>
+                <UiBadge :tone="l.mounted ? 'ok' : 'neutral'">{{
+                  l.mounted ? 'Mounted' : 'Not mounted'
+                }}</UiBadge>
+                <UiBadge v-if="l.is_target" tone="accent">Photo location</UiBadge>
+                <UiBadge v-if="l.is_backup" tone="accent">Backup</UiBadge>
+                <UiBadge v-if="!l.supported" tone="warn" data-test="unsupported"
+                  >Unsupported</UiBadge
+                >
+                <UiBadge
+                  v-if="l.kind === 'smb' && l.mounted && l.encrypted === false"
+                  tone="warn"
+                  title="This share does not support SMB3 encryption; traffic is not encrypted"
+                  data-test="unencrypted"
+                  >Unencrypted</UiBadge
+                >
+                <UiBadge v-if="l.kind === 'usb' && !l.present" tone="warn">Not connected</UiBadge>
+              </div>
+              <p class="mt-1 text-xs text-camera-muted">
+                <template v-if="l.fstype">{{ l.fstype }} · </template>
+                <template v-if="l.unc">{{ l.unc }} · </template>
+                <template v-if="l.size != null">{{ formatBytes(l.size) }} total</template>
+                <template v-if="l.mounted && l.free != null">
+                  · {{ formatBytes(l.free) }} free</template
+                >
+              </p>
+              <p v-if="l.reason" class="mt-1 text-xs text-camera-warn">{{ reasonText(l) }}</p>
+              <p
+                v-if="l.error"
+                class="mt-1 break-words text-xs text-camera-danger"
+                data-test="loc-error"
               >
-              <template v-else>
+                {{ l.error }}
+              </p>
+              <div class="mt-2 flex flex-wrap gap-2">
                 <UiButton
-                  v-if="!l.mounted"
+                  v-if="!l.configured"
                   size="sm"
                   variant="primary"
-                  :disabled="!l.supported || (l.kind === 'usb' && !l.present)"
-                  :loading="isBusy('mount', l.id)"
-                  data-test="mount"
-                  @click="mount(l)"
-                  >Mount</UiButton
+                  :disabled="!l.supported"
+                  :loading="isBusy('add', l.id)"
+                  data-test="register"
+                  @click="register(l)"
+                  >Add</UiButton
                 >
-                <UiConfirmButton
-                  v-else
-                  size="sm"
-                  confirm-text="Unmount?"
-                  :loading="isBusy('unmount', l.id)"
-                  data-test="unmount"
-                  @confirm="unmount(l)"
-                  >Unmount</UiConfirmButton
-                >
-                <UiConfirmButton
-                  v-if="l.kind === 'usb'"
-                  size="sm"
-                  confirm-text="Run check?"
-                  :disabled="l.mounted"
-                  :loading="isBusy('check', l.id)"
-                  data-test="fsck"
-                  @confirm="check(l)"
-                  >Check &amp; repair</UiConfirmButton
-                >
-                <UiConfirmButton
-                  v-if="l.kind === 'smb'"
-                  size="sm"
-                  variant="ghost"
-                  confirm-text="Remove?"
-                  :disabled="l.is_target"
-                  :loading="isBusy('remove', l.id)"
-                  data-test="forget"
-                  @confirm="forget(l)"
-                  >Remove</UiConfirmButton
-                >
-              </template>
-            </div>
-            <pre
-              v-if="fsck[l.id]"
-              class="mt-2 max-h-40 overflow-auto rounded-inner bg-camera-bg p-2 text-xs"
-              data-test="fsck-out"
-              >{{ fsck[l.id].output || `exit ${fsck[l.id].returncode}` }}</pre>
-          </li>
-        </ul>
+                <template v-else>
+                  <UiButton
+                    v-if="!l.mounted"
+                    size="sm"
+                    variant="primary"
+                    :disabled="
+                      !l.supported || (l.kind === 'usb' && !l.present) || diskFormatting(l)
+                    "
+                    :loading="isBusy('mount', l.id)"
+                    data-test="mount"
+                    @click="mount(l)"
+                    >Mount</UiButton
+                  >
+                  <UiConfirmButton
+                    v-else
+                    size="sm"
+                    confirm-text="Unmount?"
+                    :loading="isBusy('unmount', l.id)"
+                    data-test="unmount"
+                    @confirm="unmount(l)"
+                    >Unmount</UiConfirmButton
+                  >
+                  <UiConfirmButton
+                    v-if="l.kind === 'usb'"
+                    size="sm"
+                    confirm-text="Run check?"
+                    :disabled="
+                      l.mounted || isChecking(l.id) || isBusy('check', l.id) || diskFormatting(l)
+                    "
+                    :loading="isChecking(l.id) || isBusy('check', l.id)"
+                    data-test="fsck"
+                    @confirm="check(l)"
+                    >{{ isChecking(l.id) ? 'Checking…' : 'Check & repair' }}</UiConfirmButton
+                  >
+                  <UiConfirmButton
+                    v-if="l.kind === 'smb'"
+                    size="sm"
+                    variant="ghost"
+                    confirm-text="Remove?"
+                    :disabled="l.is_target"
+                    :loading="isBusy('remove', l.id)"
+                    data-test="forget"
+                    @confirm="forget(l)"
+                    >Remove</UiConfirmButton
+                  >
+                </template>
+              </div>
+              <pre
+                v-if="fsckOutcome(l.id)"
+                class="mt-2 max-h-40 overflow-auto rounded-inner bg-camera-bg p-2 text-xs"
+                data-test="fsck-out"
+                >{{ fsckOutcome(l.id) }}</pre>
+            </li>
+          </ul>
+        </div>
       </section>
 
       <section>
@@ -373,5 +470,6 @@ onMounted(() => storage.refresh().catch((e) => toasts.error(e)))
       </section>
     </div>
     <OffloadDialog :open="offloadOpen" @close="offloadOpen = false" />
+    <FormatDriveDialog :open="!!formatDisk" :disk="formatDisk" @close="formatDisk = null" />
   </UiCard>
 </template>

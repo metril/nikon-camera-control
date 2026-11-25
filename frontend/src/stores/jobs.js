@@ -19,6 +19,9 @@ export const useJobsStore = defineStore('jobs', () => {
 
   const upsert = (job) => {
     if (!job?.id) return
+    // a late 202 response must not resurrect a job an event already finished
+    const prev = byId.value[job.id]
+    if (prev && !ACTIVE.includes(prev.status) && ACTIVE.includes(job.status)) return
     inflight.forEach((ids) => ids.add(job.id))
     byId.value = { ...byId.value, [job.id]: job }
   }

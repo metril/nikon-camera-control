@@ -9,6 +9,7 @@ import pytest
 
 from backend.core.config_store import ConfigStore
 from backend.core.errors import (
+    ConfigInvalid,
     FileTooLarge,
     InvalidState,
     LocationBusy,
@@ -449,6 +450,30 @@ async def test_fsck_runs_outside_the_lock_and_blocks_only_its_own_location(env: 
     assert await task == (0, "clean")
 
 
+async def test_mount_waiting_on_the_lock_cannot_overlap_a_starting_fsck(env: Env) -> None:
+    _usb(env)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    ran: list[bool] = []
+
+    async def runner(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        if args[0] == "fsck":
+            ran.append(True)
+            return 0, "clean", ""
+        return await real(args, stdin, limit_s)
+
+    real = env.svc._run
+    async with env.svc._lock:
+        m = asyncio.create_task(env.svc.mount(UID))
+        await asyncio.sleep(0)
+        env.svc._run = runner
+        f = asyncio.create_task(env.svc.fsck(UID))
+        await asyncio.sleep(0.05)
+    res = await asyncio.gather(m, f, return_exceptions=True)
+    assert not (ran and env.svc.get(UID).mounted)
+    assert any(isinstance(r, InvalidState | LocationBusy) for r in res)
+
+
 async def test_sudo_runner_terminates_then_kills_a_real_subprocess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -457,7 +482,10 @@ async def test_sudo_runner_terminates_then_kills_a_real_subprocess(
     from backend.services import locations as loc_mod
 
     script = tmp_path / "helper"
-    script.write_text("#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 0.05; done\n")
+    pidfile = tmp_path / "pid"
+    script.write_text(
+        f"#!/bin/sh\necho $$ > {pidfile}\ntrap '' TERM\nwhile :; do sleep 0.05; done\n"
+    )
     script.chmod(0o755)
     shim = tmp_path / "sudo"
     shim.write_text('#!/bin/sh\nshift\nexec "$@"\n')  # sudo -n HELPER args
@@ -468,4 +496,273 @@ async def test_sudo_runner_terminates_then_kills_a_real_subprocess(
     t0 = _t.monotonic()
     with pytest.raises(TimeoutError):
         await loc_mod.sudo_runner(["x"], limit_s=0.2)
-    assert _t.monotonic() - t0 < 3  # TERM ignored -> killed after the grace period
+    assert _t.monotonic() - t0 < 3
+    pid = int(pidfile.read_text())  # TERM was ignored: only the kill fallback can end it
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+# ---- format drive ---------------------------------------------------------------------------
+DISK = "sdAB"
+MM, SZ, SEQ = "8:16", 1 << 30, "100"
+
+
+async def _fmt(env: Env, fstype: str = "exfat", label: str = "", **kw):  # type: ignore[no-untyped-def]
+    return await env.svc.format_disk(
+        kw.get("disk", DISK),
+        fstype,
+        label,
+        kw.get("majmin", MM),
+        kw.get("size", SZ),
+        kw.get("diskseq", SEQ),
+    )
+
+
+def test_label_rules_per_filesystem() -> None:
+    from backend.services.locations import label_error
+
+    assert label_error("exfat", "") is None and label_error("exfat", "A" * 15) is None
+    assert label_error("exfat", "A" * 16) and label_error("fat32", "A" * 12)
+    assert label_error("fat32", "A" * 11) is None and label_error("ntfs", "A" * 32) is None
+    assert label_error("ntfs", "A" * 33) and label_error("ext4", "A" * 16) is None
+    assert label_error("ext4", "é" * 9) or label_error("ext4", "A" * 17)
+    for bad in ("a;b", "a/b", "-x", "a\nb", "a*b", "a.b", "é"):
+        assert label_error("exfat", bad), bad
+    assert label_error("exfat", "My Disk_1-a") is None
+    assert label_error("btrfs", "") is not None
+
+
+async def test_format_replaces_the_drive_and_drops_saved_locations_on_it(env: Env) -> None:
+    _usb(env)
+    other = "2222-2222"
+    env.helper.plug(other)
+    env.svc.add(kind="usb", uuid=other)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    events: list[tuple[str, str | None]] = []
+    env.svc.subscribe(lambda r, i: events.append((r, i)))
+    removed = await _fmt(env, "fat32", "PHOTOS")
+    assert removed == [UID]
+    assert env.helper.formats == [["format-usb", DISK, MM, str(SZ), SEQ, "fat32", "PHOTOS"]]
+    ids = [loc.id for loc in env.store.config.storage.locations]
+    assert ids == [f"usb-{other}"]
+    new = [i for i in env.svc.list_locations() if i.fstype == "vfat"]
+    assert len(new) == 1 and not new[0].configured and new[0].label == "PHOTOS"
+    assert not new[0].mounted and new[0].disk and new[0].disk["name"] == DISK
+    assert ("formatted", None) in events and DISK not in env.svc._format_busy
+
+
+async def test_format_without_label_passes_no_label_and_blank_drives_work(env: Env) -> None:
+    env.helper.plug(None, disk="sdzz")
+    await env.svc.refresh()
+    blank = env.svc.list_locations()[0]
+    assert blank.id == "dev-sdzz" and blank.disk and blank.disk["model"] == "Ultra"
+    assert await env.svc.format_disk("sdzz", "exfat", "", MM, SZ, SEQ) == []
+    assert env.helper.formats == [["format-usb", "sdzz", MM, str(SZ), SEQ, "exfat"]]
+
+
+@pytest.mark.parametrize(
+    ("kw", "exc", "text"),
+    [
+        ({"disk": "sdnone"}, "LocationNotFound", "drive"),
+        ({"majmin": "8:32"}, "InvalidState", "changed"),
+        ({"size": SZ - 512}, "InvalidState", "changed"),
+        ({"diskseq": "101"}, "InvalidState", "changed"),
+    ],
+)
+async def test_format_refuses_unknown_or_changed_disk(env: Env, kw, exc, text) -> None:  # type: ignore[no-untyped-def]
+    from backend.core import errors
+
+    _usb(env)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    with pytest.raises(getattr(errors, exc), match=text):
+        await _fmt(env, **kw)
+    assert env.helper.formats == []
+
+
+async def test_format_refuses_mounted_target_backup_and_busy_disks(env: Env) -> None:
+    _usb(env)
+    await env.svc.refresh()
+    with pytest.raises(InvalidState, match="Unmount"):
+        await _fmt(env)
+    env.svc.set_target(UID)
+    with pytest.raises(InvalidState, match="target"):
+        await _fmt(env)
+    env.svc.set_target(None)
+    env.svc.set_backups([UID])
+    with pytest.raises(InvalidState, match="backup"):
+        await _fmt(env)
+    env.svc.set_backups([])
+    await env.svc.unmount(UID)
+    env.svc._fsck_busy.add(UID)
+    with pytest.raises(LocationBusy, match="checked"):
+        await _fmt(env)
+    env.svc._fsck_busy.clear()
+    env.svc._format_busy.add(DISK)
+    with pytest.raises(LocationBusy, match="formatted"):
+        await _fmt(env)
+    assert env.helper.formats == []
+
+
+async def test_format_runs_outside_the_lock_and_excludes_its_partitions(env: Env) -> None:
+    _usb(env)
+    other = "2222-2222"
+    env.helper.plug(other)
+    env.svc.add(kind="usb", uuid=other)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    started, gate = asyncio.Event(), asyncio.Event()
+    seen: list[float | None] = []
+    real = env.svc._run
+
+    async def runner(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        if args[0] != "format-usb":
+            return await real(args, stdin, limit_s)
+        seen.append(limit_s)
+        started.set()
+        await gate.wait()
+        return await real(args, stdin, limit_s)
+
+    env.svc._run = runner
+    task = asyncio.create_task(_fmt(env))
+    await started.wait()
+    assert not env.svc._lock.locked() and seen == [3600.0]
+    for op in (env.svc.mount(UID), env.svc.unmount(UID), env.svc.fsck(UID)):
+        with pytest.raises(LocationBusy, match="formatted"):
+            await op
+    with pytest.raises(LocationBusy):
+        await _fmt(env)
+    await env.svc.refresh()  # polling neither auto-mounts the busy drive nor loses it
+    assert not env.svc.get(UID).mounted and env.svc.get(UID).present
+    assert env.svc.get(f"usb-{other}").mounted  # other disks are unaffected
+    gate.set()
+    assert await task == [UID]
+
+
+async def test_mount_waiting_on_the_lock_cannot_overlap_a_starting_format(env: Env) -> None:
+    _usb(env)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    async with env.svc._lock:
+        m = asyncio.create_task(env.svc.mount(UID))
+        await asyncio.sleep(0)
+        f = asyncio.create_task(_fmt(env))
+        await asyncio.sleep(0.05)
+    res = await asyncio.gather(m, f, return_exceptions=True)
+    mounted_first = not isinstance(res[0], BaseException)
+    assert mounted_first != bool(env.helper.formats) or isinstance(res[1], InvalidState)
+    assert not (env.helper.formats and env.svc.get(UID).mounted)
+
+
+async def test_format_failure_and_timeout_are_reported_verbatim_and_remove_nothing(
+    env: Env,
+) -> None:
+    _usb(env)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    env.helper.fail["format-usb"] = "ncc-storage: mkfs failed: boom"
+    with pytest.raises(MountFailed, match="mkfs failed: boom"):
+        await _fmt(env)
+    assert env.store.config.storage.locations and DISK not in env.svc._format_busy
+
+    async def timeout(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        raise TimeoutError
+
+    env.svc._run = timeout
+    with pytest.raises(MountFailed, match="did not finish"):
+        await _fmt(env)
+    assert DISK not in env.svc._format_busy and not env.svc._lock.locked()
+
+
+async def test_cancelled_format_releases_the_disk(env: Env) -> None:
+    _usb(env)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    started = asyncio.Event()
+    real = env.svc._run
+
+    async def hang(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        if args[0] != "format-usb":
+            return await real(args, stdin, limit_s)
+        started.set()
+        await asyncio.sleep(60)
+
+    env.svc._run = hang
+    task = asyncio.create_task(_fmt(env))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert DISK not in env.svc._format_busy and env.store.config.storage.locations
+
+
+async def test_format_refuses_fat32_over_2_tib(env: Env) -> None:
+    big = 3 << 40
+    env.helper.plug(UUID, disk_size=big)
+    await env.svc.refresh()
+    with pytest.raises(ConfigInvalid, match="exFAT"):
+        await _fmt(env, "fat32", size=big)
+    assert env.helper.formats == []
+    await _fmt(env, "exfat", size=big)
+    assert len(env.helper.formats) == 1
+
+
+async def test_polling_during_a_format_still_sees_other_disks_unplugged(env: Env) -> None:
+    _usb(env)
+    other = "2222-2222"
+    env.helper.plug(other, disk="sdzz", diskseq="7")
+    env.svc.add(kind="usb", uuid=other)
+    await env.svc.refresh()
+    assert env.svc.get(f"usb-{other}").mounted
+    await env.svc.unmount(UID)
+    started, gate = asyncio.Event(), asyncio.Event()
+    real = env.svc._run
+
+    async def runner(args, stdin=None, limit_s=None):  # type: ignore[no-untyped-def]
+        if args[0] != "format-usb":
+            return await real(args, stdin, limit_s)
+        started.set()
+        await gate.wait()
+        return await real(args, stdin, limit_s)
+
+    env.svc._run = runner
+    task = asyncio.create_task(_fmt(env))
+    await started.wait()
+    env.helper.unplug(other)
+    env.helper.usb = [u for u in env.helper.usb if u["disk"]["name"] != DISK]  # mid-format churn
+    await env.svc.refresh()
+    assert not env.svc.get(f"usb-{other}").present  # unplug of another disk is noticed
+    assert env.svc.get(UID).present and not env.svc.get(UID).mounted  # formatting disk frozen
+    gate.set()
+    await task
+
+
+async def test_a_failing_location_removal_does_not_fail_the_format(env: Env) -> None:
+    _usb(env)
+    other = "2222-2222"
+    env.helper.plug(other, disk="sdAB", majmin=MM)  # second partition of the same disk
+    env.svc.add(kind="usb", uuid=other)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    await env.svc.unmount(f"usb-{other}")
+    real = env.svc.remove
+
+    async def boom(lid: str) -> None:
+        if lid == UID:
+            raise RuntimeError("nope")
+        await real(lid)
+
+    env.svc.remove = boom  # type: ignore[method-assign]
+    removed = await _fmt(env)
+    assert removed == [f"usb-{other}"]
+
+
+async def test_saved_location_present_on_another_disk_is_not_removed(env: Env) -> None:
+    _usb(env)
+    await env.svc.refresh()
+    await env.svc.unmount(UID)
+    # same uuid now reported on a different disk (stale duplicate of a cloned stick)
+    env.helper.plug(UUID, disk="sdzz", diskseq="9", majmin="8:48")
+    assert await _fmt(env) == []
+    assert any(loc.id == UID for loc in env.store.config.storage.locations)

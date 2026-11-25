@@ -145,3 +145,44 @@ def test_commit_part_never_replaces_a_file_that_appeared_after_reservation(tmp_p
     got = commit_part(part, final)
     assert final.read_bytes() == b"other writer"
     assert got.name == "a-1.jpg" and got.read_bytes() == b"new" and not part.exists()
+
+
+def test_concurrent_commits_never_overwrite_without_hard_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """exFAT/FAT: os.link fails, so the exists-check + rename must be serialised per directory."""
+    import errno
+    import os
+    import threading
+    import time
+
+    from backend.services import storage
+
+    def no_link(*_a: object, **_k: object) -> None:
+        raise OSError(errno.EPERM, "no hard links")
+
+    real_replace = os.replace
+
+    def slow_replace(src: object, dst: object) -> None:
+        time.sleep(0.1)  # widen the check-then-rename window
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(storage.os, "link", no_link)
+    monkeypatch.setattr(storage.os, "replace", slow_replace)
+    f1, p1 = storage.reserve_part(tmp_path, "a.jpg")
+    f2, p2 = storage.reserve_part(tmp_path, "a.jpg")
+    assert f2.name == "a-1.jpg"
+    p1.write_bytes(b"one")
+    p2.write_bytes(b"two")
+    f1.write_bytes(b"other writer")  # appears after reservation: commit 1 moves on to a-1
+    results: list[Path] = []
+    threads = [
+        threading.Thread(target=lambda a=a, b=b: results.append(storage.commit_part(a, b)))
+        for a, b in ((p1, f1), (p2, f2))
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(set(results)) == 2
+    assert sorted(x.read_bytes() for x in results) == [b"one", b"two"]

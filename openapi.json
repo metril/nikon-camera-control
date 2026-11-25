@@ -2053,6 +2053,55 @@
         "title": "Counters",
         "type": "object"
       },
+      "DiskRef": {
+        "properties": {
+          "diskseq": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Kernel sequence number, unique per attach of the disk",
+            "title": "Diskseq"
+          },
+          "majmin": {
+            "description": "Device numbers, major:minor",
+            "title": "Majmin",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "description": "Kernel name of the whole physical disk, e.g. sda",
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "description": "Disk size in bytes",
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "majmin",
+          "size"
+        ],
+        "title": "DiskRef",
+        "type": "object"
+      },
       "DownloadAllRequest": {
         "properties": {
           "delete_after": {
@@ -2448,6 +2497,54 @@
         "title": "FolderOut",
         "type": "object"
       },
+      "FormatRequest": {
+        "properties": {
+          "diskseq": {
+            "description": "Expected kernel sequence number of the disk",
+            "pattern": "^[0-9]{1,20}$",
+            "title": "Diskseq",
+            "type": "string"
+          },
+          "fstype": {
+            "default": "exfat",
+            "enum": [
+              "exfat",
+              "fat32",
+              "ntfs",
+              "ext4"
+            ],
+            "title": "Fstype",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "description": "Empty for no label",
+            "maxLength": 32,
+            "title": "Label",
+            "type": "string"
+          },
+          "majmin": {
+            "description": "Expected device numbers",
+            "pattern": "^[0-9]+:[0-9]+$",
+            "title": "Majmin",
+            "type": "string"
+          },
+          "size": {
+            "description": "Expected disk size in bytes",
+            "exclusiveMaximum": 1e+18,
+            "exclusiveMinimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "majmin",
+          "size",
+          "diskseq"
+        ],
+        "title": "FormatRequest",
+        "type": "object"
+      },
       "FromCameraIn": {
         "properties": {
           "description": {
@@ -2483,24 +2580,6 @@
           "name"
         ],
         "title": "FromCameraIn",
-        "type": "object"
-      },
-      "FsckResult": {
-        "properties": {
-          "output": {
-            "title": "Output",
-            "type": "string"
-          },
-          "returncode": {
-            "title": "Returncode",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "returncode",
-          "output"
-        ],
-        "title": "FsckResult",
         "type": "object"
       },
       "HealthOut": {
@@ -2855,6 +2934,17 @@
           },
           "status": {
             "$ref": "#/components/schemas/JobStatus"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
           }
         },
         "required": [
@@ -3342,6 +3432,17 @@
             "description": "False for a detected drive that is not registered yet",
             "title": "Configured",
             "type": "boolean"
+          },
+          "disk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "USB: the physical disk this drive or partition is on"
           },
           "domain": {
             "anyOf": [
@@ -6899,7 +7000,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.5.0"
+    "version": "0.5.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -11940,6 +12041,7 @@
     },
     "/api/v1/locations/{location_id}/fsck": {
       "post": {
+        "description": "Check and repair an unmounted USB drive as a background job (up to an hour). The job\nresult is ``{returncode, output}``; cancelling the job stops the repair.",
         "operationId": "check_location",
         "parameters": [
           {
@@ -11953,11 +12055,11 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FsckResult"
+                  "$ref": "#/components/schemas/JobOut"
                 }
               }
             },
@@ -14768,6 +14870,115 @@
           }
         ],
         "summary": "Set Storage Backups",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/disks/{disk}/format": {
+      "post": {
+        "description": "Erase a whole USB disk and create one partition with a new filesystem, as a background\njob (up to an hour). The disk is identified by name, device numbers, size and kernel\nsequence number, all re-checked just before writing. Refused while any partition is\nmounted, in use as the target or a backup, or being checked. Cancelling the job stops the\nformat; the disk may then be left blank or half-written.",
+        "operationId": "format_disk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disk",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,32}$",
+              "title": "Disk",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Format Disk",
         "tags": [
           "storage"
         ]

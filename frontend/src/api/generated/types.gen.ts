@@ -1250,6 +1250,40 @@ export type Counters = {
 };
 
 /**
+ * DiskRef
+ */
+export type DiskRef = {
+    /**
+     * Diskseq
+     *
+     * Kernel sequence number, unique per attach of the disk
+     */
+    diskseq?: string | null;
+    /**
+     * Majmin
+     *
+     * Device numbers, major:minor
+     */
+    majmin: string;
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Name
+     *
+     * Kernel name of the whole physical disk, e.g. sda
+     */
+    name: string;
+    /**
+     * Size
+     *
+     * Disk size in bytes
+     */
+    size: number;
+};
+
+/**
  * DownloadAllRequest
  */
 export type DownloadAllRequest = {
@@ -1536,6 +1570,40 @@ export type FolderOut = {
 };
 
 /**
+ * FormatRequest
+ */
+export type FormatRequest = {
+    /**
+     * Diskseq
+     *
+     * Expected kernel sequence number of the disk
+     */
+    diskseq: string;
+    /**
+     * Fstype
+     */
+    fstype?: 'exfat' | 'fat32' | 'ntfs' | 'ext4';
+    /**
+     * Label
+     *
+     * Empty for no label
+     */
+    label?: string;
+    /**
+     * Majmin
+     *
+     * Expected device numbers
+     */
+    majmin: string;
+    /**
+     * Size
+     *
+     * Expected disk size in bytes
+     */
+    size: number;
+};
+
+/**
  * FromCameraIn
  */
 export type FromCameraIn = {
@@ -1553,20 +1621,6 @@ export type FromCameraIn = {
      * Setting names to capture; null = the common writable settings.
      */
     names?: Array<string> | null;
-};
-
-/**
- * FsckResult
- */
-export type FsckResult = {
-    /**
-     * Output
-     */
-    output: string;
-    /**
-     * Returncode
-     */
-    returncode: number;
 };
 
 /**
@@ -1775,6 +1829,10 @@ export type JobOut = {
      */
     started?: string | null;
     status: JobStatus;
+    /**
+     * Target
+     */
+    target?: string | null;
 };
 
 /**
@@ -2074,6 +2132,10 @@ export type LocationOut = {
      * False for a detected drive that is not registered yet
      */
     configured: boolean;
+    /**
+     * USB: the physical disk this drive or partition is on
+     */
+    disk?: DiskRef | null;
     /**
      * Domain
      */
@@ -6672,7 +6734,7 @@ export type CheckLocationResponses = {
     /**
      * Successful Response
      */
-    200: FsckResult;
+    202: JobOut;
 };
 
 export type CheckLocationResponse = CheckLocationResponses[keyof CheckLocationResponses];
@@ -8022,6 +8084,56 @@ export type SetStorageBackupsResponses = {
 };
 
 export type SetStorageBackupsResponse = SetStorageBackupsResponses[keyof SetStorageBackupsResponses];
+
+export type FormatDiskData = {
+    body: FormatRequest;
+    path: {
+        /**
+         * Disk
+         */
+        disk: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/disks/{disk}/format';
+};
+
+export type FormatDiskErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type FormatDiskError = FormatDiskErrors[keyof FormatDiskErrors];
+
+export type FormatDiskResponses = {
+    /**
+     * Successful Response
+     */
+    202: JobOut;
+};
+
+export type FormatDiskResponse = FormatDiskResponses[keyof FormatDiskResponses];
 
 export type SetStorageTargetData = {
     body: TargetSet;

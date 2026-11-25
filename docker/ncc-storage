@@ -4,8 +4,9 @@
 # filesystem type always comes from blkid, never from the caller.
 # Exit codes: 0 ok, 1 operation failed, 2 usage/validation, 16 mount busy.
 set -eu
-PATH=/usr/sbin:/usr/bin:/sbin:/bin
-export PATH
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin
+LC_ALL=C
+export PATH LC_ALL
 umask 077
 
 # Helper-private state lives in a root-owned tmpfs the app user cannot touch.
@@ -23,7 +24,7 @@ die() { # message [code]
 }
 
 usage() {
-    echo "usage: ncc-storage list-usb | mount-usb <uuid> | mount-smb <id> <//host/share> (credentials on stdin) | unmount <usb-|smb-id> [--lazy] | fsck <uuid>" >&2
+    echo "usage: ncc-storage list-usb | mount-usb <uuid> | mount-smb <id> <//host/share> (credentials on stdin) | unmount <usb-|smb-id> [--lazy] | fsck <uuid> | format-usb <disk> <major:minor> <bytes> <exfat|fat32|ntfs|ext4> [label]" >&2
     exit 2
 }
 
@@ -63,7 +64,7 @@ prepare_dev_dir() {
 }
 
 # Emit one record per USB-backed block device with a usable size:
-# name SEP uuid SEP fstype SEP label SEP bytes SEP major:minor
+# name SEP uuid SEP fstype SEP label SEP bytes SEP major:minor SEP disk SEP disk-major:minor SEP disk-bytes SEP diskseq SEP model
 scan() {
     prepare_dev_dir
     for s in /sys/class/block/*; do
@@ -87,6 +88,16 @@ scan() {
         [ "$sectors" -gt 0 ] || continue
         mm=$(cat "$s/dev" 2>/dev/null || true)
         match '^[0-9]+:[0-9]+$' "$mm" || continue
+        disk=$n
+        [ ! -e "$s/partition" ] || disk=$(basename "$(dirname "$(readlink -f "$s")")")
+        match '^[A-Za-z0-9_-]{1,32}$' "$disk" || continue
+        dmm=$(cat "/sys/class/block/$disk/dev" 2>/dev/null || true)
+        match '^[0-9]+:[0-9]+$' "$dmm" || continue
+        dsectors=$(cat "/sys/class/block/$disk/size" 2>/dev/null || echo 0)
+        case $dsectors in '' | *[!0-9]*) continue ;; esac
+        dseq=$(cat "/sys/class/block/$disk/diskseq" 2>/dev/null || true)
+        match '^[0-9]{1,20}$' "$dseq" || dseq=''
+        model=$(tr -d '\000-\037' <"/sys/block/$disk/device/model" 2>/dev/null | sed -e 's/ *$//' || true)
         node=$DEVDIR/$n
         rm -f "$node"
         mknod -m 600 "$node" b "${mm%%:*}" "${mm##*:}" 2>/dev/null || continue
@@ -104,7 +115,8 @@ EOF
         match '^[A-Za-z0-9-]{1,64}$' "$uuid" || uuid=''
         match '^[A-Za-z0-9_.+-]{1,32}$' "$fstype" || fstype=''
         label=$(printf '%s' "$label" | tr -d '\000-\037')
-        printf '%s\037%s\037%s\037%s\037%s\037%s\n' "$n" "$uuid" "$fstype" "$label" "$((sectors * 512))" "$mm"
+        printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$n" "$uuid" "$fstype" "$label" "$((sectors * 512))" "$mm" \
+            "$disk" "$dmm" "$((dsectors * 512))" "$dseq" "$model"
     done
 }
 
@@ -138,6 +150,10 @@ find_usb() {
     F_NAME=$(printf '%s' "$recs" | cut -d "$SEP" -f1)
     F_FSTYPE=$(printf '%s' "$recs" | cut -d "$SEP" -f3)
     F_MM=$(printf '%s' "$recs" | cut -d "$SEP" -f6)
+    F_DISK=$(printf '%s' "$recs" | cut -d "$SEP" -f7)
+    if match '^[A-Za-z0-9_-]{1,32}$' "$F_DISK" && fmt_locked "$F_DISK"; then
+        die "the drive is being formatted" 1
+    fi
     classify "$F_FSTYPE" "$1"
     [ "$SUP" = true ] || die "cannot use $1: $REASON" 1
 }
@@ -146,7 +162,7 @@ cmd_list_usb() {
     need_root
     first=1
     printf '['
-    scan | while IFS=$SEP read -r name uuid fstype label size mm; do
+    scan | while IFS=$SEP read -r name uuid fstype label size mm disk dmm dsize dseq model; do
         classify "$fstype" "$uuid"
         mpath=$(find_mount "$mm" "$MNT/usb-${uuid:-none}")
         [ "$first" = 1 ] || printf ','
@@ -156,9 +172,10 @@ cmd_list_usb() {
             mounted=true root=$mpath
             is_posix "$fstype" && root=$mpath/ncc
         fi
-        printf '{"name":%s,"uuid":%s,"fstype":%s,"label":%s,"size":%s,"supported":%s,"reason":%s,"mounted":%s,"mount_path":%s,"root":%s}' \
+        printf '{"name":%s,"uuid":%s,"fstype":%s,"label":%s,"size":%s,"supported":%s,"reason":%s,"mounted":%s,"mount_path":%s,"root":%s,"disk":{"name":%s,"majmin":%s,"size":%s,"diskseq":%s,"model":%s}}' \
             "$(jstr "$name")" "$(jnull "$uuid")" "$(jnull "$fstype")" "$(jnull "$label")" "$size" \
-            "$SUP" "$(jnull "$REASON")" "$mounted" "$(jnull "$mpath")" "$(jnull "$root")"
+            "$SUP" "$(jnull "$REASON")" "$mounted" "$(jnull "$mpath")" "$(jnull "$root")" \
+            "$(jstr "$disk")" "$(jstr "$dmm")" "$dsize" "$(jnull "$dseq")" "$(jnull "$model")"
     done
     printf ']\n'
 }
@@ -302,35 +319,300 @@ cmd_fsck() {
     esac
 }
 
-[ $# -ge 1 ] || usage
-cmd=$1
-shift
-case $cmd in
-    list-usb)
-        [ $# -eq 0 ] || usage
-        cmd_list_usb
-        ;;
-    mount-usb)
-        [ $# -eq 1 ] || usage
-        match '^[A-Za-z0-9-]{1,64}$' "$1" || die "invalid uuid" 2
-        cmd_mount_usb "$1"
-        ;;
-    mount-smb)
-        [ $# -eq 2 ] || usage
-        match '^[a-z0-9][a-z0-9-]{0,39}$' "$1" || die "invalid id" 2
-        match '^//[A-Za-z0-9._-]+/[^,]+$' "$2" || die "invalid unc path" 2
-        cmd_mount_smb "$1" "$2"
-        ;;
-    unmount)
-        { [ $# -ge 1 ] && [ $# -le 2 ]; } || usage
-        match '^(usb|smb)-[A-Za-z0-9-]{1,64}$' "$1" || die "invalid mount id" 2
-        [ "${2:---lazy}" = --lazy ] || usage
-        cmd_unmount "$1" "${2:-}"
-        ;;
-    fsck)
-        [ $# -eq 1 ] || usage
-        match '^[A-Za-z0-9-]{1,64}$' "$1" || die "invalid uuid" 2
-        cmd_fsck "$1"
-        ;;
-    *) usage ;;
-esac
+# ---- format -------------------------------------------------------------------------------
+# The device-writing core (format_disk) takes a sysfs block name and trusts nothing but sysfs:
+# it re-validates identity, refuses partitions and mounted disks. The USB check lives in
+# cmd_format_usb, the only production entry point.
+MBR_MAX_SECTORS=4294965248 # 2 TiB less a 1 MiB alignment margin: larger disks get GPT, no FAT32
+CHILD=''
+LOG=''
+MADE=''
+FMT_USB=0
+FMT_ERR=''
+
+fmt_cleanup() {
+    if [ -n "$CHILD" ]; then
+        kill "$CHILD" 2>/dev/null || true
+        wait "$CHILD" 2>/dev/null || true
+        CHILD=''
+    fi
+    for f in $MADE; do rm -f "$f"; done
+    MADE=''
+    [ -z "$LOG" ] || rm -f "$LOG"
+    LOG=''
+}
+
+fmt_label_ok() { # fstype label
+    case $1 in
+        exfat) max=15 ;;
+        fat32) max=11 ;;
+        ntfs) max=32 ;;
+        ext4) max=16 ;;
+        *) return 1 ;;
+    esac
+    [ -z "$2" ] && return 0
+    match '^[A-Za-z0-9_][A-Za-z0-9_ -]*$' "$2" && [ "${#2}" -le "$max" ]
+}
+
+# One lock file per disk, held (flock on fd 9, inherited by the children) for a whole format.
+fmt_lockfile() { printf '%s/format-%s.lock' "$RUN_DIR" "$1"; }
+
+# True while a format of <disk> holds its lock (fails closed if the lock cannot be tested).
+fmt_locked() {
+    prepare_dev_dir
+    ! flock -n "$(fmt_lockfile "$1")" true 2>/dev/null
+}
+
+# Is the whole disk behind a USB bus (…/usbN/… in its device path, usb subsystem in its parents)?
+fmt_is_usb() { # disk
+    case $(readlink -f "/sys/class/block/$1") in */usb[0-9]*/*) ;; *) return 1 ;; esac
+    d=$(readlink -f "/sys/class/block/$1/device" 2>/dev/null) || return 1
+    while [ -n "$d" ] && [ "$d" != / ]; do
+        sub=$(readlink -f "$d/subsystem" 2>/dev/null || true)
+        [ "${sub##*/}" != usb ] || return 0
+        d=${d%/*}
+    done
+    return 1
+}
+
+# Re-validate that <disk> is still exactly the drive the caller selected.
+fmt_identity() { # disk majmin bytes diskseq
+    s=/sys/class/block/$1
+    [ -e "$s/dev" ] || die "no such disk: $1" 1
+    [ ! -e "$s/partition" ] || die "$1 is a partition; format the whole disk" 1
+    [ "$(cat "$s/dev")" = "$2" ] || die "$1 is not the drive you selected (device numbers changed)" 1
+    sectors=$(cat "$s/size" 2>/dev/null || echo 0)
+    case $sectors in '' | *[!0-9]*) die "bad disk size" 1 ;; esac
+    [ "$((sectors * 512))" = "$3" ] || die "$1 is not the drive you selected (size changed)" 1
+    [ "$(cat "$s/diskseq" 2>/dev/null || true)" = "$4" ] || die "$1 is not the drive you selected (it was re-plugged)" 1
+    [ "$FMT_USB" != 1 ] || fmt_is_usb "$1" || die "$1 is not a USB disk" 1
+}
+
+# Block device node for a sysfs name, created in the private dev dir and checked against sysfs.
+fmt_node() { # name [expected major:minor] -> prints path
+    mm=$(cat "/sys/class/block/$1/dev" 2>/dev/null || true)
+    match '^[0-9]+:[0-9]+$' "$mm" || die "no device numbers for $1" 1
+    [ -z "${2:-}" ] || [ "$mm" = "$2" ] || die "$1 changed while formatting (device numbers)" 1
+    prepare_dev_dir
+    node=$DEVDIR/$1
+    rm -f "$node"
+    mknod -m 600 "$node" b "${mm%%:*}" "${mm##*:}" || die "cannot create node for $1" 1
+    hex=$(stat -c '%t:%T' "$node")
+    [ "$(printf '%d:%d' "0x${hex%%:*}" "0x${hex##*:}")" = "$mm" ] || die "node for $1 does not match" 1
+    [ "$(cat "/sys/class/block/$1/dev" 2>/dev/null || true)" = "$mm" ] || die "$1 changed while formatting (device numbers)" 1
+    printf '%s' "$node"
+}
+
+# Partitions (sysfs names) of a whole disk, one per line.
+fmt_parts() { # disk
+    for p in "/sys/class/block/$1/$1"*; do
+        [ -e "$p/partition" ] && printf '%s\n' "${p##*/}"
+    done
+    return 0
+}
+
+# Is the disk or any of its partitions mounted (in this mount namespace)? Prints the mountpoint.
+fmt_mounted() { # disk
+    for d in "$1" $(fmt_parts "$1"); do
+        mm=$(cat "/sys/class/block/$d/dev" 2>/dev/null || true)
+        [ -n "$mm" ] || continue
+        mp=$(find_mount "$mm" "")
+        if [ -n "$mp" ]; then
+            printf '%s' "$mp"
+            return 0
+        fi
+    done
+    return 0
+}
+
+# First device-mapper/LUKS/md holder of the disk or one of its partitions, if any.
+fmt_holders() { # disk
+    for h in "/sys/class/block/$1/holders/"* "/sys/class/block/$1/$1"*/holders/*; do
+        [ -e "$h" ] || continue
+        printf '%s' "${h##*/}"
+        return 0
+    done
+    return 0
+}
+
+# Exclusive claim probe: opening the whole disk with O_EXCL fails with EBUSY while any partition
+# is mounted or claimed in ANY mount namespace. It cannot be held across the run (wipefs,
+# sfdisk and mkfs claim the device themselves), so it is repeated right before each phase.
+fmt_claim() { # node
+    python3 -c 'import os, sys
+os.close(os.open(sys.argv[1], os.O_RDONLY | os.O_EXCL))' "$1" 2>/dev/null
+}
+
+# Run a destructive command in the background and wait, so a TERM reaches our trap at once.
+# stdin comes from $FMT_IN; output goes to $LOG; on failure FMT_ERR holds its tail.
+fmt_run() {
+    "$@" <"${FMT_IN:-/dev/null}" >"$LOG" 2>&1 &
+    CHILD=$!
+    rc=0
+    wait "$CHILD" || rc=$?
+    CHILD=''
+    [ "$rc" != 0 ] || return 0
+    FMT_ERR=$(tr -d '\000-\010\013-\037' <"$LOG" | tail -c 500)
+    return "$rc"
+}
+
+# The single partition sfdisk just created: exactly one, number 1, starting at sector 2048.
+fmt_pick_part() { # disk -> prints its name, or nothing
+    parts=$(fmt_parts "$1")
+    case $parts in '' | *"$NL"*) return 0 ;; esac
+    partition=$(cat "/sys/class/block/$parts/partition" 2>/dev/null || true)
+    start=$(cat "/sys/class/block/$parts/start" 2>/dev/null || true)
+    if [ "$partition" = 1 ] && [ "$start" = 2048 ]; then printf '%s' "$parts"; fi
+    return 0
+}
+
+# format_disk <disk> <major:minor> <bytes> <diskseq> <exfat|fat32|ntfs|ext4> [label]
+format_disk() {
+    disk=$1 want_mm=$2 want_bytes=$3 want_seq=$4 fs=$5 label=${6:-}
+    match '^[A-Za-z0-9_-]{1,32}$' "$disk" || die "invalid disk" 2
+    match '^[0-9]+:[0-9]+$' "$want_mm" || die "invalid device numbers" 2
+    match '^[0-9]{1,18}$' "$want_bytes" || die "invalid size" 2
+    match '^[0-9]{1,20}$' "$want_seq" || die "invalid disk sequence number" 2
+    case $fs in exfat | fat32 | ntfs | ext4) ;; *) die "invalid filesystem" 2 ;; esac
+    fmt_label_ok "$fs" "$label" || die "invalid label for $fs" 2
+    fmt_identity "$disk" "$want_mm" "$want_bytes" "$want_seq"
+    [ "$sectors" -gt 4096 ] || die "$disk is too small" 1
+    if [ "$fs" = fat32 ] && [ "$sectors" -gt "$MBR_MAX_SECTORS" ]; then
+        die "FAT32 cannot be used on drives over 2 TB; use exFAT" 1
+    fi
+    trap 'fmt_cleanup; die "format cancelled" 1' TERM INT HUP
+    trap fmt_cleanup EXIT
+
+    # One format per disk, for the whole run (also keeps mount/fsck away from it).
+    prepare_dev_dir
+    exec 9>"$(fmt_lockfile "$disk")"
+    flock -n 9 || die "a format of $disk is already running" 1
+
+    # Everything below this block may write; all refusals happen before the first write.
+    fmt_identity "$disk" "$want_mm" "$want_bytes" "$want_seq"
+    mp=$(fmt_mounted "$disk")
+    [ -z "$mp" ] || die "$disk is in use (mounted at $mp); unmount it first" 1
+    hold=$(fmt_holders "$disk")
+    [ -z "$hold" ] || die "$disk is in use by $hold (device-mapper or similar); release it first" 1
+    node=$(fmt_node "$disk" "$want_mm") || exit 1
+    MADE="$MADE $node"
+    fmt_identity "$disk" "$want_mm" "$want_bytes" "$want_seq"
+    fmt_claim "$node" || die "$disk is in use (a partition is mounted or claimed elsewhere); unmount it first" 1
+    pnodes=''
+    for p in $(fmt_parts "$disk"); do
+        pn=$(fmt_node "$p") || exit 1
+        MADE="$MADE $pn"
+        pnodes="$pnodes $pn"
+    done
+    fmt_identity "$disk" "$want_mm" "$want_bytes" "$want_seq"
+
+    LOG=$(mktemp "$RUN_DIR/format.XXXXXX")
+    for pn in $pnodes; do
+        fmt_run wipefs -a "$pn" || die "wipefs of ${pn##*/} failed: $FMT_ERR" 1
+    done
+    fmt_run wipefs -a "$node" || die "wipefs failed: $FMT_ERR" 1
+
+    if [ "$sectors" -gt "$MBR_MAX_SECTORS" ]; then
+        case $fs in
+            ext4) ptype=0FC63DAF-8483-4772-8E79-3D69D8477DE4 ;;
+            *) ptype=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7 ;;
+        esac
+        script="label: gpt${NL}start=2048, type=$ptype${NL}"
+    else
+        case $fs in
+            exfat | ntfs) ptype=7 ;;
+            fat32) ptype=c ;;
+            ext4) ptype=83 ;;
+        esac
+        script="label: dos${NL}start=2048, type=$ptype${NL}"
+    fi
+    FMT_IN=$(mktemp "$RUN_DIR/format-script.XXXXXX")
+    MADE="$MADE $FMT_IN"
+    printf '%s' "$script" >"$FMT_IN"
+    fmt_run sfdisk --no-reread --no-tell-kernel --wipe always "$node" || die "partitioning failed: $FMT_ERR" 1
+    FMT_IN=''
+
+    # Make the kernel drop the old partitions and learn the new one.
+    if ! blockdev --rereadpt "$node" >/dev/null 2>&1; then
+        partx -d "$node" >/dev/null 2>&1 || true
+        out=$(partx -a "$node" 2>&1) || die "could not re-read the partition table: $out" 1
+    fi
+    part=''
+    n=0
+    while [ "$n" -lt 100 ]; do
+        part=$(fmt_pick_part "$disk")
+        [ -z "$part" ] || break
+        n=$((n + 1))
+        sleep 0.1
+    done
+    [ -n "$part" ] || die "the new partition did not appear (expected exactly one, starting at sector 2048)" 1
+    pnode=$(fmt_node "$part") || exit 1
+    MADE="$MADE $pnode"
+
+    case $fs in
+        exfat) set -- mkfs.exfat; flag=-L ;;
+        fat32) set -- mkfs.vfat -F 32; flag=-n ;;
+        ntfs) set -- mkntfs -F -Q; flag=-L ;;
+        ext4) set -- mkfs.ext4 -F -q; flag=-L ;;
+    esac
+    if [ -n "$label" ]; then set -- "$@" "$flag" "$label" "$pnode"; else set -- "$@" "$pnode"; fi
+    fmt_run "$@" || die "mkfs failed: $FMT_ERR" 1
+    sync
+    echo "ok"
+}
+
+cmd_format_usb() { # disk majmin bytes diskseq fs [label]
+    need_root
+    fmt_is_usb "$1" || die "$1 is not a USB disk" 1
+    FMT_USB=1
+    format_disk "$@"
+}
+
+main() {
+    [ $# -ge 1 ] || usage
+    cmd=$1
+    shift
+    case $cmd in
+        list-usb)
+            [ $# -eq 0 ] || usage
+            cmd_list_usb
+            ;;
+        mount-usb)
+            [ $# -eq 1 ] || usage
+            match '^[A-Za-z0-9-]{1,64}$' "$1" || die "invalid uuid" 2
+            cmd_mount_usb "$1"
+            ;;
+        mount-smb)
+            [ $# -eq 2 ] || usage
+            match '^[a-z0-9][a-z0-9-]{0,39}$' "$1" || die "invalid id" 2
+            match '^//[A-Za-z0-9._-]+/[^,]+$' "$2" || die "invalid unc path" 2
+            cmd_mount_smb "$1" "$2"
+            ;;
+        unmount)
+            { [ $# -ge 1 ] && [ $# -le 2 ]; } || usage
+            match '^(usb|smb)-[A-Za-z0-9-]{1,64}$' "$1" || die "invalid mount id" 2
+            [ "${2:---lazy}" = --lazy ] || usage
+            cmd_unmount "$1" "${2:-}"
+            ;;
+        fsck)
+            [ $# -eq 1 ] || usage
+            match '^[A-Za-z0-9-]{1,64}$' "$1" || die "invalid uuid" 2
+            cmd_fsck "$1"
+            ;;
+        format-usb)
+            { [ $# -ge 5 ] && [ $# -le 6 ]; } || usage
+            match '^[A-Za-z0-9_-]{1,32}$' "$1" || die "invalid disk" 2
+            match '^[0-9]+:[0-9]+$' "$2" || die "invalid device numbers" 2
+            match '^[0-9]{1,18}$' "$3" || die "invalid size" 2
+            match '^[0-9]{1,20}$' "$4" || die "invalid disk sequence number" 2
+            match '^(exfat|fat32|ntfs|ext4)$' "$5" || die "invalid filesystem" 2
+            fmt_label_ok "$5" "${6:-}" || die "invalid label for $5" 2
+            cmd_format_usb "$@"
+            ;;
+        *) usage ;;
+    esac
+}
+
+# Run only when executed as ncc-storage (sudo or `sh docker/ncc-storage`); a test script with
+# another name can source this file and call format_disk on a loop device.
+case ${0##*/} in ncc-storage) main "$@" ;; esac

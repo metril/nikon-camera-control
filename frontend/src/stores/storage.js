@@ -38,7 +38,7 @@ export const useStorageStore = defineStore('storage', () => {
     })
   const mount = (id) => act(() => api.mountLocation(path(id)))
   const unmount = (id) => act(() => api.unmountLocation(path(id)))
-  const check = (id) => guard(lastError, () => api.checkLocation(path(id)))
+
   const add = (body) => act(() => api.addLocation({ body }))
   const remove = (id) => act(() => api.deleteLocation(path(id)))
   const testSmb = (body) => guard(lastError, () => api.testSmbLocation({ body }))
@@ -55,6 +55,9 @@ export const useStorageStore = defineStore('storage', () => {
     useJobsStore().upsert(job)
     return job
   }
+  const check = (id) => guard(lastError, () => toJob(api.checkLocation(path(id))))
+  const formatDisk = (disk, body) =>
+    guard(lastError, () => toJob(api.formatDisk({ path: { disk }, body })))
   const offload = (body) => guard(lastError, () => toJob(api.startOffload({ body })))
   const verify = (body = {}) => guard(lastError, () => toJob(api.startVerify({ body })))
 
@@ -77,6 +80,7 @@ export const useStorageStore = defineStore('storage', () => {
     mount,
     unmount,
     check,
+    formatDisk,
     add,
     remove,
     testSmb,
