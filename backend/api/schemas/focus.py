@@ -19,6 +19,9 @@ class AutofocusResult(BaseModel):
     focused: bool | None = Field(
         description="True when the camera reported a successful drive; null if unknown"
     )
+    reason: str | None = Field(
+        default=None, description="The camera's own message when it could not focus, verbatim"
+    )
 
 
 class MfRequest(BaseModel):

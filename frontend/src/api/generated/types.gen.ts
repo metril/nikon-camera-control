@@ -126,6 +126,12 @@ export type AutofocusResult = {
      * Ok
      */
     ok?: true;
+    /**
+     * Reason
+     *
+     * The camera's own message when it could not focus, verbatim
+     */
+    reason?: string | null;
 };
 
 /**

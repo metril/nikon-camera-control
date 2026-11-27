@@ -181,6 +181,18 @@
             "default": true,
             "title": "Ok",
             "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The camera's own message when it could not focus, verbatim",
+            "title": "Reason"
           }
         },
         "required": [

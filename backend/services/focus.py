@@ -28,6 +28,7 @@ from backend.core.errors import (
     AppError,
     CameraBusy,
     CameraNotConnected,
+    CameraOperationFailed,
     FeatureUnsupported,
     InvalidState,
     SettingInvalid,
@@ -59,6 +60,9 @@ _MODEL_SIZES = {"D500": (5568, 3712)}
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
 
 Sleep = Callable[[float], Awaitable[object]]
+
+
+_NO_FOCUS = "out of focus"  # the camera's message when AF could not lock
 
 
 class FocusService:
@@ -262,16 +266,23 @@ class FocusService:
             self._range = (int(w.range.min), int(w.range.max), max(1, int(w.range.step)))
         return self._range
 
-    async def autofocus(self) -> bool | None:
-        """Trigger AF. A failed lock raises the backend's CameraOperationFailed (the link is
-        fine; only genuine USB loss disconnects)."""
+    async def autofocus(self) -> tuple[bool | None, str | None]:
+        """Trigger AF; returns (focused, reason). libgphoto2 gives no PTP response code (only -1
+        plus the camera's own message), so "could not focus" is recognised by that exact
+        message and returned verbatim as the reason. Any other failure raises as before."""
         self._require_free(None)
         async with self._lock:
-            await self._camera.call(
-                lambda b: b.set_config("autofocusdrive", 1), priority=Priority.CONTROL
-            )
+            try:
+                await self._camera.call(
+                    lambda b: b.set_config("autofocusdrive", 1), priority=Priority.CONTROL
+                )
+            except CameraOperationFailed as e:
+                raw = str((e.details or {}).get("camera_message_raw", "")).strip()
+                if raw.lower() != _NO_FOCUS:
+                    raise
+                return False, raw
         self._last_af_at = datetime.now(UTC)
-        return True
+        return True, None
 
     async def _full_size(self) -> tuple[int, int]:
         """Full-sensor pixel size ``changeafarea`` is expressed in: the largest ``imagesize``
