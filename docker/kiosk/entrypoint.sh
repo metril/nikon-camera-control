@@ -70,6 +70,28 @@ watch_scale() {
     sleep 2
   done
 }
+# Panel power (DPMS) via wlopm, only while cage runs. Failures are ignored.
+display_power() {
+  pgrep -x cage >/dev/null 2>&1 || return 0
+  setpriv --reuid kiosk --regid seat --keep-groups env XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-0 \
+    wlopm "--$1" '*' >/dev/null 2>&1 || true
+}
+# Follows the app's display state ("data: on" / "data: off"), same stream format as the scale one.
+# A 404 (app without the endpoint) yields no data: back off 30 s instead of 2 s.
+watch_display() {
+  while true; do
+    until curl -fsS -o /dev/null "$APP/api/v1/health"; do sleep 2; done
+    rm -f /tmp/kiosk-display-seen
+    curl -fsSN --speed-limit 1 --speed-time 45 "$APP/api/v1/kiosk/display" 2>/dev/null | while IFS= read -r line; do
+      case "$line" in
+        "data: on"|"data: off")
+          touch /tmp/kiosk-display-seen
+          echo "kiosk: display ${line#data: }"; display_power "${line#data: }" ;;
+      esac
+    done
+    if [ -e /tmp/kiosk-display-seen ]; then sleep 2; else sleep 30; fi
+  done
+}
 # udev netlink events don't reach this netns, so libinput never sees hotplug. udevd writes a
 # device's db entry only after it has finished processing it: a new c13:* entry means it is ready.
 watch_input() {
@@ -100,6 +122,7 @@ echo "$SCALE" > /tmp/kiosk-scale
 echo "kiosk: display scale $SCALE"
 watch_scale & WATCHERS="$!"
 watch_input & WATCHERS="$WATCHERS $!"
+watch_display & WATCHERS="$WATCHERS $!"
 
 while true; do
   # A recreated container has a new hostname, so Chromium sees the old Singleton* lock as foreign and refuses the profile.
@@ -113,12 +136,13 @@ while true; do
     XDG_RUNTIME_DIR=/tmp/xdg HOME=/kiosk-profile LIBSEAT_BACKEND=seatd WLR_NO_HARDWARE_CURSORS=1 \
     KIOSK_SCALE="$SCALE" PROFILE="$PROFILE" APP="$APP" \
     cage -s -- sh -c '
+      wlopm --on "*" >/dev/null 2>&1
       for o in $(wlr-randr | awk "/^[^ ]/ {print \$1}"); do wlr-randr --output "$o" --scale "$KIOSK_SCALE"; done
       exec chromium --kiosk --no-sandbox --ozone-platform=wayland \
         --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL --touch-events=enabled \
         --noerrdialogs --disable-session-crashed-bubble --no-first-run --password-store=basic \
         --disk-cache-dir=/tmp/chromium-cache \
-        --user-data-dir="$PROFILE" "$APP/?layout=touch"' &
+        --user-data-dir="$PROFILE" "$APP/?layout=touch&kiosk=1"' &
   CHILD=$!
   wait "$CHILD"
   echo "kiosk: chromium exited, restarting in 3s"; sleep 3
