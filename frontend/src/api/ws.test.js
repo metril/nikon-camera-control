@@ -38,6 +38,7 @@ describe('event socket', () => {
     vi.useFakeTimers()
     FakeWS.instances = []
     vi.stubGlobal('WebSocket', FakeWS)
+    vi.stubGlobal('fetch', () => new Promise(() => {})) // markRequired() re-reads /auth/status
     setActivePinia(createPinia())
     localStorage.clear()
   })
@@ -56,12 +57,9 @@ describe('event socket', () => {
     s.close()
   })
 
-  it('offers apikey subprotocols only when a key is set', () => {
+  it('offers no subprotocol: the session cookie authenticates the handshake', () => {
     createEventSocket().start()
     expect(last().protocols).toBeUndefined()
-    useAuthStore().setKey('k1')
-    createEventSocket().start()
-    expect(last().protocols).toEqual(['apikey', 'apikey.k1'])
   })
 
   it('delivers events, ignores pong and bad JSON', () => {
@@ -153,13 +151,11 @@ describe('event socket', () => {
     expect(ws.sent.length).toBe(2)
   })
 
-  it('restart() reconnects immediately with the new key', () => {
+  it('restart() reconnects immediately', () => {
     const s = createEventSocket()
     s.start()
-    useAuthStore().setKey('new')
     s.restart()
     expect(FakeWS.instances.length).toBe(2)
-    expect(last().protocols).toEqual(['apikey', 'apikey.new'])
     s.close()
   })
 
@@ -184,6 +180,7 @@ describe('socket close codes', () => {
     vi.useFakeTimers()
     FakeWS.instances = []
     vi.stubGlobal('WebSocket', FakeWS)
+    vi.stubGlobal('fetch', () => new Promise(() => {})) // markRequired() re-reads /auth/status
     setActivePinia(createPinia())
     localStorage.clear()
   })
@@ -192,7 +189,7 @@ describe('socket close codes', () => {
     vi.unstubAllGlobals()
   })
 
-  it('4403 is terminal: no reconnect loop and no key prompt', () => {
+  it('4403 is terminal: no reconnect loop and no sign-in prompt', () => {
     const auth = useAuthStore()
     const s = createEventSocket()
     s.start()
@@ -203,35 +200,32 @@ describe('socket close codes', () => {
     expect(FakeWS.instances).toHaveLength(1)
   })
 
-  it('4401 while this browser rotates the key reconnects without prompting', () => {
+  it('4401 while this browser changes the password reconnects without prompting', () => {
     const auth = useAuthStore()
     const s = createEventSocket()
     s.start()
-    auth.keyChanging = true
+    auth.changing = true
     last().drop(4401)
     expect(auth.required).toBe(false)
-    auth.setKey('fresh')
-    auth.keyChanging = false
+    auth.changing = false
     vi.advanceTimersByTime(20_000)
     expect(FakeWS.instances).toHaveLength(2)
-    expect(last().protocols).toContain('apikey.fresh')
     s.close()
   })
 
-  it('4401 after the key changed since connect reconnects with the new key', () => {
+  it('4401 after this browser signed in since connect reconnects', () => {
     const auth = useAuthStore()
     const s = createLiveViewSocket()
     s.start()
-    auth.setKey('fresh')
+    auth.epoch++
     last().drop(4401)
     expect(auth.required).toBe(false)
     vi.advanceTimersByTime(1)
     expect(FakeWS.instances).toHaveLength(2)
-    expect(last().protocols).toContain('apikey.fresh')
     s.close()
   })
 
-  it('4401 with an unchanged key asks for the key', () => {
+  it('4401 with unchanged credentials asks for the sign-in', () => {
     const auth = useAuthStore()
     const s = createEventSocket()
     s.start()

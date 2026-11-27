@@ -180,13 +180,13 @@ watch(
   },
   { immediate: true },
 )
-// A new key (rotated in Settings, or typed into the prompt) needs a fresh handshake; also when
-// the same key is re-entered after a 4401 (required flips back to false).
+// Signing in (or a password change) needs a fresh handshake; also when a 4401 is cleared
+// (required flips back to false).
 watch(
-  () => [auth.apiKey, auth.required],
-  ([key, required], [prevKey, prevRequired]) => {
+  () => [auth.epoch, auth.required],
+  ([epoch, required], [prevEpoch, prevRequired]) => {
     if (!shouldRun.value) return
-    if (key !== prevKey || (prevRequired && !required)) socket.restart()
+    if (epoch !== prevEpoch || (prevRequired && !required)) socket.restart()
   },
 )
 watch(

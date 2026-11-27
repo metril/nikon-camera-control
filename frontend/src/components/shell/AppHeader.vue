@@ -5,6 +5,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
 import { useJobsStore } from '@/stores/jobs'
 import { useStorageStore } from '@/stores/storage'
+import { useAuthStore } from '@/stores/auth'
 import { useVisiblePolling } from '@/composables'
 import { useLayoutMode } from '@/composables/useLayoutMode'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -19,6 +20,7 @@ const camera = useCameraStore()
 const capture = useCaptureStore()
 const jobs = useJobsStore()
 const storage = useStorageStore()
+const auth = useAuthStore()
 const { layout, forced, setPref } = useLayoutMode()
 
 const battery = computed(() => {
@@ -106,6 +108,17 @@ const LAYOUTS = [
         <span v-if="jobs.active.length" class="count tabular-nums" data-test="jobs-count">{{
           jobs.active.length
         }}</span>
+      </button>
+      <button
+        v-if="auth.canSignOut"
+        type="button"
+        class="iconbtn"
+        aria-label="Sign out"
+        title="Sign out"
+        data-test="signout-button"
+        @click="auth.signOut().catch(() => {})"
+      >
+        <UiIcon name="LogOut" />
       </button>
       <div v-if="!forced" class="seg" role="group" aria-label="Layout">
         <button

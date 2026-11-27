@@ -95,14 +95,63 @@ describe('App shell', () => {
     w.unmount()
   })
 
-  it('warns when auth is disabled and links to settings', async () => {
+  it('warns when no password is set and links to Settings > Security', async () => {
     const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
-    useAuthStore().authEnabled = false
+    useAuthStore().status = {
+      auth_required: false,
+      password_set: false,
+      api_key_set: false,
+      authenticated: true,
+    }
     useCameraStore().fetchStorage = vi.fn(async () => {})
     const w = mount(App, { global: { plugins: [pinia] } })
     const a = w.find('[data-test="no-key-warning"]')
-    expect(a.attributes('href')).toBe('#/settings?section=api-key')
-    expect(a.text()).toContain('No API key set')
+    expect(a.attributes('href')).toBe('#/settings?section=security')
+    expect(a.text()).toContain('No password set. Anyone on the network can control the camera.')
+    expect(a.text()).toContain('Settings › Security')
+    await a.trigger('click')
+    expect(location.hash).toContain('section=security')
+    w.unmount()
+  })
+
+  it('key-only mode asks for an app password; a password hides the banner', async () => {
+    const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
+    const auth = useAuthStore()
+    auth.status = {
+      auth_required: true,
+      password_set: false,
+      api_key_set: true,
+      authenticated: true,
+    }
+    useCameraStore().fetchStorage = vi.fn(async () => {})
+    const w = mount(App, { global: { plugins: [pinia] } })
+    expect(w.find('[data-test="no-key-warning"]').text()).toContain('Set an app password')
+    auth.status = {
+      auth_required: true,
+      password_set: true,
+      api_key_set: false,
+      authenticated: true,
+    }
+    await flushPromises()
+    expect(w.find('[data-test="no-key-warning"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('offers Sign out in the header only while signed in to a protected app', async () => {
+    const { w } = await setup()
+    const auth = useAuthStore()
+    expect(w.find('[data-test="signout-button"]').exists()).toBe(false)
+    auth.status = {
+      auth_required: true,
+      password_set: true,
+      api_key_set: false,
+      authenticated: true,
+    }
+    await flushPromises()
+    expect(w.find('[data-test="signout-button"]').attributes('aria-label')).toBe('Sign out')
+    useLayoutMode().setPref('touch')
+    await flushPromises()
+    expect(w.find('[data-test="signout-button"]').exists()).toBe(true)
     w.unmount()
   })
 

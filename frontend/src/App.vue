@@ -6,15 +6,14 @@
  *   - inject('activeTab') - a readonly ref with the current tab id ('shoot' | 'timelapse' | ...).
  */
 import { computed, provide, readonly, ref } from 'vue'
-import { useAuthStore } from '@/stores/auth'
 import { useEventsStore } from '@/stores/events'
 import { useHotkeys } from '@/composables'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModal from '@/components/ui/UiModal.vue'
 import AppHeader from '@/components/shell/AppHeader.vue'
-import ApiKeyPrompt from '@/components/shell/ApiKeyPrompt.vue'
+import LoginScreen from '@/components/shell/LoginScreen.vue'
+import AuthBanner from '@/components/shell/AuthBanner.vue'
 import JobsPanel from '@/components/shell/JobsPanel.vue'
 import ToastHost from '@/components/shell/ToastHost.vue'
 import OnScreenKeyboard from '@/components/shell/OnScreenKeyboard.vue'
@@ -36,7 +35,6 @@ const popout = (() => {
   }
 })()
 
-const auth = useAuthStore()
 const events = useEventsStore()
 const { stripe } = useCameraStatus()
 
@@ -51,15 +49,16 @@ const current = computed(() => VIEWS[activeTab.value])
 const tabLabel = computed(() => TABS.find((t) => t.id === activeTab.value)?.label || '')
 const mainEl = ref(null)
 const focusMain = () => mainEl.value?.focus()
-// Views emit open-settings with an optional section id ('storage', 'api-key', ...).
+// Views emit open-settings with an optional section id ('storage', 'security', ...).
 const openQuery = (section) => (typeof section === 'string' ? { section } : undefined)
 provide('activeTab', readonly(activeTab))
 // Cross-tab navigation for views: inject('navigate')('gallery'). Also handled: open-gallery/open-timelapse/open-settings events.
 provide('navigate', select)
 
-// The no-key bar's height is published as --banner so full-height views can subtract it.
+// The no-password bar's height is published as --banner so full-height views can subtract it.
 let bannerObserver = null
-function measureBanner(el) {
+function measureBanner(comp) {
+  const el = comp?.$el?.nodeType === 1 ? comp.$el : null // a comment node while no banner shows
   bannerObserver?.disconnect()
   bannerObserver = null
   const set = () =>
@@ -101,7 +100,7 @@ const SHORTCUTS = [
 <template>
   <div v-if="popout" data-test="popout-frame">
     <LiveViewPopout />
-    <ApiKeyPrompt />
+    <LoginScreen />
     <ToastHost />
   </div>
   <div v-else class="app-frame flex flex-col bg-camera-bg" data-test="app-frame">
@@ -116,17 +115,7 @@ const SHORTCUTS = [
     />
     <div class="stripe" :class="stripe" data-test="stripe" aria-hidden="true" />
 
-    <a
-      v-if="auth.authEnabled === false"
-      :ref="measureBanner"
-      href="#/settings?section=api-key"
-      class="warn-bar"
-      data-test="no-key-warning"
-      @click.prevent="select('settings', { section: 'api-key' })"
-    >
-      <UiIcon name="TriangleAlert" :size="16" />
-      No API key set. Anyone on the network can control the camera. Set one in Settings.
-    </a>
+    <AuthBanner :ref="measureBanner" @open-security="select('settings', { section: 'security' })" />
     <UiAlert
       v-if="events.status === 'forbidden'"
       tone="danger"
@@ -155,7 +144,7 @@ const SHORTCUTS = [
     </main>
 
     <JobsPanel :open="jobsOpen" @close="jobsOpen = false" />
-    <ApiKeyPrompt />
+    <LoginScreen />
     <ToastHost />
     <OnScreenKeyboard />
     <KioskSleepOverlay />
@@ -202,22 +191,6 @@ const SHORTCUTS = [
 .main:focus {
   outline: none;
 }
-.warn-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 6px 16px;
-  background: theme('colors.camera.raised');
-  border-bottom: 1px solid theme('colors.camera.subtle');
-  color: theme('colors.camera.warn');
-  font-size: 13px;
-  text-align: center;
-}
-html[data-layout='touch'] .warn-bar {
-  min-height: 40px;
-}
-.warn-bar,
 .stripe {
   flex: none;
 }

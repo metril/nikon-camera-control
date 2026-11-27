@@ -103,18 +103,18 @@ describe('LiveViewPanel', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:1')
   })
 
-  it('restarts the socket when the API key changes or is entered after a 4401', async () => {
+  it('restarts the socket after signing in or when a 4401 is cleared', async () => {
     const { pinia } = setup()
     const auth = useAuthStore()
     const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
     const s = await started(w)
-    auth.setKey('new-key')
+    auth.epoch++ // signed in again
     await flushPromises()
     expect(s.restart).toHaveBeenCalledTimes(1)
     s.status.value = 'unauthorized'
-    auth.markRequired()
+    auth.required = true
     await flushPromises()
-    auth.setKey('new-key') // same key re-entered: required flips back to false
+    auth.required = false // the status settled: no sign-in needed any more
     await flushPromises()
     expect(s.restart).toHaveBeenCalledTimes(2)
     w.unmount()

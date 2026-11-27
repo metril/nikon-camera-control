@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, downloadBlob, videoUrl } from '@/api'
+import { api, videoUrl } from '@/api'
 import { guard } from './helpers'
-import { useAuthStore } from './auth'
 
 export const useVideosStore = defineStore('videos', () => {
   const items = ref([])
@@ -24,40 +23,17 @@ export const useVideosStore = defineStore('videos', () => {
     await guard(lastError, () => api.deleteVideo({ path: { session_id: sessionId, name } }))
     items.value = items.value.filter((v) => !(v.session_id === sessionId && v.name === name))
   }
+  /** Plain link: the session cookie authenticates it. */
   async function download(sessionId, name) {
-    if (!useAuthStore().apiKey) {
-      const a = document.createElement('a')
-      a.href = videoUrl(sessionId, name)
-      a.download = name
-      a.click()
-      return
-    }
-    const blob = await guard(lastError, () =>
-      api.downloadVideo({ path: { session_id: sessionId, name }, parseAs: 'blob' }),
-    )
-    downloadBlob(blob, name)
+    const a = document.createElement('a')
+    a.href = videoUrl(sessionId, name)
+    a.download = name
+    a.click()
   }
 
-  /**
-   * Resolve a video to something usable as <video src>. Without an API key it is the plain URL;
-   * with one the file is fetched as a blob (headers) and exposed as an object URL.
-   * Returns { url, release }; release() revokes the object URL (call it when done).
-   */
+  /** Resolve a video to something usable as <video src>: `{ url, release }`. */
   async function acquire(sessionId, name) {
-    if (!useAuthStore().apiKey) return { url: videoUrl(sessionId, name), release() {} }
-    const blob = await guard(lastError, () =>
-      api.downloadVideo({ path: { session_id: sessionId, name }, parseAs: 'blob' }),
-    )
-    const url = URL.createObjectURL(blob)
-    let released = false
-    return {
-      url,
-      release() {
-        if (released) return
-        released = true
-        URL.revokeObjectURL(url)
-      },
-    }
+    return { url: videoUrl(sessionId, name), release() {} }
   }
 
   return { items, total, lastError, fetch, render, remove, download, acquire }

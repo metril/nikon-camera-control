@@ -5,7 +5,6 @@ import Videos from './Videos.vue'
 import { useVideosStore } from '@/stores/videos'
 import { useSessionsStore } from '@/stores/sessions'
 import { useToastsStore } from '@/stores/toasts'
-import { useAuthStore } from '@/stores/auth'
 import { useStorageStore } from '@/stores/storage'
 
 vi.mock('@/api', async (orig) => ({
@@ -64,27 +63,13 @@ describe('Videos', () => {
     expect(wrapper.text()).toContain('No rendered videos')
   })
 
-  it('plays inline in a modal using the plain URL without a key', async () => {
+  it('plays inline in a modal using the plain URL', async () => {
     setup()
     await flushPromises()
     await wrapper.find('[role=listitem] button').trigger('click')
     await flushPromises()
     const video = document.body.querySelector('[data-testid=player]')
     expect(video.getAttribute('src')).toContain('/videos/')
-  })
-
-  it('with an API key it uses an object URL and revokes it on unmount', async () => {
-    const { pinia } = setup()
-    useAuthStore(pinia).apiKey = 'k'
-    URL.createObjectURL = vi.fn(() => 'blob:v')
-    URL.revokeObjectURL = vi.fn()
-    await flushPromises()
-    await wrapper.find('[role=listitem] button').trigger('click')
-    await flushPromises()
-    expect(document.body.querySelector('[data-testid=player]').getAttribute('src')).toBe('blob:v')
-    wrapper.unmount()
-    wrapper = null
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:v')
   })
 
   it('delete failure shows a toast; success removes via store', async () => {

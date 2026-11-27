@@ -17,20 +17,13 @@ describe('api client', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns data directly on success and sends X-API-Key when set', async () => {
-    useAuthStore().setKey('secret')
+  it('returns data directly on success and never sends an X-API-Key header', async () => {
     fetch.mockResolvedValue(json({ state: 'idle', connected: true }))
     const out = await api.getCamera()
     expect(out.state).toBe('idle')
     const req = fetch.mock.calls[0][0]
-    expect(req.headers.get('X-API-Key')).toBe('secret')
+    expect(req.headers.has('X-API-Key')).toBe(false)
     expect(new URL(req.url).pathname).toBe('/api/v1/camera')
-  })
-
-  it('omits X-API-Key when no key is set', async () => {
-    fetch.mockResolvedValue(json({}))
-    await api.getCamera()
-    expect(fetch.mock.calls[0][0].headers.has('X-API-Key')).toBe(false)
   })
 
   it('unwraps the error envelope into ApiError', async () => {
@@ -51,9 +44,10 @@ describe('api client', () => {
     })
   })
 
-  it('401 flips the auth store to key-required', async () => {
+  it('401 flips the auth store to sign-in required', async () => {
     const auth = useAuthStore()
-    fetch.mockResolvedValue(
+    fetch.mockReturnValue(new Promise(() => {})) // markRequired() re-reads /auth/status
+    fetch.mockResolvedValueOnce(
       json({ error: { code: 'UNAUTHORIZED', message: 'no', request_id: null } }, 401),
     )
     const err = await api.getCamera().catch((e) => e)

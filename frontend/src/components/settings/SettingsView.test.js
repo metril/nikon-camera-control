@@ -118,8 +118,9 @@ describe('SettingsView', () => {
     expect(w.find('[data-test="backend"]').text()).toBe('Demo camera')
     expect(w.find('[data-test="ffmpeg"]').text()).toBe('Available')
     expect(w.find('[data-test="libgphoto2"]').text()).toBe('2.5.31')
-    await open(w, 'api-key')
+    await open(w, 'security')
     expect(w.find('[data-test="key-status"]').text()).toBe('Not set')
+    expect(w.find('[data-test="password-status"]').text()).toBe('Not set')
   })
 
   it('saves the time zone and offers the browser zone', async () => {
@@ -296,7 +297,7 @@ describe('SettingsView', () => {
   it('shows a generated key once and requires confirmation', async () => {
     const { w, config } = await setup()
     config.createApiKey = vi.fn(async () => 'secret-key-123')
-    await open(w, 'api-key')
+    await open(w, 'security')
     await w.find('[data-test="generate"]').trigger('click')
     await flushPromises()
     const body = document.body
@@ -326,7 +327,7 @@ describe('SettingsView', () => {
       .findAll('[data-test="section-index"] [data-chip]')
       .map((b) => b.attributes('data-chip'))
     expect(chips).toEqual(
-      expect.arrayContaining(['display', 'capture', 'storage', 'api-key', 'about']),
+      expect.arrayContaining(['display', 'capture', 'storage', 'security', 'about']),
     )
     await open(w, 'storage')
     expect(w.find('[data-chip="storage"]').attributes('aria-current')).toBe('true')
@@ -336,9 +337,9 @@ describe('SettingsView', () => {
 
   it('follows a #/settings?section= deep link', async () => {
     const { w } = await setup()
-    routeQuery.value = { section: 'api-key' }
+    routeQuery.value = { section: 'security' }
     await flushPromises()
-    expect(w.find('[data-section="api-key"]').exists()).toBe(true)
+    expect(w.find('[data-section="security"]').exists()).toBe(true)
     expect(w.find('[data-section="display"]').exists()).toBe(false)
     routeQuery.value = {}
     w.unmount()

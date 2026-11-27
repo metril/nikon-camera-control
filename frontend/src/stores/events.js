@@ -137,14 +137,16 @@ export const useEventsStore = defineStore('events', () => {
     sock.value = createEventSocket({ onEvent: dispatch, onOpen: resync })
     sock.value.start()
     useTimelapseStore().startPolling()
-    // A new/changed API key needs a fresh socket handshake.
+    // Signing in/out or changing the password needs a fresh socket handshake.
     stopWatch = watch(
-      () => useAuthStore().apiKey,
-      () => sock.value?.restart(),
+      () => [useAuthStore().epoch, useAuthStore().required],
+      ([epoch, required], [prevEpoch, prevRequired]) => {
+        if (epoch !== prevEpoch || (prevRequired && !required)) sock.value?.restart()
+      },
     )
   }
 
-  /** Reconnect now (e.g. after the key was entered). */
+  /** Reconnect now (e.g. after signing in). */
   function restart() {
     sock.value?.restart()
   }

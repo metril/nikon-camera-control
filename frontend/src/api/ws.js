@@ -29,7 +29,7 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
   let reconnectTimer = null
   let pingTimer = null
   let stopped = true
-  let usedKey = ''
+  let usedEpoch = 0
 
   function clearTimers() {
     clearTimeout(reconnectTimer)
@@ -40,10 +40,10 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
   function connect() {
     if (stopped) return
     const auth = useAuthStore()
-    const protocols = auth.apiKey ? ['apikey', `apikey.${auth.apiKey}`] : undefined
-    usedKey = auth.apiKey
+    usedEpoch = auth.epoch
     status.value = 'connecting'
-    const sock = new WebSocket(wsUrl(path), protocols)
+    // The session cookie authenticates the handshake: no subprotocol needed.
+    const sock = new WebSocket(wsUrl(path))
     ws = sock
     if (binary) sock.binaryType = 'arraybuffer'
 
@@ -83,11 +83,11 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
       }
       if (ev.code === CLOSE_UNAUTHORIZED) {
         const auth = useAuthStore()
-        // The key was created/rotated: the server drops every socket. If this browser already holds
-        // (or is about to hold) the new key, reconnect with it instead of prompting.
-        if (auth.keyChanging || (auth.apiKey && auth.apiKey !== usedKey)) {
+        // The password or key changed: the server drops every socket. If this browser is the one
+        // changing it (or has signed in since this socket connected), reconnect instead of prompting.
+        if (auth.changing || auth.epoch !== usedEpoch) {
           status.value = 'connecting'
-          reconnectTimer = setTimeout(connect, auth.keyChanging ? backoffDelay(attempt++) : 0)
+          reconnectTimer = setTimeout(connect, auth.changing ? backoffDelay(attempt++) : 0)
           return
         }
         stopped = true
@@ -108,7 +108,7 @@ function createSocket(path, { onMessage, onBinary, onOpen, binary = false } = {}
       attempt = 0
       connect()
     },
-    /** Reconnect now (e.g. after the API key changed). */
+    /** Reconnect now (e.g. after signing in). */
     restart() {
       this.close()
       this.start()
