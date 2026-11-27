@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import UiCard from '@/components/ui/UiCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -185,29 +184,32 @@ const stats = computed(() => {
 </script>
 
 <template>
-  <UiCard title="Run">
-    <template #actions>
-      <UiBadge :tone="tone[state] || 'neutral'" data-test="state">{{
-        timelapseState(state)
-      }}</UiBadge>
-    </template>
-    <div class="grid gap-4">
-      <div class="aspect-[3/2] overflow-hidden rounded-inner border border-camera-subtle bg-black">
-        <img
-          v-if="thumb"
-          :src="thumb"
-          alt="Latest time-lapse frame"
-          class="block h-full w-full object-contain"
-        />
-        <div
-          v-else
-          class="flex h-full flex-col items-center justify-center gap-2 text-center text-[13px] text-camera-muted"
-        >
-          <UiIcon name="ImageOff" :size="24" class="text-camera-faint" />
-          The latest frame shows here.
-        </div>
+  <div class="run-panel flex h-full min-h-0 flex-col gap-3 overflow-auto">
+    <div
+      class="relative min-h-[96px] flex-1 overflow-hidden rounded-inner border border-camera-subtle bg-black"
+    >
+      <UiBadge
+        class="absolute left-2 top-2 z-10"
+        :tone="tone[state] || 'neutral'"
+        data-test="state"
+        >{{ timelapseState(state) }}</UiBadge
+      >
+      <img
+        v-if="thumb"
+        :src="thumb"
+        alt="Latest time-lapse frame"
+        class="absolute inset-0 block h-full w-full object-contain"
+      />
+      <div
+        v-else
+        class="flex h-full flex-col items-center justify-center gap-2 text-center text-[13px] text-camera-muted"
+      >
+        <UiIcon name="ImageOff" :size="24" class="text-camera-faint" />
+        The latest frame shows here.
       </div>
+    </div>
 
+    <div class="grid flex-none gap-3">
       <UiProgress :value="fraction" :label="`${doneFrames} of ${plannedFrames} frames`" />
       <StatGrid :items="stats" :cols="3" />
 
@@ -298,5 +300,5 @@ const stats = computed(() => {
         </p>
       </div>
     </div>
-  </UiCard>
+  </div>
 </template>
