@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import gphoto2 as gp
 import structlog
@@ -677,9 +677,9 @@ class Gphoto2Backend:
         out: list[StorageInfo] = []
         for si in infos:
             fields = si.fields
-            access = ""
+            access: Literal["rw", "ro", "ro_delete", ""] = ""
             if fields & gp.GP_STORAGEINFO_ACCESS:
-                access = "rw" if si.access == gp.GP_STORAGEINFO_AC_READWRITE else "ro"
+                access = _STORAGE_ACCESS.get(int(si.access), "")
             out.append(
                 StorageInfo(
                     label=str(si.label) if fields & gp.GP_STORAGEINFO_LABEL else "",
@@ -695,6 +695,13 @@ class Gphoto2Backend:
                 )
             )
         return out
+
+
+_STORAGE_ACCESS: dict[int, Literal["rw", "ro", "ro_delete"]] = {
+    gp.GP_STORAGEINFO_AC_READWRITE: "rw",
+    gp.GP_STORAGEINFO_AC_READONLY: "ro",
+    gp.GP_STORAGEINFO_AC_READONLY_WITH_DELETE: "ro_delete",
+}
 
 
 def library_version() -> str:

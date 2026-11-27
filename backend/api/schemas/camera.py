@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +38,10 @@ class StorageCardOut(BaseModel):
     capacity_kb: int
     free_kb: int
     free_images: int | None = None
-    access: str
+    access: Literal["rw", "ro", "ro_delete", ""] = Field(
+        description="Raw PTP StorageInfo AccessCapability: 'rw' read-write, 'ro' read-only "
+        "without deletion, 'ro_delete' read-only with object deletion, '' not reported"
+    )
 
 
 class StorageOut(BaseModel):
