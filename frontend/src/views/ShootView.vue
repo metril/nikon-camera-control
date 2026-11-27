@@ -24,6 +24,7 @@ const camera = useCameraStore()
 const settings = useSettingsStore()
 const shoot = useShootStore()
 const strip = ref(null)
+const lv = ref(null)
 
 // Keyboard: Space is the shutter; A, S, I and E jump to aperture, shutter, ISO and exposure
 // compensation (then [ and ] step the value). Only while this view is the visible one.
@@ -44,7 +45,10 @@ function onKeydown(e) {
   if (cell) {
     e.preventDefault()
     strip.value?.focusCell(cell)
+    return
   }
+  // live view tools and focus keys (3 H C P L O F , . Enter)
+  if (camera.connected && lv.value?.hotkey?.(e)) e.preventDefault()
 }
 
 // Re-read the exposure strip when this view shows. Fallback for bodies that do not announce
@@ -78,12 +82,12 @@ onBeforeUnmount(unlisten)
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="shootroot">
     <ModeWarning />
     <div class="shoot">
       <ExposureStrip ref="strip" class="strip-area" @navigate="go" />
       <div class="lvwrap">
-        <LiveViewPanel v-if="camera.connected" />
+        <LiveViewPanel v-if="camera.connected" ref="lv" />
         <div v-else class="gate" data-test="lv-gate"><CameraGate /></div>
       </div>
       <CaptureSide
@@ -97,14 +101,33 @@ onBeforeUnmount(unlisten)
 </template>
 
 <style scoped>
+/* The page fills the frame's main area (App.vue fixes the frame to the viewport). Wide landscape
+   screens fit everything without scrolling; narrow or portrait ones stack and scroll inside. */
+.shootroot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+.shootroot > * {
+  flex: none;
+}
 .shoot {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   grid-template-areas:
     'strip strip'
     'lv side'
     'film film';
-  gap: 16px;
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 .strip-area {
   grid-area: strip;
@@ -112,9 +135,11 @@ onBeforeUnmount(unlisten)
 .lvwrap {
   grid-area: lv;
   min-width: 0;
+  min-height: 0;
 }
 .side-area {
   grid-area: side;
+  min-height: 0;
 }
 .film-area {
   grid-area: film;
@@ -129,29 +154,7 @@ onBeforeUnmount(unlisten)
   border-radius: theme('borderRadius.card');
 }
 
-/* Desktop, 1200px and wider: recent captures fill the side column under the shutter */
-@media (min-width: 1200px) {
-  html[data-layout='desktop'] .shoot {
-    grid-template-areas:
-      'strip strip'
-      'lv side'
-      'lv film';
-    grid-template-rows: auto auto minmax(0, 1fr);
-  }
-  html[data-layout='desktop'] .film-area {
-    align-self: stretch;
-    align-content: start;
-    min-height: 0;
-  }
-}
-/* Desktop: the live view never grows taller than what is left under the header, banner and strip,
-   so the Shoot page needs no scrolling. 99px = header 56 + stripe 3 + top 16 + bottom 24. */
-@media (min-width: 900px) {
-  html[data-layout='desktop'] .lvwrap {
-    max-width: max(360px, calc((100dvh - 99px - var(--banner, 0px) - 65px - 16px - 2px) * 1.5));
-  }
-}
-/* Desktop, narrow: one column, the strip wraps to two rows */
+/* Narrow desktop: one column, the strip wraps to two rows */
 @media (max-width: 860px) {
   html[data-layout='desktop'] .shoot {
     grid-template-columns: minmax(0, 1fr);
@@ -179,7 +182,6 @@ onBeforeUnmount(unlisten)
       'side'
       'strip'
       'film';
-    gap: 12px;
   }
   html[data-layout='touch'] .strip-area {
     display: grid;
@@ -202,35 +204,33 @@ onBeforeUnmount(unlisten)
   }
 }
 
-/* Touch, landscape (kiosk screens): the desktop structure. Strip on top, live view left, the side
-   column (340px) right with the recent captures filling what is left of it; nothing scrolls except
-   that grid. --lvh is the height left for the live view (LiveViewPanel sizes the frame from it):
-   100dvh - header 60 - stripe 3 - banner - top pad 16 - strip - gap 16 - bottom pad 24 - border 4. */
+/* Wide landscape (desktop and kiosk): strip on top, live view left, the side column right with the
+   recent captures under it. Nothing scrolls: the grid is exactly the height of the main area, the
+   live view takes the height of its row (--lvh, read by LiveViewPanel) and the side column
+   is sized by its content. */
 @media (min-width: 900px) and (orientation: landscape) {
-  html[data-layout='touch'] .shoot {
-    --stripH: 66px;
-    --lvh: calc(
-      100dvh - 60px - 3px - var(--banner, 0px) - 16px - var(--stripH) - 16px - 24px - 4px
-    );
-    /* The grid is exactly as tall as the room under the header, banner and main padding, so the
-       document never scrolls; the side column and recent captures scroll inside it if short. */
-    height: calc(100dvh - 60px - 3px - var(--banner, 0px) - 16px - 24px);
-    grid-template-columns: minmax(0, 1fr) 340px;
+  .shoot {
+    grid-template-columns: minmax(0, 1fr) 360px;
     grid-template-areas:
       'strip strip'
       'lv side'
       'lv film';
-    grid-template-rows: auto minmax(0, auto) minmax(72px, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    align-content: stretch;
+    overflow: hidden;
   }
-  html[data-layout='touch'] .side-area {
-    min-height: 0;
-    overflow-y: auto;
+  html[data-layout='touch'] .shoot {
+    grid-template-columns: minmax(0, 1fr) 340px;
   }
-  html[data-layout='touch'] .film-area {
+  .lvwrap {
+    container-type: size;
+    --lvh: 100cqh;
+  }
+  .film-area {
     align-self: stretch;
     align-content: start;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
   }
 }
 </style>

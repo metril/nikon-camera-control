@@ -6,6 +6,7 @@ import {
   quickShots,
   formatBytes,
   formatDuration,
+  formatEndsAt,
 } from './bracketUtils'
 
 describe('bracketUtils', () => {
@@ -46,5 +47,20 @@ describe('bracketUtils', () => {
     expect(formatDuration(0)).toBe('0 s')
     expect(formatDuration(45)).toBe('45 s')
     expect(formatDuration(90)).toBe('1 min 30 s')
+  })
+
+  it('computes the local end time, with a weekday when it is another day', () => {
+    const start = new Date(2026, 5, 1, 6, 0, 0).getTime() // a Monday, 06:00 local
+    expect(formatEndsAt(start, 990)).toBe(
+      new Date(start + 990_000).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
+    )
+    expect(formatEndsAt(start, 0)).toMatch(/^\d{2}:\d{2}$/)
+    expect(formatEndsAt(start, 36 * 3600)).toMatch(/^\S+ \d{2}:\d{2}$/)
+    expect(formatEndsAt(start, NaN)).toBeNull()
+    expect(formatEndsAt(start, -1)).toBeNull()
   })
 })

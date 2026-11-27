@@ -5,6 +5,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
 import { useJobsStore } from '@/stores/jobs'
 import { useStorageStore } from '@/stores/storage'
+import { useAuthStore } from '@/stores/auth'
 import { useVisiblePolling } from '@/composables'
 import { useLayoutMode } from '@/composables/useLayoutMode'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -19,6 +20,7 @@ const camera = useCameraStore()
 const capture = useCaptureStore()
 const jobs = useJobsStore()
 const storage = useStorageStore()
+const auth = useAuthStore()
 const { layout, forced, setPref } = useLayoutMode()
 
 const battery = computed(() => {
@@ -107,6 +109,17 @@ const LAYOUTS = [
           jobs.active.length
         }}</span>
       </button>
+      <button
+        v-if="auth.canSignOut"
+        type="button"
+        class="iconbtn"
+        aria-label="Sign out"
+        title="Sign out"
+        data-test="signout-button"
+        @click="auth.signOut().catch(() => {})"
+      >
+        <UiIcon name="LogOut" />
+      </button>
       <div v-if="!forced" class="seg" role="group" aria-label="Layout">
         <button
           v-for="l in LAYOUTS"
@@ -127,13 +140,13 @@ const LAYOUTS = [
 
 <style scoped>
 .top {
-  position: sticky;
-  top: env(safe-area-inset-top, 0px);
+  position: relative;
   z-index: 20;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 16px;
-  height: 56px;
+  height: 52px;
   background: theme('colors.camera.surface');
   border-bottom: 1px solid theme('colors.camera.subtle');
   padding-left: max(16px, env(safe-area-inset-left, 0px));

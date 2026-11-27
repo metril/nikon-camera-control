@@ -1,4 +1,6 @@
-"""Optional API-key authentication. Only a sha256 hash of the key is ever stored."""
+"""Request authentication: optional API key, app-password sessions and the kiosk token.
+
+Only a sha256 hash of the API key is ever stored (see ``backend.core.auth`` for sessions)."""
 
 from __future__ import annotations
 
@@ -11,12 +13,19 @@ import logging
 import os
 import secrets
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import Depends, Request, WebSocket
-from fastapi.security import APIKeyHeader
+from fastapi import Depends, Request, Response, WebSocket
+from fastapi.security import APIKeyCookie, APIKeyHeader
 
+from backend.core.auth import (
+    SESSION_COOKIE,
+    SESSION_MAX_AGE_S,
+    AuthContext,
+    AuthState,
+)
 from backend.core.errors import Unauthorized
 
 log = logging.getLogger(__name__)
@@ -27,6 +36,7 @@ LOCKED_HASH = "!locked"
 
 # Registers the header as an OpenAPI security scheme; enforcement is in require_api_key.
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+session_cookie = APIKeyCookie(name=SESSION_COOKIE, auto_error=False)
 
 
 def hash_api_key(key: str) -> str:
@@ -112,64 +122,153 @@ def _current_hash(state: object) -> str | None:
     return store.config.api_key_hash if store is not None else None
 
 
-async def require_api_key(request: Request, _scheme: str | None = Depends(api_key_header)) -> None:
-    """FastAPI dependency for REST routes.
+def _auth_state(state: object) -> AuthState | None:
+    auth = getattr(state, "auth", None)
+    return auth if isinstance(auth, AuthState) else None
 
-    Reads the current hash from ``request.app.state.config_store.config.api_key_hash``
-    on every call (so rotation applies live) and the ``X-API-Key`` header.
-    Raises ``Unauthorized`` (401) on mismatch. No-op when no hash is configured.
-    Health, docs and the SPA do not use this dependency.
+
+def is_protected(state: object) -> bool:
+    """True when an API key or an app password exists (a locked password file counts)."""
+    auth = _auth_state(state)
+    return bool(_current_hash(state)) or (auth is not None and auth.password.is_set)
+
+
+def _key_valid(key: str | None, key_hash: str | None) -> bool:
+    """Strict: False when no key is configured (unlike ``verify_api_key``, which means open)."""
+    return bool(key_hash) and bool(key) and verify_api_key(key, key_hash)
+
+
+def authenticate(
+    state: object, key: str | None, cookie: str | None
+) -> tuple[AuthContext | None, bool]:
+    """(context, refresh_cookie) or (None, False) when the credentials do not allow access.
+
+    Allowed when the app is open, the API key matches, or the session cookie is a live session.
+    A valid session is reported even in open mode (so "current session" works there).
     """
-    key = _scheme
-    if not verify_api_key(key, _current_hash(request.app.state)):
+    auth = _auth_state(state)
+    session = auth.sessions.validate(cookie) if auth is not None else None
+    key_hash = _current_hash(state)
+    if _key_valid(key, key_hash):
+        return AuthContext("key"), False
+    if session is not None:
+        info, h, due = session
+        return AuthContext("session", info.id, h, info.kind), due
+    if not is_protected(state):
+        return AuthContext("open"), False
+    return None, False
+
+
+def set_session_cookie(response: Response, token: str, *, secure: bool) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_MAX_AGE_S,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+    )
+
+
+def secure_cookie(request: Request) -> bool:
+    """Whether the session cookie is Secure: always when the web UI says so, else by scheme."""
+    store = getattr(request.app.state, "config_store", None)
+    if store is not None and store.config.security.secure_cookie == "always":
+        return True
+    return request.url.scheme == "https"
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
+
+
+async def require_api_key(
+    request: Request,
+    response: Response,
+    _key: str | None = Depends(api_key_header),
+    _cookie: str | None = Depends(session_cookie),
+) -> None:
+    """FastAPI dependency for REST routes (name kept: it guards every protected route).
+
+    Allowed when the app is open (no password and no key), ``X-API-Key`` is valid, or the
+    ``ncc_session`` cookie is a live session. Both are read live, so changes apply at once.
+    Raises ``Unauthorized`` (401) otherwise. Health, docs and the SPA do not use it. The result
+    is kept on ``request.state.auth``; a session due for its daily refresh gets a fresh cookie.
+    """
+    ctx, refresh = authenticate(request.app.state, _key, _cookie)
+    if ctx is None:
         raise Unauthorized()
+    request.state.auth = ctx
+    if refresh and _cookie:
+        set_session_cookie(response, _cookie, secure=secure_cookie(request))
+
+
+def current_auth(request: Request) -> AuthContext:
+    """The context set by ``require_api_key`` (for routes that also depend on it)."""
+    ctx = getattr(request.state, "auth", None)
+    if not isinstance(ctx, AuthContext):
+        raise Unauthorized()
+    return ctx
 
 
 async def ws_authorize(websocket: WebSocket) -> bool:
     """Authorize a WebSocket; call before accepting.
 
-    The key is taken only from the ``apikey.<key>`` subprotocol (never the URL, which
-    would leak it into access logs). Returns True if allowed (always in open mode); the
-    caller then accepts, echoing ``ws_subprotocol``. On failure it accepts and closes
-    with 4401 (closing before accept would surface as HTTP 403) and returns False; the
-    caller must then return. After accepting, use ``KeyWatch`` to end the socket on a key change.
+    Credentials: the ``apikey.<key>`` subprotocol (never the URL, which would leak it into
+    access logs) or the ``ncc_session`` cookie. Returns True if allowed (always in open mode);
+    the caller then accepts, echoing ``ws_subprotocol``. On failure it accepts and closes with
+    4401 (closing before accept would surface as HTTP 403) and returns False; the caller must
+    then return. After accepting, use ``AuthWatch`` to end the socket when access is lost.
     """
-    key_hash = _current_hash(websocket.app.state)
-    if not key_hash:
-        return True
     proto = ws_subprotocol(websocket)
     key = proto.removeprefix("apikey.") if proto else None
-    if verify_api_key(key, key_hash):
+    ctx, _ = authenticate(websocket.app.state, key, websocket.cookies.get(SESSION_COOKIE))
+    if ctx is not None:
+        websocket.state.auth_session_hash = ctx.session_hash if ctx.method == "session" else None
         return True
     await websocket.accept(subprotocol=proto)
-    await websocket.close(code=4401, reason="Missing or invalid API key")
+    await websocket.close(code=4401, reason="Missing or invalid credentials")
     return False
 
 
-class KeyWatch:
-    """Fires ``changed`` when the API key hash differs from the one at creation.
+class AuthWatch:
+    """Fires ``changed`` when the socket's access is lost or the app becomes protected.
 
-    Create it right after a successful ``ws_authorize`` (before any await) so a socket opened
-    with an old key, or in open mode, is closed with 4401 once the key is rotated, removed or
-    first created. Call ``close()`` when the socket handler ends.
+    Create it right after a successful ``ws_authorize`` (before any await). It fires when the
+    API key hash changes, the session the socket used is revoked, or the app goes from open to
+    protected (a password or key was first set). Call ``close()`` when the handler ends.
     """
 
     def __init__(self, websocket: WebSocket) -> None:
-        store = websocket.app.state.config_store
+        state = websocket.app.state
+        store = state.config_store
+        auth = _auth_state(state)
         loop = asyncio.get_running_loop()
         self.changed = asyncio.Event()
-        start = store.config.api_key_hash
+        start_hash = store.config.api_key_hash
+        was_open = not is_protected(state)
+        session_hash: str | None = getattr(websocket.state, "auth_session_hash", None)
+        unsubs: list[Callable[[], None]] = []
 
-        def on_config(new: object, old: object) -> None:
-            if getattr(new, "api_key_hash", None) != start:
+        def check() -> None:
+            if (
+                _current_hash(state) != start_hash
+                or (was_open and is_protected(state))
+                or (session_hash and auth is not None and not auth.sessions.has_hash(session_hash))
+            ):
                 loop.call_soon_threadsafe(self.changed.set)
 
-        self._unsubscribe = store.subscribe(on_config)
-        if store.config.api_key_hash != start:  # changed between the two reads
-            self.changed.set()
+        unsubs.append(store.subscribe(lambda new, old: check()))
+        if auth is not None:
+            unsubs.append(auth.sessions.subscribe(check))
+            unsubs.append(auth.password.subscribe(check))
+        self._unsubscribe = unsubs
+        check()  # changed between the credential check and now
 
     def close(self) -> None:
-        self._unsubscribe()
+        for unsub in self._unsubscribe:
+            unsub()
 
 
 def ws_subprotocol(websocket: WebSocket) -> str | None:

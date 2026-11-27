@@ -15,7 +15,6 @@ vi.mock('@/api', async (orig) => ({
 import { api, downloadBlob } from '@/api'
 import { useVideosStore } from './videos'
 import { useCameraFilesStore } from './cameraFiles'
-import { useAuthStore } from './auth'
 import { useToastsStore } from './toasts'
 import { useCameraAdminStore } from './cameraAdmin'
 import { ApiError } from '@/api'
@@ -28,18 +27,10 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks())
 
 describe('videos.acquire', () => {
-  it('returns the plain URL without an API key', async () => {
+  it('returns the plain URL: the session cookie authenticates it', async () => {
     const r = await useVideosStore().acquire('s1', 'a b.mp4')
     expect(r.url).toBe('/api/v1/videos/s1/a%20b.mp4')
     expect(api.downloadVideo).not.toHaveBeenCalled()
-  })
-  it('fetches a blob with a key and revokes it once on release', async () => {
-    useAuthStore().setKey('k')
-    const r = await useVideosStore().acquire('s1', 'a.mp4')
-    expect(r.url).toBe('blob:v')
-    r.release()
-    r.release()
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1)
   })
 })
 

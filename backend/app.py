@@ -22,6 +22,7 @@ from backend.api.v1 import api_router
 from backend.api.v1.sessions import build_sessions_service
 from backend.camera.backend import CameraBackend
 from backend.core import paths
+from backend.core.auth import AuthState
 from backend.core.camera_service import CameraService
 from backend.core.clock import set_zone
 from backend.core.config_store import AppConfig, ConfigStore
@@ -89,6 +90,7 @@ def create_app(
     config_store: ConfigStore | None = None,
     data_dir: Path | None = None,
     target_dir: Path | None = None,
+    kiosk_auth_dir: Path | None = None,
     location_options: dict[str, Any] | None = None,
     backend_factory: Callable[[], CameraBackend] | None = None,
     frontend_dist: Path | None = None,
@@ -99,6 +101,8 @@ def create_app(
     """Build the app. ``frontend_dist`` None means no SPA is served.
 
     ``target_dir`` pins a fixed storage target (tests, tools): no mounting, no hashing, no backups.
+    ``kiosk_auth_dir`` holds the kiosk device token (default ``<data_dir>/kiosk-auth`` when
+    ``data_dir`` is given, else ``/app/kiosk-auth``).
     ``location_options`` are extra ``LocationService`` arguments (fake runner, mount paths, ...).
     ``auto_connect`` starts a background connect attempt at startup (failures are logged).
     ``event_quiet_window_s`` / ``disconnect_wait_s`` override CameraService tuning (tests);
@@ -106,11 +110,17 @@ def create_app(
     """
     data = data_dir if data_dir is not None else paths.DATA_DIR
     store = config_store if config_store is not None else ConfigStore(data / "config.json")
+    kiosk_dir = (
+        kiosk_auth_dir
+        if kiosk_auth_dir is not None
+        else (data / "kiosk-auth" if data_dir is not None else paths.KIOSK_AUTH_DIR)
+    )
     factory = backend_factory if backend_factory is not None else _default_backend_factory(store)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         loop = asyncio.get_running_loop()
+        await asyncio.to_thread(app.state.auth.kiosk.ensure)
         if not store.config.demo_camera:
             from backend.camera.gphoto2_backend import library_version
 
@@ -256,6 +266,7 @@ def create_app(
     app.state.config_store = store
     app.state.started_at = datetime.now(UTC)
     app.state.data_dir = data
+    app.state.auth = AuthState(data, kiosk_dir)
 
     # Added before install_error_handlers so the request-id middleware stays outermost.
     app.add_middleware(OriginGuardMiddleware, config_store=store)

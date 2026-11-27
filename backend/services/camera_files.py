@@ -10,6 +10,7 @@ lease yields 409.
 from __future__ import annotations
 
 import asyncio
+import builtins
 import contextlib
 import hashlib
 import json
@@ -44,7 +45,11 @@ from backend.services.thumbnails import render_preview
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from backend.api.schemas.camera_files import CameraFileEntry, DownloadAllRequest
+    from backend.api.schemas.camera_files import (
+        CameraFileEntry,
+        CameraFileRef,
+        DownloadAllRequest,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -567,6 +572,20 @@ class CameraFilesService:
             self.invalidate()
             self._camera.card_files_changed()
 
+    async def delete_many(
+        self, refs: builtins.list[CameraFileRef]
+    ) -> tuple[builtins.list[CameraFileRef], builtins.list[tuple[CameraFileRef, str]]]:
+        """Delete each file from the card; a failure is recorded per file and the rest go on."""
+        deleted: builtins.list[CameraFileRef] = []
+        failed: builtins.list[tuple[CameraFileRef, str]] = []
+        for ref in refs:
+            try:
+                await self.delete(ref.folder, ref.name)
+                deleted.append(ref)
+            except AppError as exc:
+                failed.append((ref, exc.message))
+        return deleted, failed
+
     # download-all job -----------------------------------------------------
     def start_download_all(self, req: DownloadAllRequest) -> Job:
         return self._jobs.submit(
@@ -580,7 +599,20 @@ class CameraFilesService:
         # Files go strictly one at a time: concurrency over a single USB link buys nothing.
         ctx.report(None, "Listing files")
         self.invalidate()
-        if req.file is not None:
+        missing: list[str] = []
+        if req.files is not None:
+            infos = []
+            by_folder: dict[str, list[str]] = {}
+            for fld, name in dict.fromkeys((r.folder, r.name) for r in req.files):
+                by_folder.setdefault(fld, []).append(name)
+            for fld, names in by_folder.items():
+                have = {i.name: i for i in await self.list_infos(fld, False, lambda n: None)}
+                for name in names:
+                    if name in have:
+                        infos.append(have[name])
+                    else:
+                        missing.append(name)
+        elif req.file is not None:
             one = await self.list_infos(req.file.folder, False, lambda n: None)
             infos = [i for i in one if i.name == req.file.name]
             if not infos:
@@ -599,7 +631,8 @@ class CameraFilesService:
         downloaded = 0
         failed: list[str] = []
         got: list[str] = []
-        n_failed = 0
+        n_failed = len(missing)
+        failed.extend(missing[:_NAME_CAP])
         await asyncio.to_thread(dest.mkdir, parents=True, exist_ok=True)
 
         def _result() -> dict[str, Any]:

@@ -1,6 +1,5 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import UiCard from '@/components/ui/UiCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiText from '@/components/ui/UiText.vue'
@@ -122,7 +121,7 @@ const reason = (s) =>
 </script>
 
 <template>
-  <UiCard title="Sessions">
+  <div class="sessions-panel">
     <UiEmpty
       v-if="!sessions.items.length"
       title="No sessions yet"
@@ -257,5 +256,5 @@ const reason = (s) =>
     <UiModal :open="!!playing" :title="playing?.name || ''" @close="playing = null">
       <video v-if="playSrc" :src="playSrc" controls class="w-full rounded-inner bg-black" />
     </UiModal>
-  </UiCard>
+  </div>
 </template>

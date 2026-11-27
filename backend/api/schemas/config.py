@@ -12,6 +12,7 @@ from backend.core.config_store import (
     KioskConfig,
     LiveViewConfig,
     MediaConfig,
+    SecurityConfig,
     TimelapseConfig,
     VideoConfig,
 )
@@ -23,6 +24,7 @@ class ConfigOut(BaseModel):
     camera: CameraConfig
     liveview: LiveViewConfig
     kiosk: KioskConfig
+    security: SecurityConfig
     timelapse: TimelapseConfig
     video: VideoConfig
     media: MediaConfig

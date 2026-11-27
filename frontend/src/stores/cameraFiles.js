@@ -77,6 +77,18 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
     clearCameraThumbs()
     clearCameraPreviews()
   }
+  /** Delete many card files in one request. Returns `{ deleted: [ref], failed: [{ folder, name, error }] }`. */
+  async function removeMany(files) {
+    const out = await guard(lastError, () => api.deleteCameraFiles({ body: { files } }))
+    if (out.deleted.length) {
+      const gone = new Set(out.deleted.map((f) => `${f.folder}/${f.name}`))
+      items.value = items.value.filter((f) => !gone.has(`${f.folder}/${f.name}`))
+      total.value = Math.max(0, total.value - out.deleted.length)
+      clearCameraThumbs()
+      clearCameraPreviews()
+    }
+    return out
+  }
 
   return {
     folders,
@@ -93,5 +105,6 @@ export const useCameraFilesStore = defineStore('cameraFiles', () => {
     downloadAll,
     download,
     remove,
+    removeMany,
   }
 })

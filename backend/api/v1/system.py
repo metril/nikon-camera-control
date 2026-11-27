@@ -12,7 +12,7 @@ from backend.api.deps import CameraServiceDep, ConfigStoreDep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.system import HealthOut, InfoOut
 from backend.core.errors import NoTargetError
-from backend.core.security import require_api_key
+from backend.core.security import is_protected, require_api_key
 from backend.core.state import CameraState
 from backend.services.locations import LocationService
 
@@ -55,7 +55,8 @@ async def get_info(request: Request, store: ConfigStoreDep) -> InfoOut:
     return InfoOut(
         version=__version__,
         backend="demo" if cfg.demo_camera else "real",
-        auth_enabled=cfg.api_key_hash is not None,
+        auth_enabled=is_protected(request.app.state),
+        password_set=request.app.state.auth.password.is_set,
         output_free_bytes=await asyncio.to_thread(_free_bytes, request.app.state.storage),
         ffmpeg_available=shutil.which("ffmpeg") is not None,
         libgphoto2_version=gp_version,

@@ -16,6 +16,9 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S /run/seatd.sock ] && break; sleep 0.5; do
 mkdir -p /tmp/xdg /kiosk-profile && chown kiosk:seat /tmp/xdg /kiosk-profile && chmod 700 /tmp/xdg
 
 PROFILE=/kiosk-profile/chromium
+# Device token the app writes to the read-only kiosk-auth volume. The page trades it for a kiosk
+# session via the URL fragment (#pair=), which the browser never sends to the server.
+TOKEN_FILE=/kiosk-auth/kiosk-token
 CHILD=
 WATCHERS=
 
@@ -107,6 +110,40 @@ watch_input() {
     done
 }
 
+# Waits (up to ~60 s) for the token file, then prints its first line. Empty output = no token
+# (app without kiosk auth): the kiosk still starts, unpaired.
+# Trade the device token for a single-use 30 s pairing code, so the token itself never reaches
+# Chromium's argv, URL or history (nor any argv here: it goes to curl through stdin).
+pair_code() {
+  [ -n "$(read_token)" ] || return 0
+  { printf '{"token":"'; head -n 1 "$TOKEN_FILE" | tr -dc 'A-Za-z0-9_-'; printf '"}'; } |
+    curl -fsS --max-time 10 -H 'Content-Type: application/json' --data-binary @- \
+      "$APP/api/v1/auth/kiosk/code" 2>/dev/null |
+    sed -n 's/.*"code" *: *"\([A-Za-z0-9_-]*\)".*/\1/p'
+}
+read_token() {
+  n=0
+  until [ -s "$TOKEN_FILE" ] || [ "$n" -ge 30 ]; do
+    [ "$n" -eq 0 ] && echo "kiosk: waiting for $TOKEN_FILE ..." >&2
+    n=$((n + 1)); sleep 2
+  done
+  head -n 1 "$TOKEN_FILE" 2>/dev/null | tr -d '\r\n '
+}
+# Token rotation rewrites the file (possibly via rename): restart cage so the page pairs again.
+# Watches the directory, since a rename replaces the file's inode.
+watch_token() {
+  while true; do
+    inotifywait -m -q -e close_write -e moved_to -e create -e delete --format '%f' /kiosk-auth 2>/dev/null |
+      while IFS= read -r f; do
+        [ "$f" = kiosk-token ] || continue
+        [ -e /tmp/kiosk-token-pending ] && continue
+        touch /tmp/kiosk-token-pending
+        (sleep 1; rm -f /tmp/kiosk-token-pending; echo "kiosk: token changed"; kill_cage) &
+      done
+    sleep 2
+  done
+}
+
 # PID 1 is this shell: forward TERM so Chromium shuts down cleanly (and drops its profile lock).
 cleanup() {
   # shellcheck disable=SC2086
@@ -123,18 +160,22 @@ echo "kiosk: display scale $SCALE"
 watch_scale & WATCHERS="$!"
 watch_input & WATCHERS="$WATCHERS $!"
 watch_display & WATCHERS="$WATCHERS $!"
+watch_token & WATCHERS="$WATCHERS $!"
 
 while true; do
   # A recreated container has a new hostname, so Chromium sees the old Singleton* lock as foreign and refuses the profile.
   rm -f "$PROFILE"/Singleton*
   SCALE=$(resolve_scale "$(fetch_setting)")
   echo "$SCALE" > /tmp/kiosk-scale
+  START_URL="$APP/?layout=touch&kiosk=1"
+  CODE=$(pair_code)
+  [ -n "$CODE" ] && START_URL="$START_URL#pair=$CODE"
   # Scale the compositor output before Chromium starts (it then renders natively at that scale).
   # Not --force-device-scale-factor: under Wayland it mis-sizes the window (part of the screen
   # stays black). Changing the output scale under a running Chromium breaks touch, hence the relaunch.
   setpriv --reuid kiosk --regid seat --keep-groups env \
     XDG_RUNTIME_DIR=/tmp/xdg HOME=/kiosk-profile LIBSEAT_BACKEND=seatd WLR_NO_HARDWARE_CURSORS=1 \
-    KIOSK_SCALE="$SCALE" PROFILE="$PROFILE" APP="$APP" \
+    KIOSK_SCALE="$SCALE" PROFILE="$PROFILE" START_URL="$START_URL" \
     cage -s -- sh -c '
       wlopm --on "*" >/dev/null 2>&1
       for o in $(wlr-randr | awk "/^[^ ]/ {print \$1}"); do wlr-randr --output "$o" --scale "$KIOSK_SCALE"; done
@@ -142,7 +183,7 @@ while true; do
         --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL --touch-events=enabled \
         --noerrdialogs --disable-session-crashed-bubble --no-first-run --password-store=basic \
         --disk-cache-dir=/tmp/chromium-cache \
-        --user-data-dir="$PROFILE" "$APP/?layout=touch&kiosk=1"' &
+        --user-data-dir="$PROFILE" "$START_URL"' &
   CHILD=$!
   wait "$CHILD"
   echo "kiosk: chromium exited, restarting in 3s"; sleep 3

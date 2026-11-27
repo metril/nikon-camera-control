@@ -142,3 +142,6 @@ export function titleForPath(titles, path) {
   const parts = path.split('.').map(humanize)
   return parts.join(' › ')
 }
+
+/** Small tags shown beside a setting: kiosk.* rows apply to the touchscreen kiosk only. */
+export const tagsFor = (path) => (path.startsWith('kiosk.') ? ['KIOSK'] : [])

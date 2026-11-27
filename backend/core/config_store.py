@@ -173,6 +173,19 @@ class KioskConfig(_Section):
     )
 
 
+class SecurityConfig(_Section):
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Security")
+
+    secure_cookie: Literal["auto", "always"] = Field(
+        default="auto",
+        title="Sign-in cookie security",
+        description=(
+            "Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. "
+            "Choose Always when a reverse proxy terminates HTTPS in front of this app."
+        ),
+    )
+
+
 class TimelapseConfig(_Section):
     model_config = ConfigDict(extra="forbid", frozen=True, title="Time-lapse")
 
@@ -337,6 +350,7 @@ class AppConfig(BaseModel):
     camera: CameraConfig = Field(default_factory=CameraConfig)
     liveview: LiveViewConfig = Field(default_factory=LiveViewConfig)
     kiosk: KioskConfig = Field(default_factory=KioskConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
     timelapse: TimelapseConfig = Field(default_factory=TimelapseConfig)
     video: VideoConfig = Field(default_factory=VideoConfig)
     media: MediaConfig = Field(default_factory=MediaConfig)

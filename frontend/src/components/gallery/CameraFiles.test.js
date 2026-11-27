@@ -446,4 +446,36 @@ describe('CameraFiles', () => {
     expect(wrapper.find('[data-testid=job-result]').text()).toContain('Downloaded 3')
     expect(wrapper.find('[data-testid=job-result]').text()).toContain('skipped 1')
   })
+
+  it('selecting card files: Save to storage downloads exactly those files; Delete removes them in one request', async () => {
+    const { cf } = setup()
+    cf.items = FILES
+    cf.total = 3
+    cf.downloadAll = vi.fn().mockResolvedValue({ id: 'j9', status: 'queued', kind: 'download_all' })
+    cf.removeMany = vi.fn().mockResolvedValue({
+      deleted: [{ folder: '/100NCD', name: 'A.JPG' }],
+      failed: [],
+    })
+    await flushPromises()
+    await wrapper.find('[data-testid=select]').trigger('click')
+    await wrapper.find('button[aria-label="Select A.JPG"]').trigger('click')
+    await wrapper.find('button[aria-label="Select C.JPG"]').trigger('click')
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('2 selected')
+    await btn('Save to storage').trigger('click')
+    await flushPromises()
+    expect(cf.downloadAll).toHaveBeenCalledWith({
+      files: [
+        { folder: '/100NCD', name: 'A.JPG' },
+        { folder: '/100NCD', name: 'C.JPG' },
+      ],
+      only_new: false,
+      delete_after: false,
+    })
+    await wrapper.find('[data-testid=select]').trigger('click')
+    await wrapper.find('button[aria-label="Select A.JPG"]').trigger('click')
+    await wrapper.find('[data-testid=delete]').trigger('click')
+    await btn('Delete 1 item').trigger('click')
+    await flushPromises()
+    expect(cf.removeMany).toHaveBeenCalledWith([{ folder: '/100NCD', name: 'A.JPG' }])
+  })
 })

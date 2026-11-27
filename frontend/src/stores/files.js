@@ -1,9 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, thumbnailUrl, fileUrl, downloadBlob } from '@/api'
+import { api, thumbnailUrl, fileUrl } from '@/api'
 import { guard } from './helpers'
-import { useAuthStore } from './auth'
-import { BlobUrlLru } from './thumbnailCache'
 
 export const useFilesStore = defineStore('files', () => {
   const items = ref([])
@@ -14,8 +12,6 @@ export const useFilesStore = defineStore('files', () => {
   /** Photo (JPEG + RAW) and video totals for the current folder; null until known. */
   const counts = ref({ photos: null, videos: null })
   const lastError = ref(null)
-  const cache = new BlobUrlLru(200)
-  const inflight = new Map()
 
   /** Load a page; `params` are merged into (and remembered as) the current query. */
   let loadSeq = 0
@@ -57,45 +53,43 @@ export const useFilesStore = defineStore('files', () => {
     total.value = Math.max(0, total.value - 1)
   }
 
-  /**
-   * Resolve a thumbnail to something usable as <img src>: `{ url, release }`. Without an API
-   * key this is a plain URL; with one it is fetched as a blob (headers) and cached as a
-   * reference-counted object URL. Call release() when the image is unmounted or its src changes;
-   * the URL is revoked only once evicted AND unreferenced.
-   */
-  async function acquireThumbnail(path, size) {
-    if (!useAuthStore().apiKey) return { url: thumbnailUrl(path, size), release() {} }
-    const key = `${path}|${size ?? ''}`
-    const hit = cache.acquire(key)
-    if (hit) return hit
-    if (!inflight.has(key)) {
-      inflight.set(
-        key,
-        api
-          .getThumbnail({ path: { path }, query: size ? { size } : {}, parseAs: 'blob' })
-          .then((blob) => {
-            if (!cache.has(key)) cache.set(key, URL.createObjectURL(blob))
-          })
-          .finally(() => inflight.delete(key)),
-      )
+  /** Delete many files in one request. Returns `{ deleted: [path], failed: [{ path, error }] }`. */
+  async function removeMany(paths) {
+    const out = await guard(lastError, () => api.deleteFiles({ body: { paths } }))
+    const gone = new Set(out.deleted)
+    if (gone.size) {
+      items.value = items.value.filter((f) => !gone.has(f.path))
+      total.value = Math.max(0, total.value - gone.size)
     }
-    await inflight.get(key)
-    const h = cache.acquire(key)
-    if (!h) throw new Error('Thumbnail was evicted before use')
-    return h
+    return out
   }
 
-  /** Download a file; uses a blob when an API key is needed, a plain link otherwise. */
+  /**
+   * Download many files: one file goes straight through download(); several become a ZIP whose
+   * single-use ticket URL needs no further credentials.
+   */
+  async function downloadZip(paths) {
+    if (paths.length === 1) return download(paths[0])
+    const { url } = await guard(lastError, () => api.createZipDownload({ body: { paths } }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'photos.zip'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
+  /** Thumbnail as `{ url, release }`; the session cookie authenticates the plain URL. */
+  async function acquireThumbnail(path, size) {
+    return { url: thumbnailUrl(path, size), release() {} }
+  }
+
+  /** Download a file through a plain link (the session cookie authenticates it). */
   async function download(path, name = path.split('/').pop()) {
-    if (!useAuthStore().apiKey) {
-      const a = document.createElement('a')
-      a.href = fileUrl(path)
-      a.download = name
-      a.click()
-      return
-    }
-    const blob = await guard(lastError, () => api.downloadFile({ path: { path }, parseAs: 'blob' }))
-    downloadBlob(blob, name)
+    const a = document.createElement('a')
+    a.href = fileUrl(path)
+    a.download = name
+    a.click()
   }
 
   return {
@@ -110,6 +104,8 @@ export const useFilesStore = defineStore('files', () => {
     loadCounts,
     reload,
     remove,
+    removeMany,
+    downloadZip,
     acquireThumbnail,
     download,
   }

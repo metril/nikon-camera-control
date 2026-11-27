@@ -25,6 +25,7 @@ from backend.api.schemas.common import EventType
 from backend.core.config_store import ConfigStore
 from backend.core.events import EventBus
 from backend.services import integrity
+from backend.services.storage import safe_join
 
 log = logging.getLogger(__name__)
 
@@ -270,16 +271,28 @@ def sync_tree(
 
 def select_files(
     root: Path,
-    scope: Literal["all", "session", "older_than"],
+    scope: Literal["all", "session", "older_than", "files"],
     *,
     session_id: str | None = None,
     before: datetime | None = None,
+    paths: list[str] | None = None,
     exclude_sessions: frozenset[str] = frozenset(),
     min_age_s: float = 0.0,
 ) -> list[Path]:
     """Files to offload. ``exclude_sessions`` (active or held session ids) and files modified
-    within ``min_age_s`` seconds (still being written) are left out."""
-    if scope == "session":
+    within ``min_age_s`` seconds (still being written) are left out. ``scope="files"`` takes the
+    explicit root-relative ``paths`` (traversal is rejected; missing files and bookkeeping
+    names are left out)."""
+    if scope == "files":
+        if not paths:
+            raise ValueError("'paths' is required")
+        files = []
+        for rel in dict.fromkeys(paths):
+            safe_join(root, rel)  # PathNotAllowed on traversal or an escaping symlink
+            p = root / rel
+            if p.is_file() and not p.is_symlink() and not integrity.is_aux(p.name):
+                files.append(p)
+    elif scope == "session":
         if not session_id or "/" in session_id or session_id.startswith("."):
             raise ValueError("invalid session id")
         files = list(integrity.iter_files(root, f"sessions/{session_id}"))

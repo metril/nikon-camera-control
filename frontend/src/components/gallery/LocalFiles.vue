@@ -1,11 +1,16 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import UiCheck from '@/components/ui/UiCheck.vue'
+import SelectionBar from './SelectionBar.vue'
+import CopyToDialog from './CopyToDialog.vue'
+import { useSelection } from '@/composables/useSelection'
+import { useLayoutMode } from '@/composables/useLayoutMode'
 import { useFilesStore } from '@/stores/files'
 import { useCaptureStore } from '@/stores/capture'
 import { useJobsStore } from '@/stores/jobs'
@@ -20,8 +25,6 @@ import Thumb from './Thumb.vue'
 import Lightbox from './Lightbox.vue'
 import { formatSize, formatDate, kindTone, isSystemFolder } from './media'
 
-const LONG_PRESS_MS = 480
-
 const props = defineProps({ openPath: { type: String, default: '' } })
 
 const files = useFilesStore()
@@ -30,6 +33,26 @@ const jobs = useJobsStore()
 const toasts = useToastsStore()
 const storage = useStorageStore()
 const videosStore = useVideosStore()
+
+const { isTouch } = useLayoutMode()
+const COLS_KEY = 'nikon-gallery-cols'
+const readCols = () => {
+  try {
+    const n = Number(localStorage.getItem(COLS_KEY))
+    return n >= 3 && n <= 10 ? n : 7
+  } catch {
+    return 7
+  }
+}
+const cols = ref(readCols())
+watch(cols, (n) => {
+  try {
+    localStorage.setItem(COLS_KEY, String(n))
+  } catch {
+    /* remembered per viewer when possible */
+  }
+})
+const nameFilter = ref('')
 
 const SORTS = [
   { value: 'newest', label: 'Newest' },
@@ -41,9 +64,6 @@ const LIMITS = [24, 50, 100, 200].map((n) => ({ value: n, label: `${n} per page`
 const mode = ref('all') // all | photos | videos | timelapses
 const rootName = computed(() => storageName(storage.target))
 const folders = computed(() => files.folders.filter((f) => !isSystemFolder(f.name)))
-const selecting = ref(false)
-const selected = ref(new Set())
-const confirmDelete = ref(false)
 const lightboxIndex = ref(-1)
 // A deep-linked file that is not on the current page is shown on its own.
 const linked = ref(null)
@@ -64,7 +84,15 @@ const firstLoad = computed(() => files.loading && !files.items.length)
 
 // The server filters by kind ("photos" is JPEG + RAW), so pages and totals are exact.
 const MEDIA = new Set(['image', 'raw', 'video'])
-const shown = computed(() => files.items.filter((f) => MEDIA.has(f.kind)))
+const shown = computed(() => {
+  const needle = nameFilter.value.trim().toLowerCase()
+  return files.items.filter(
+    (f) => MEDIA.has(f.kind) && (!needle || f.name.toLowerCase().includes(needle)),
+  )
+})
+const sel = useSelection({ ids: () => shown.value.map((f) => f.path) })
+const copying = ref(false)
+const copyOpen = ref(false)
 const count = (n) => (n == null ? '' : ` ${n}`)
 const modeOptions = computed(() => {
   const { photos, videos } = files.counts
@@ -88,19 +116,14 @@ async function load(params = {}) {
     if (!isNoTarget(e)) toasts.error(e)
   }
 }
-const stopSelecting = () => {
-  selecting.value = false
-  confirmDelete.value = false
-  selected.value = new Set()
-}
 const goFolder = (folder) => {
-  selected.value = new Set()
+  sel.clear()
   return load({ folder, page: 1 })
 }
 const setFilter = (key, value) => load({ [key]: value, page: 1 })
 const setMode = (m) => {
   mode.value = m
-  selected.value = new Set()
+  sel.clear()
   if (m === 'timelapses') return
   return setFilter('kind', { videos: 'video', photos: 'photos' }[m] || 'all')
 }
@@ -171,55 +194,24 @@ watch(
       .join(','),
   (v, old) => v !== old && load(),
 )
-// Drop selections that vanished from the page.
-watch(
-  () => files.items,
-  (items) => {
-    const paths = new Set(items.map((f) => f.path))
-    selected.value = new Set([...selected.value].filter((p) => paths.has(p)))
-  },
-)
-
-function toggle(path) {
-  const s = new Set(selected.value)
-  s.has(path) ? s.delete(path) : s.add(path)
-  selected.value = s
-  confirmDelete.value = false
-}
-const allSelected = computed(
-  () => shown.value.length > 0 && shown.value.every((f) => selected.value.has(f.path)),
-)
-function toggleAll() {
-  selected.value = allSelected.value ? new Set() : new Set(shown.value.map((f) => f.path))
-  confirmDelete.value = false
-}
-
-// Long-press (touch and pen) starts selecting; a mouse click selects only via the Select button.
-let pressTimer = null
-let longPressed = false
-function pressStart(e, f) {
-  longPressed = false
-  if (e.pointerType === 'mouse') return
-  clearTimeout(pressTimer)
-  pressTimer = setTimeout(() => {
-    longPressed = true
-    selecting.value = true
-    toggle(f.path)
-  }, LONG_PRESS_MS)
-}
-const pressEnd = () => clearTimeout(pressTimer)
-onUnmounted(pressEnd)
-function onTile(f, i) {
-  if (longPressed) {
-    longPressed = false
-    return
+// Long-press (touch and pen) starts selecting; a mouse uses Select, Ctrl/Shift-click or the check.
+const pressers = new Map()
+watch(shown, () => pressers.clear())
+function press(path) {
+  let h = pressers.get(path)
+  if (!h) {
+    const lp = sel.longPress(path)
+    h = { ...lp, onPointerdown: (e) => e.pointerType !== 'mouse' && lp.onPointerdown(e) }
+    pressers.set(path, h)
   }
-  if (selecting.value) toggle(f.path)
-  else {
-    linked.value = null
-    lightboxIndex.value = i
-  }
+  return h
 }
+function onTile(f, i, e) {
+  if (sel.click(f.path, e)) return
+  linked.value = null
+  lightboxIndex.value = i
+}
+const onCheck = (f, e) => sel.toggle(f.path, { shift: e?.shiftKey })
 
 async function download(item) {
   try {
@@ -228,25 +220,27 @@ async function download(item) {
     toasts.error(e)
   }
 }
-async function downloadSelected() {
-  for (const f of shown.value) if (selected.value.has(f.path)) await download(f)
+async function zipSelected() {
+  try {
+    await files.downloadZip(sel.list.value)
+  } catch (e) {
+    toasts.error(e)
+  }
 }
 
 async function deleteMany(paths) {
   deleting.value = true
-  const failures = []
-  let ok = 0
-  for (const p of paths) {
-    try {
-      await files.remove(p)
-      ok++
-    } catch (e) {
-      failures.push(`${p.split('/').pop()}: ${e?.message || 'failed'}`)
-    }
+  let out
+  try {
+    out = await files.removeMany(paths)
+  } catch (e) {
+    toasts.error(e)
+    return false
+  } finally {
+    deleting.value = false
   }
-  deleting.value = false
-  confirmDelete.value = false
-  selected.value = new Set([...selected.value].filter((p) => !paths.includes(p)))
+  const ok = out.deleted.length
+  const failures = out.failed.map((f) => `${f.path.split('/').pop()}: ${f.error || 'failed'}`)
   if (failures.length) {
     const head = failures.slice(0, 3).join('; ')
     const more = failures.length > 3 ? ` (+${failures.length - 3} more)` : ''
@@ -256,6 +250,26 @@ async function deleteMany(paths) {
   }
   files.loadCounts()
   return failures.length === 0
+}
+
+async function copyTo(toId) {
+  const paths = sel.list.value
+  copying.value = true
+  try {
+    await storage.offload({
+      from_id: storage.targetId,
+      to_id: toId,
+      scope: { kind: 'files', paths },
+      keep_source: true,
+    })
+    toasts.success(`Copying ${paths.length} ${paths.length === 1 ? 'file' : 'files'}`)
+    copyOpen.value = false
+    sel.clear()
+  } catch (e) {
+    toasts.error(e)
+  } finally {
+    copying.value = false
+  }
 }
 
 async function deleteFromLightbox(item) {
@@ -277,12 +291,12 @@ const emptyHint = computed(() =>
 
 <template>
   <NoTargetNotice v-if="noTarget" data-testid="no-target" />
-  <div v-else class="space-y-4">
+  <div v-else class="flex min-h-0 flex-1 flex-col gap-3">
     <!-- At the root the source card already names the drive: crumbs only inside folders -->
     <nav
       v-if="crumbs.length"
       aria-label="Folder"
-      class="flex flex-wrap items-center gap-x-1 text-sm"
+      class="flex shrink-0 flex-wrap items-center gap-x-1 text-sm"
     >
       <button
         type="button"
@@ -307,7 +321,7 @@ const emptyHint = computed(() =>
 
     <div
       v-if="folders.length && mode !== 'timelapses'"
-      class="flex flex-wrap gap-2"
+      class="scroll-panel flex max-h-[96px] shrink-0 flex-wrap gap-2"
       data-testid="folders"
     >
       <button
@@ -322,7 +336,17 @@ const emptyHint = computed(() =>
       </button>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3">
+    <SelectionBar
+      v-if="sel.selecting.value && mode !== 'timelapses' && isTouch"
+      :count="sel.count.value"
+      :all-selected="sel.allSelected.value"
+      :busy="deleting || copying"
+      @toggle-all="sel.allSelected.value ? sel.clear() : sel.selectAll()"
+      @copy="copyOpen = true"
+      @delete="deleteMany(sel.list.value)"
+      @done="sel.clear()"
+    />
+    <div v-else class="flex shrink-0 flex-wrap items-center gap-3">
       <UiSegmented
         size="sm"
         :model-value="mode"
@@ -347,127 +371,164 @@ const emptyHint = computed(() =>
             @update:model-value="setFilter('limit', Number($event))"
           />
         </div>
+        <label
+          v-if="!isTouch"
+          class="flex h-[var(--ctl-sm)] w-[220px] items-center gap-2 rounded-control border border-camera-border bg-camera-bg px-2.5"
+        >
+          <svg
+            aria-hidden="true"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            class="text-camera-muted"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-4-4" />
+          </svg>
+          <input
+            v-model="nameFilter"
+            type="search"
+            placeholder="Filter by name"
+            aria-label="Filter by name"
+            class="min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+          />
+        </label>
         <span class="flex-1" />
-        <div v-if="selecting" class="flex flex-wrap items-center gap-2" data-testid="select-bar">
-          <span class="tabular-nums text-sm" aria-live="polite">{{ selected.size }} selected</span>
-          <UiButton size="sm" @click="toggleAll">{{
-            allSelected ? 'Clear' : 'Select all'
-          }}</UiButton>
-          <UiButton size="sm" :disabled="!selected.size" @click="downloadSelected">
-            <UiIcon name="Download" :size="16" />Download
-          </UiButton>
-          <template v-if="confirmDelete">
-            <UiButton
-              size="sm"
-              variant="danger"
-              :loading="deleting"
-              @click="deleteMany([...selected])"
-            >
-              Delete {{ selected.size }} {{ selected.size === 1 ? 'item' : 'items' }}
-            </UiButton>
-            <UiButton size="sm" variant="ghost" @click="confirmDelete = false">Keep</UiButton>
-          </template>
-          <UiButton v-else size="sm" :disabled="!selected.size" @click="confirmDelete = true">
-            <UiIcon name="Trash2" :size="16" />Delete
-          </UiButton>
-          <UiButton size="sm" variant="ghost" @click="stopSelecting">Done</UiButton>
-        </div>
-        <UiButton v-else size="sm" :disabled="!shown.length" @click="selecting = true">
+        <label v-if="!isTouch" class="flex items-center gap-2 text-[13px] text-camera-muted">
+          Size
+          <input
+            v-model.number="cols"
+            type="range"
+            min="3"
+            max="10"
+            aria-label="Thumbnail size"
+            class="w-[120px] accent-camera-accent"
+            style="direction: rtl"
+          />
+        </label>
+        <span class="tabular-nums text-[13px] text-camera-muted" data-testid="count">
+          {{ files.total.toLocaleString() }} {{ files.total === 1 ? 'file' : 'files' }}
+        </span>
+        <UiButton size="sm" :disabled="!shown.length" data-testid="select" @click="sel.start(null)">
           Select
         </UiButton>
       </template>
     </div>
-    <Videos v-if="mode === 'timelapses'" />
-    <template v-else>
-      <p
-        v-if="shown.length && !selecting"
-        class="hidden text-[12.5px] text-camera-muted [html[data-layout='touch']_&]:block"
-      >
-        Tip: press and hold a photo to start selecting.
-      </p>
+    <SelectionBar
+      v-if="sel.selecting.value && mode !== 'timelapses' && !isTouch"
+      :count="sel.count.value"
+      :all-selected="sel.allSelected.value"
+      :busy="deleting || copying"
+      @toggle-all="sel.allSelected.value ? sel.clear() : sel.selectAll()"
+      @zip="zipSelected"
+      @copy="copyOpen = true"
+      @delete="deleteMany(sel.list.value)"
+      @done="sel.clear()"
+    />
 
+    <Videos v-if="mode === 'timelapses'" class="min-h-0 flex-1" />
+    <template v-else>
       <div
-        v-if="firstLoad"
-        class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3"
-        aria-busy="true"
+        class="scroll-panel min-h-0 flex-1 rounded-card border border-camera-subtle bg-camera-surface p-3 [html[data-layout='touch']_&]:p-4"
+        tabindex="0"
+        aria-label="Photos"
       >
+        <p
+          v-if="shown.length && !sel.selecting.value"
+          class="mb-3 hidden text-[12.5px] text-camera-muted [html[data-layout='touch']_&]:block"
+        >
+          Tip: press and hold a photo to start selecting.
+        </p>
+
         <div
-          v-for="n in 10"
-          :key="n"
-          class="aspect-[3/2] animate-pulse rounded-inner bg-camera-raised"
+          v-if="firstLoad"
+          class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3"
+          aria-busy="true"
+        >
+          <div
+            v-for="n in 10"
+            :key="n"
+            class="aspect-[3/2] animate-pulse rounded-inner bg-camera-raised"
+          />
+        </div>
+
+        <UiEmpty v-else-if="failedLoad && !files.items.length" title="Could not load files">
+          <template #actions><UiButton @click="load()">Retry</UiButton></template>
+        </UiEmpty>
+
+        <UiEmpty
+          v-else-if="!shown.length"
+          :title="mode === 'videos' ? 'No videos here' : 'No files here'"
+          :hint="emptyHint"
         />
+
+        <ul
+          v-else
+          class="grid gap-3 [html[data-layout='touch']_&]:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] [html[data-layout='touch']_&]:gap-3.5"
+          :style="isTouch ? null : { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }"
+          data-testid="grid"
+        >
+          <li
+            v-for="(f, i) in shown"
+            :key="f.path"
+            class="group relative grid grid-cols-[minmax(0,1fr)] overflow-hidden rounded-inner border bg-camera-bg"
+            :class="
+              sel.isSelected(f.path)
+                ? 'border-camera-accent outline outline-2 -outline-offset-2 outline-camera-accent'
+                : 'border-camera-subtle hover:border-camera-border'
+            "
+          >
+            <button
+              type="button"
+              class="relative block aspect-[3/2] w-full select-none bg-black p-0"
+              :aria-label="sel.selecting.value ? `Select ${f.name}` : `Open ${f.name}`"
+              :aria-pressed="sel.selecting.value ? sel.isSelected(f.path) : undefined"
+              v-bind="press(f.path)"
+              @click="onTile(f, i, $event)"
+            >
+              <Thumb :path="f.path" :supported="f.has_thumbnail" :alt="f.name" />
+              <span
+                v-if="f.kind === 'video'"
+                class="pointer-events-none absolute inset-0 flex items-center justify-center text-white"
+              >
+                <UiIcon name="Play" :size="36" />
+              </span>
+            </button>
+            <UiCheck
+              v-if="sel.selecting.value || !isTouch"
+              :model-value="sel.isSelected(f.path)"
+              :label="`Toggle ${f.name}`"
+              class="absolute left-2 top-2"
+              :class="
+                sel.selecting.value
+                  ? ''
+                  : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+              "
+              @click="onCheck(f, $event)"
+            />
+            <div
+              class="grid min-w-0 gap-0.5 px-2.5 py-2 text-xs [html[data-layout='touch']_&]:text-[length:var(--fs-min)]"
+            >
+              <div class="flex min-w-0 items-center justify-between gap-2">
+                <p class="min-w-0 truncate font-mono font-medium" :title="f.name">{{ f.name }}</p>
+                <UiBadge :tone="kindTone(f.kind)">{{ fileKind(f.kind) }}</UiBadge>
+              </div>
+              <p class="truncate tabular-nums text-camera-muted">
+                {{ formatSize(f.size) }} · {{ formatDate(f.modified) }}
+              </p>
+            </div>
+          </li>
+        </ul>
       </div>
 
-      <UiEmpty v-else-if="failedLoad && !files.items.length" title="Could not load files">
-        <template #actions><UiButton @click="load()">Retry</UiButton></template>
-      </UiEmpty>
-
-      <UiEmpty
-        v-else-if="!shown.length"
-        :title="mode === 'videos' ? 'No videos here' : 'No files here'"
-        :hint="emptyHint"
-      />
-
-      <ul
-        v-else
-        class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3 [html[data-layout='touch']_&]:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]"
-        data-testid="grid"
+      <div
+        v-if="files.total > q.limit"
+        class="flex shrink-0 items-center justify-center gap-3"
+        data-testid="pager"
       >
-        <li
-          v-for="(f, i) in shown"
-          :key="f.path"
-          class="relative grid grid-cols-[minmax(0,1fr)] overflow-hidden rounded-inner border bg-camera-surface"
-          :class="
-            selected.has(f.path)
-              ? 'border-camera-accent outline outline-2 -outline-offset-2 outline-camera-accent'
-              : 'border-camera-subtle hover:border-camera-border'
-          "
-        >
-          <button
-            type="button"
-            class="relative block aspect-[3/2] w-full select-none bg-black p-0"
-            :aria-label="selecting ? `Select ${f.name}` : `Open ${f.name}`"
-            :aria-pressed="selecting ? selected.has(f.path) : undefined"
-            @pointerdown="pressStart($event, f)"
-            @pointerup="pressEnd"
-            @pointerleave="pressEnd"
-            @pointercancel="pressEnd"
-            @contextmenu.prevent
-            @click="onTile(f, i)"
-          >
-            <Thumb :path="f.path" :supported="f.has_thumbnail" :alt="f.name" />
-            <span
-              v-if="f.kind === 'video'"
-              class="pointer-events-none absolute inset-0 flex items-center justify-center text-white"
-            >
-              <UiIcon name="Play" :size="36" />
-            </span>
-            <span
-              v-if="selecting"
-              aria-hidden="true"
-              class="absolute left-2.5 top-2.5 inline-flex h-6 w-6 items-center justify-center rounded-control border-2 border-white text-camera-accent-ink [html[data-layout='touch']_&]:h-[30px] [html[data-layout='touch']_&]:w-[30px]"
-              :class="
-                selected.has(f.path) ? 'border-camera-accent bg-camera-accent' : 'bg-black/35'
-              "
-            >
-              <UiIcon v-if="selected.has(f.path)" name="Check" :size="16" />
-            </span>
-          </button>
-          <div
-            class="grid min-w-0 gap-0.5 px-2.5 py-2 text-xs [html[data-layout='touch']_&]:text-[length:var(--fs-min)]"
-          >
-            <div class="flex min-w-0 items-center justify-between gap-2">
-              <p class="min-w-0 truncate font-mono font-medium" :title="f.name">{{ f.name }}</p>
-              <UiBadge :tone="kindTone(f.kind)">{{ fileKind(f.kind) }}</UiBadge>
-            </div>
-            <p class="truncate tabular-nums text-camera-muted">
-              {{ formatSize(f.size) }} · {{ formatDate(f.modified) }}
-            </p>
-          </div>
-        </li>
-      </ul>
-
-      <div v-if="files.total > q.limit" class="flex items-center justify-center gap-3">
         <UiButton size="sm" :disabled="q.page <= 1 || files.loading" @click="goPage(q.page - 1)">
           Previous
         </UiButton>
@@ -482,6 +543,13 @@ const emptyHint = computed(() =>
       </div>
     </template>
 
+    <CopyToDialog
+      :open="copyOpen"
+      :count="sel.count.value"
+      :busy="copying"
+      @close="copyOpen = false"
+      @confirm="copyTo"
+    />
     <Lightbox
       :open="lightboxIndex >= 0"
       :items="lightboxItems"

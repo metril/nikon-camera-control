@@ -1,6 +1,6 @@
 {
   "name": "nikon-camera-control-frontend",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "format:check": "prettier --check src",
     "test": "vitest run",
+    "e2e": "playwright test",
     "gen:api": "openapi-ts",
     "gen:api:check": "node scripts/check-api.js"
   },
@@ -22,6 +23,7 @@
     "@eslint/js": "^10.0.1",
     "@hey-api/openapi-ts": "0.99.0",
     "@pinia/testing": "^2.0.2",
+    "@playwright/test": "1.56.1",
     "@vitejs/plugin-vue": "^5.0.0",
     "@vue/test-utils": "^2.6.0",
     "autoprefixer": "^10.4.0",

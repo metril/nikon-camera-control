@@ -23,15 +23,20 @@ function onKey(e) {
 </script>
 
 <template>
-  <div ref="root" role="radiogroup" aria-label="Gallery source" class="grid gap-3 sm:grid-cols-2">
-    <div v-for="s in sources" :key="s.value" class="relative min-w-0">
+  <div
+    ref="root"
+    role="radiogroup"
+    aria-label="Gallery source"
+    class="flex shrink-0 flex-wrap gap-2"
+  >
+    <div v-for="s in sources" :key="s.value" class="relative min-w-0 flex-1 sm:max-w-[360px]">
       <button
         type="button"
         role="radio"
         :data-source="s.value"
         :aria-checked="modelValue === s.value"
         :tabindex="modelValue === s.value ? 0 : -1"
-        class="flex min-h-[64px] w-full min-w-0 items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-camera-accent [html[data-layout='touch']_&]:min-h-[72px]"
+        class="flex min-h-[48px] w-full min-w-0 items-center gap-2.5 rounded-card border px-3 py-1.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-camera-accent [html[data-layout='touch']_&]:min-h-[56px]"
         :class="[
           modelValue === s.value
             ? 'border-camera-accent bg-camera-accent/15'
@@ -43,12 +48,14 @@ function onKey(e) {
       >
         <UiIcon
           :name="s.icon"
-          :size="28"
+          :size="22"
           :class="modelValue === s.value ? 'text-camera-accent' : 'text-camera-muted'"
         />
         <span class="min-w-0">
-          <span class="block truncate text-base font-semibold">{{ s.title }}</span>
-          <span class="block truncate text-[13px] text-camera-muted">{{ s.subtitle }}</span>
+          <span class="block truncate text-[15px] font-semibold leading-tight">{{ s.title }}</span>
+          <span class="block truncate text-[12px] leading-tight text-camera-muted">{{
+            s.subtitle
+          }}</span>
         </span>
       </button>
       <a

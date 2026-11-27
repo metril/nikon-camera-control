@@ -30,9 +30,15 @@ html {
   scrollbar-gutter: stable;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  overflow: hidden; /* the frame never scrolls; only .scroll-panel regions do */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -199,6 +205,21 @@ html[data-layout='touch'] .eyebrow {
 }
 
 /* room for the on-screen keyboard so the page can scroll a field above it */
-html[data-osk-open] body {
-  padding-bottom: var(--osk-h, 0px);
+html[data-osk-open] .app-frame {
+  height: calc(100dvh - var(--osk-h, 0px));
+}
+
+/* The app frame is exactly the viewport (dvh follows mobile browser chrome). */
+.app-frame {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* The one way to scroll: unbounded lists (gallery grid, card files, sessions). The gutter is
+   reserved so content does not shift when the scrollbar appears. */
+.scroll-panel {
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }

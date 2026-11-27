@@ -44,7 +44,7 @@ describe('ConfigForm', () => {
     }
     expect(tl.previewDraft).not.toHaveBeenCalled()
     vi.advanceTimersByTime(700)
-    await vi.runAllTimersAsync()
+    await vi.runOnlyPendingTimersAsync()
     expect(tl.previewDraft).toHaveBeenCalledTimes(1)
     expect(tl.previewDraft.mock.calls[0][0].interval_s).toBe(5)
     expect(tl.setConfig).not.toHaveBeenCalled()
@@ -59,7 +59,7 @@ describe('ConfigForm', () => {
     const { tl, w } = setup()
     await w.findAll('input')[1].setValue('')
     vi.advanceTimersByTime(2000)
-    await vi.runAllTimersAsync()
+    await vi.runOnlyPendingTimersAsync()
     expect(tl.previewDraft).not.toHaveBeenCalled()
     expect(w.text()).not.toMatch(/NaN|Infinity/)
     expect(w.text()).toContain('Enter an interval above 0')
@@ -74,7 +74,7 @@ describe('ConfigForm', () => {
     draft.intervalS = 1
     await w.vm.$nextTick()
     vi.advanceTimersByTime(700)
-    await vi.runAllTimersAsync()
+    await vi.runOnlyPendingTimersAsync()
     await w.vm.$nextTick()
     expect(w.text()).toContain('below camera minimum')
   })
@@ -86,5 +86,17 @@ describe('ConfigForm', () => {
     draft.limit = 'duration'
     await w.vm.$nextTick()
     expect(labels()).toContain('Duration')
+  })
+
+  it('shows when the time-lapse ends: now plus the shooting time, and tracks the draft', async () => {
+    vi.setSystemTime(new Date(2026, 5, 1, 6, 0, 0))
+    const { w } = setup()
+    const clock = (ms) =>
+      new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    const t0 = new Date(2026, 5, 1, 6, 0, 0).getTime()
+    expect(w.find('[data-test=ends-at]').text()).toBe(clock(t0 + 990_000)) // 99 gaps of 10 s
+    draft.totalFrames = 7 // 6 gaps of 10 s
+    await w.vm.$nextTick()
+    expect(w.find('[data-test=ends-at]').text()).toBe(clock(t0 + 60_000))
   })
 })

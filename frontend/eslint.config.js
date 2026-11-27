@@ -5,7 +5,7 @@ import prettier from 'eslint-config-prettier'
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'src/api/generated/**', 'src/api/.generated-check/**'],
+    ignores: ['dist/**', 'node_modules/**', 'test-results/**', 'playwright-report/**', 'src/api/generated/**', 'src/api/.generated-check/**'],
   },
   js.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
@@ -15,7 +15,7 @@ export default [
     },
   },
   {
-    files: ['scripts/**', 'src/**/*.test.js', '*.config.js'],
+    files: ['scripts/**', 'e2e/**', 'src/**/*.test.js', '*.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
   prettier,

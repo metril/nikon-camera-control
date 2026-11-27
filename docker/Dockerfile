@@ -35,7 +35,7 @@ RUN visudo -cf /etc/sudoers.d/ncc && mkdir -p /mnt/loc && chmod 0755 /mnt/loc \
 # is the group the udev rule grants USB access to.
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid 1000 --groups plugdev --no-create-home --shell /usr/sbin/nologin app \
-    && mkdir -p /app/data \
+    && mkdir -p /app/data /app/kiosk-auth \
     && chown -R app:app /app
 COPY --from=venv /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

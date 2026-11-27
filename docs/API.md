@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.6.1
+# Nikon Camera Control API 0.7.0
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -40,7 +40,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `JOB_NOT_FOUND` | 404 | `JobNotFound` | Job not found |
 | `PRESET_NOT_FOUND` | 404 | `PresetNotFound` | Preset not found |
 | `SESSION_NOT_FOUND` | 404 | `SessionNotFound` | Session not found |
-| `UNAUTHORIZED` | 401 | `Unauthorized` | Missing or invalid API key |
+| `UNAUTHORIZED` | 401 | `Unauthorized` | Authentication required |
 | `CONFIG_INVALID` | 422 | `ConfigInvalid` | Invalid configuration |
 | `FEATURE_UNSUPPORTED` | 501 | `FeatureUnsupported` | Feature not supported by this camera |
 | `VALIDATION_ERROR` | by handler | - | Produced by the framework error handlers |
@@ -49,6 +49,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `FORBIDDEN` | 403 | `Forbidden` | This operation is not allowed |
 | `FORBIDDEN_ORIGIN` | 403 | `ForbiddenOrigin` | Cross-origin request not allowed |
 | `BULB_SHUTTER_OPEN` | 502 | `ShutterOpen` | Could not close the shutter |
+| `RATE_LIMITED` | 429 | `RateLimited` | Too many failed attempts. Try again later. |
 | `NO_TARGET` | 409 | `NoTargetError` | No storage target is available. Select and mount a target in Settings. |
 | `LOCATION_NOT_FOUND` | 404 | `LocationNotFound` | Storage location not found |
 | `LOCATION_BUSY` | 409 | `LocationBusy` | Storage location is busy |
@@ -56,6 +57,22 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | `FILE_TOO_LARGE` | 413 | `FileTooLarge` | File is too large for the target filesystem (FAT32 limit is 4 GiB) |
 
 ## Endpoints
+
+### auth
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/auth/status` | `get_auth_status` | Get Auth Status |
+| POST | `/api/v1/auth/login` | `login` | Login |
+| POST | `/api/v1/auth/logout` | `logout` | Logout |
+| PUT | `/api/v1/auth/password` | `set_password` | Set Password |
+| DELETE | `/api/v1/auth/password` | `delete_password` | Delete Password |
+| GET | `/api/v1/auth/sessions` | `list_auth_sessions` | List Auth Sessions |
+| POST | `/api/v1/auth/sessions/revoke-all` | `revoke_all_auth_sessions` | Revoke All Auth Sessions |
+| DELETE | `/api/v1/auth/sessions/{session_id}` | `revoke_auth_session` | Revoke Auth Session |
+| POST | `/api/v1/auth/kiosk/code` | `get_kiosk_pairing_code` | Get Kiosk Pairing Code |
+| POST | `/api/v1/auth/kiosk` | `pair_kiosk` | Pair Kiosk |
+| POST | `/api/v1/auth/kiosk-token/rotate` | `rotate_kiosk_token` | Rotate Kiosk Token |
 
 ### camera
 
@@ -81,6 +98,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/camera/thumbnail` | `get_camera_thumbnail` | Get Camera Thumbnail |
 | GET | `/api/v1/camera/preview` | `get_camera_preview` | Get Camera Preview |
 | POST | `/api/v1/camera/files/download-all` | `download_all_camera_files` | Download All Camera Files |
+| POST | `/api/v1/camera/files/delete` | `delete_camera_files` | Delete Camera Files |
 | GET | `/api/v1/camera/files/{folder}/{name}` | `download_camera_file` | Download Camera File |
 | DELETE | `/api/v1/camera/files/{folder}/{name}` | `delete_camera_file` | Delete Camera File |
 
@@ -115,7 +133,10 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 
 | Method | Path | operation_id | Summary |
 |---|---|---|---|
+| GET | `/api/v1/files/zip/{ticket}` | `download_zip` | Download Zip |
 | GET | `/api/v1/files` | `list_files` | List Files |
+| POST | `/api/v1/files/delete` | `delete_files` | Delete Files |
+| POST | `/api/v1/files/zip` | `create_zip_download` | Create Zip Download |
 | GET | `/api/v1/files/{path}` | `download_file` | Download File |
 | DELETE | `/api/v1/files/{path}` | `delete_file` | Delete File |
 | GET | `/api/v1/thumbnails/{path}` | `get_thumbnail` | Get Thumbnail |
@@ -247,6 +268,229 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/videos` | `list_videos` | List Videos |
 | GET | `/api/v1/videos/{session_id}/{name}` | `download_video` | Download Video |
 | DELETE | `/api/v1/videos/{session_id}/{name}` | `delete_video` | Delete Video |
+
+## auth
+
+### `GET /api/v1/auth/status`
+
+operation_id: `get_auth_status`
+
+Open. What the login screen needs: whether sign-in is required and whether it is done.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AuthStatusOut` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/auth/login`
+
+operation_id: `login`
+
+Open, rate-limited (429 with Retry-After). Sets the session cookie.
+
+``password`` signs in with the app password. ``api_key`` works only while no password is set.
+
+**Request body** (`application/json`): `LoginIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `password` | string \| null | no |  | `maxLength=1024` | The app password |
+| `api_key` | string \| null | no |  | `maxLength=1024` | The API key; accepted only while no password is set |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AuthStatusOut` |
+| 401 | Invalid credentials | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 429 | Too many failed attempts (see Retry-After) | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/auth/logout`
+
+operation_id: `logout`
+
+Open. Revokes this browser's session and clears its cookie.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `Ok` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+
+### `PUT /api/v1/auth/password`
+
+operation_id: `set_password`
+
+Set or change the app password; signs this browser in and revokes other browser sessions.
+
+``current`` is required only when a password is already set (403 when wrong).
+
+**Request body** (`application/json`): `PasswordSetIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `current` | string \| null | no |  | `maxLength=1024` | The current password; required only when a password is already set |
+| `new` | string | yes |  | `minLength=8`, `maxLength=256` | The new password |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AuthStatusOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `DELETE /api/v1/auth/password`
+
+operation_id: `delete_password`
+
+Remove the app password (needs the current one). Browser sessions are revoked; with
+no API key either, the app returns to open mode.
+
+**Request body** (`application/json`): `PasswordDeleteIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `current` | string | yes |  | `maxLength=1024` | The current password |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AuthStatusOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `GET /api/v1/auth/sessions`
+
+operation_id: `list_auth_sessions`
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AuthSessionListOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/auth/sessions/revoke-all`
+
+operation_id: `revoke_all_auth_sessions`
+
+Sign out every other browser. Keeps this session and the kiosk sessions.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `RevokedOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `DELETE /api/v1/auth/sessions/{session_id}`
+
+operation_id: `revoke_auth_session`
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `session_id` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `Ok` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/auth/kiosk/code`
+
+operation_id: `get_kiosk_pairing_code`
+
+Open, rate-limited. Trades the kiosk device token for a single-use code (30 s).
+
+**Request body** (`application/json`): `KioskCodeIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `token` | string | yes |  | `maxLength=1024` | The kiosk device token |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `KioskCodeOut` |
+| 401 | Invalid credentials | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 429 | Too many failed attempts (see Retry-After) | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/auth/kiosk`
+
+operation_id: `pair_kiosk`
+
+Open, rate-limited. Redeems a pairing code for a kiosk session cookie.
+
+**Request body** (`application/json`): `KioskPairIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `code` | string | yes |  | `maxLength=256` | A pairing code from the kiosk code endpoint |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `AuthStatusOut` |
+| 401 | Invalid credentials | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 429 | Too many failed attempts (see Retry-After) | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/auth/kiosk-token/rotate`
+
+operation_id: `rotate_kiosk_token`
+
+Write a new kiosk token file and revoke every kiosk session (the kiosk re-pairs).
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `RevokedOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
 ## camera
 
@@ -546,6 +790,7 @@ operation_id: `download_all_camera_files`
 | Field | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | `file` | CameraFileRef \| null | no |  |  | Download only this file (folder is then ignored) |
+| `files` | list[CameraFileRef] \| null | no |  | `maxItems=1000` | Download only these files (folder and file are then ignored) |
 | `folder` | string \| null | no |  |  | Camera folder to download (recursively); null = whole card |
 | `delete_after` | boolean | no | `false` |  | Delete each file from the card after |
 | `only_new` | boolean | no | `true` |  | Skip files already downloaded earlier |
@@ -555,6 +800,31 @@ operation_id: `download_all_camera_files`
 | Status | Description | Body |
 |---|---|---|
 | 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/camera/files/delete`
+
+operation_id: `delete_camera_files`
+
+Delete several files from the card. Failures (for example another owner holds the
+camera lease) are reported per file; the rest are still deleted.
+
+**Request body** (`application/json`): `DeleteCameraFilesRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `files` | list[CameraFileRef] | yes |  | `minItems=1`, `maxItems=1000` |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `DeleteCameraFilesResult` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -750,6 +1020,7 @@ operation_id: `update_config`
 | `camera` | CameraConfigPatch \| null | no |  |  |  |
 | `liveview` | LiveViewConfigPatch \| null | no |  |  |  |
 | `kiosk` | KioskConfigPatch \| null | no |  |  |  |
+| `security` | SecurityConfigPatch \| null | no |  |  |  |
 | `timelapse` | TimelapseConfigPatch \| null | no |  |  |  |
 | `video` | VideoConfigPatch \| null | no |  |  |  |
 | `media` | MediaConfigPatch \| null | no |  |  |  |
@@ -863,6 +1134,31 @@ generated client carry the event types.
 
 ## files
 
+### `GET /api/v1/files/zip/{ticket}`
+
+operation_id: `download_zip`
+
+Redeem a ticket from ``POST /files/zip``. No other credential is needed; a ticket
+works once.
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `ticket` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | A ZIP archive, or the single file itself | `application/zip`: `string(binary)` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ### `GET /api/v1/files`
 
 operation_id: `list_files`
@@ -882,6 +1178,55 @@ operation_id: `list_files`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `FilePage` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/files/delete`
+
+operation_id: `delete_files`
+
+Delete many files. Failures are reported per path; the others are still deleted.
+
+**Request body** (`application/json`): `DeletePathsRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `paths` | list[string] | yes |  | `minItems=1`, `maxItems=5000` | Paths to delete |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `DeletePathsResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/files/zip`
+
+operation_id: `create_zip_download`
+
+Issue a single-use download URL (60 s). One path downloads the file itself, several
+stream a ZIP archive.
+
+**Request body** (`application/json`): `ZipRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `paths` | list[string] | yes |  | `minItems=1`, `maxItems=5000` | Files to download (one path = the file itself) |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `ZipTicket` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -2550,6 +2895,7 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Shrink frames wider than this, in pixels. Leave empty to turn off. |
 | kiosk | `scale` | enum("auto", "1", "1.25", "1.5", "2") | `"auto"` |  | Size of the touchscreen kiosk's interface. Auto works it out from the screen. |
 | kiosk | `sleep_after_min` | integer | `5` | `>=0`, `<=1440` | Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on. |
+| security | `secure_cookie` | enum("auto", "always") | `"auto"` |  | Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app. |
 | timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | The shortest time allowed between frames. |
 | timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | A time-lapse stops after this long. |
 | timelapse | `failure_budget` | integer | `5` | `>=1`, `<=100` | Stop the time-lapse after this many failed frames in a row. |

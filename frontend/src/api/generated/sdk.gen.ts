@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddLocationData, AddLocationErrors, AddLocationResponses, ApplyPresetData, ApplyPresetErrors, ApplyPresetResponses, AutofocusData, AutofocusErrors, AutofocusResponses, CancelJobData, CancelJobErrors, CancelJobResponses, CapturePhotoData, CapturePhotoErrors, CapturePhotoResponses, CheckLocationData, CheckLocationErrors, CheckLocationResponses, ConnectCameraData, ConnectCameraErrors, ConnectCameraResponses, CreateApiKeyData, CreateApiKeyErrors, CreateApiKeyResponses, CreatePresetData, CreatePresetErrors, CreatePresetFromCameraData, CreatePresetFromCameraErrors, CreatePresetFromCameraResponses, CreatePresetResponses, DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteCameraFileData, DeleteCameraFileErrors, DeleteCameraFileResponses, DeleteFileData, DeleteFileErrors, DeleteFileResponses, DeleteLocationData, DeleteLocationErrors, DeleteLocationResponses, DeletePresetData, DeletePresetErrors, DeletePresetResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteVideoData, DeleteVideoErrors, DeleteVideoResponses, DisconnectCameraData, DisconnectCameraErrors, DisconnectCameraResponses, DownloadAllCameraFilesData, DownloadAllCameraFilesErrors, DownloadAllCameraFilesResponses, DownloadCameraFileData, DownloadCameraFileErrors, DownloadCameraFileResponses, DownloadFileData, DownloadFileErrors, DownloadFileResponses, DownloadVideoData, DownloadVideoErrors, DownloadVideoResponses, ExportPresetsData, ExportPresetsErrors, ExportPresetsResponses, FormatDiskData, FormatDiskErrors, FormatDiskResponses, GetBackupStatusData, GetBackupStatusErrors, GetBackupStatusResponses, GetBulbStatusData, GetBulbStatusErrors, GetBulbStatusResponses, GetCameraBatteryData, GetCameraBatteryErrors, GetCameraBatteryResponses, GetCameraData, GetCameraDatetimeData, GetCameraDatetimeErrors, GetCameraDatetimeResponses, GetCameraErrors, GetCameraPreviewData, GetCameraPreviewErrors, GetCameraPreviewResponses, GetCameraResponses, GetCameraStorageData, GetCameraStorageErrors, GetCameraStorageResponses, GetCameraSummaryData, GetCameraSummaryErrors, GetCameraSummaryResponses, GetCameraThumbnailData, GetCameraThumbnailErrors, GetCameraThumbnailResponses, GetCaptureTargetData, GetCaptureTargetErrors, GetCaptureTargetResponses, GetConfigData, GetConfigErrors, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaErrors, GetConfigSchemaResponses, GetEventSchemaData, GetEventSchemaErrors, GetEventSchemaResponses, GetFocusData, GetFocusErrors, GetFocusResponses, GetHealthData, GetHealthResponses, GetInfoData, GetInfoErrors, GetInfoResponses, GetJobData, GetJobErrors, GetJobResponses, GetLiveviewData, GetLiveviewErrors, GetLiveviewResponses, GetLiveviewSnapshotData, GetLiveviewSnapshotErrors, GetLiveviewSnapshotResponses, GetPresetData, GetPresetErrors, GetPresetResponses, GetRecordingData, GetRecordingErrors, GetRecordingResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetSettingData, GetSettingErrors, GetSettingResponses, GetThumbnailData, GetThumbnailErrors, GetThumbnailResponses, GetTimelapseStatusData, GetTimelapseStatusErrors, GetTimelapseStatusResponses, ImportPresetsData, ImportPresetsErrors, ImportPresetsResponses, ListCameraFilesData, ListCameraFilesErrors, ListCameraFilesResponses, ListCameraFoldersData, ListCameraFoldersErrors, ListCameraFoldersResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListJobsData, ListJobsErrors, ListJobsResponses, ListLocationsData, ListLocationsErrors, ListLocationsResponses, ListPresetsData, ListPresetsErrors, ListPresetsResponses, ListSessionFramesData, ListSessionFramesErrors, ListSessionFramesResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListSettingsData, ListSettingsErrors, ListSettingsResponses, ListTimelapsePresetsData, ListTimelapsePresetsErrors, ListTimelapsePresetsResponses, ListVideosData, ListVideosErrors, ListVideosResponses, ManualFocusData, ManualFocusErrors, ManualFocusResponses, MountLocationData, MountLocationErrors, MountLocationResponses, PauseTimelapseData, PauseTimelapseErrors, PauseTimelapseResponses, PreviewTimelapseData, PreviewTimelapseDraftData, PreviewTimelapseDraftErrors, PreviewTimelapseDraftResponses, PreviewTimelapseErrors, PreviewTimelapseResponses, RefreshSettingsData, RefreshSettingsErrors, RefreshSettingsResponses, RenameSessionData, RenameSessionErrors, RenameSessionResponses, RenderSessionVideoData, RenderSessionVideoErrors, RenderSessionVideoResponses, ResetConfigData, ResetConfigErrors, ResetConfigResponses, ResetFocusPositionData, ResetFocusPositionErrors, ResetFocusPositionResponses, ResumeTimelapseData, ResumeTimelapseErrors, ResumeTimelapseResponses, RunBackupData, RunBackupErrors, RunBackupResponses, SetAfPointData, SetAfPointErrors, SetAfPointResponses, SetCameraDatetimeData, SetCameraDatetimeErrors, SetCameraDatetimeResponses, SetCaptureTargetData, SetCaptureTargetErrors, SetCaptureTargetResponses, SetKioskDisplayData, SetKioskDisplayErrors, SetKioskDisplayResponses, SetSettingData, SetSettingErrors, SetSettingResponses, SetStorageBackupsData, SetStorageBackupsErrors, SetStorageBackupsResponses, SetStorageTargetData, SetStorageTargetErrors, SetStorageTargetResponses, SetTimelapseConfigData, SetTimelapseConfigErrors, SetTimelapseConfigResponses, StartBracketCaptureData, StartBracketCaptureErrors, StartBracketCaptureResponses, StartBulbCaptureData, StartBulbCaptureErrors, StartBulbCaptureResponses, StartFocusStackData, StartFocusStackErrors, StartFocusStackResponses, StartLiveviewData, StartLiveviewErrors, StartLiveviewResponses, StartOffloadData, StartOffloadErrors, StartOffloadResponses, StartRecordingData, StartRecordingErrors, StartRecordingResponses, StartTimelapseData, StartTimelapseErrors, StartTimelapseResponses, StartVerifyData, StartVerifyErrors, StartVerifyResponses, StopLiveviewData, StopLiveviewErrors, StopLiveviewResponses, StopRecordingData, StopRecordingErrors, StopRecordingResponses, StopTimelapseData, StopTimelapseErrors, StopTimelapseResponses, StreamKioskDisplayData, StreamKioskDisplayResponse, StreamKioskDisplayResponses, StreamKioskScaleData, StreamKioskScaleResponse, StreamKioskScaleResponses, TestSmbLocationData, TestSmbLocationErrors, TestSmbLocationResponses, TriggerCaptureData, TriggerCaptureErrors, TriggerCaptureResponses, UnmountLocationData, UnmountLocationErrors, UnmountLocationResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateLocationData, UpdateLocationErrors, UpdateLocationResponses, UpdatePresetData, UpdatePresetErrors, UpdatePresetResponses, UpdateSettingsData, UpdateSettingsErrors, UpdateSettingsResponses } from './types.gen';
+import type { AddLocationData, AddLocationErrors, AddLocationResponses, ApplyPresetData, ApplyPresetErrors, ApplyPresetResponses, AutofocusData, AutofocusErrors, AutofocusResponses, CancelJobData, CancelJobErrors, CancelJobResponses, CapturePhotoData, CapturePhotoErrors, CapturePhotoResponses, CheckLocationData, CheckLocationErrors, CheckLocationResponses, ConnectCameraData, ConnectCameraErrors, ConnectCameraResponses, CreateApiKeyData, CreateApiKeyErrors, CreateApiKeyResponses, CreatePresetData, CreatePresetErrors, CreatePresetFromCameraData, CreatePresetFromCameraErrors, CreatePresetFromCameraResponses, CreatePresetResponses, CreateZipDownloadData, CreateZipDownloadErrors, CreateZipDownloadResponses, DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteCameraFileData, DeleteCameraFileErrors, DeleteCameraFileResponses, DeleteCameraFilesData, DeleteCameraFilesErrors, DeleteCameraFilesResponses, DeleteFileData, DeleteFileErrors, DeleteFileResponses, DeleteFilesData, DeleteFilesErrors, DeleteFilesResponses, DeleteLocationData, DeleteLocationErrors, DeleteLocationResponses, DeletePasswordData, DeletePasswordErrors, DeletePasswordResponses, DeletePresetData, DeletePresetErrors, DeletePresetResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteVideoData, DeleteVideoErrors, DeleteVideoResponses, DisconnectCameraData, DisconnectCameraErrors, DisconnectCameraResponses, DownloadAllCameraFilesData, DownloadAllCameraFilesErrors, DownloadAllCameraFilesResponses, DownloadCameraFileData, DownloadCameraFileErrors, DownloadCameraFileResponses, DownloadFileData, DownloadFileErrors, DownloadFileResponses, DownloadVideoData, DownloadVideoErrors, DownloadVideoResponses, DownloadZipData, DownloadZipErrors, DownloadZipResponses, ExportPresetsData, ExportPresetsErrors, ExportPresetsResponses, FormatDiskData, FormatDiskErrors, FormatDiskResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetBackupStatusData, GetBackupStatusErrors, GetBackupStatusResponses, GetBulbStatusData, GetBulbStatusErrors, GetBulbStatusResponses, GetCameraBatteryData, GetCameraBatteryErrors, GetCameraBatteryResponses, GetCameraData, GetCameraDatetimeData, GetCameraDatetimeErrors, GetCameraDatetimeResponses, GetCameraErrors, GetCameraPreviewData, GetCameraPreviewErrors, GetCameraPreviewResponses, GetCameraResponses, GetCameraStorageData, GetCameraStorageErrors, GetCameraStorageResponses, GetCameraSummaryData, GetCameraSummaryErrors, GetCameraSummaryResponses, GetCameraThumbnailData, GetCameraThumbnailErrors, GetCameraThumbnailResponses, GetCaptureTargetData, GetCaptureTargetErrors, GetCaptureTargetResponses, GetConfigData, GetConfigErrors, GetConfigResponses, GetConfigSchemaData, GetConfigSchemaErrors, GetConfigSchemaResponses, GetEventSchemaData, GetEventSchemaErrors, GetEventSchemaResponses, GetFocusData, GetFocusErrors, GetFocusResponses, GetHealthData, GetHealthResponses, GetInfoData, GetInfoErrors, GetInfoResponses, GetJobData, GetJobErrors, GetJobResponses, GetKioskPairingCodeData, GetKioskPairingCodeErrors, GetKioskPairingCodeResponses, GetLiveviewData, GetLiveviewErrors, GetLiveviewResponses, GetLiveviewSnapshotData, GetLiveviewSnapshotErrors, GetLiveviewSnapshotResponses, GetPresetData, GetPresetErrors, GetPresetResponses, GetRecordingData, GetRecordingErrors, GetRecordingResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetSettingData, GetSettingErrors, GetSettingResponses, GetThumbnailData, GetThumbnailErrors, GetThumbnailResponses, GetTimelapseStatusData, GetTimelapseStatusErrors, GetTimelapseStatusResponses, ImportPresetsData, ImportPresetsErrors, ImportPresetsResponses, ListAuthSessionsData, ListAuthSessionsErrors, ListAuthSessionsResponses, ListCameraFilesData, ListCameraFilesErrors, ListCameraFilesResponses, ListCameraFoldersData, ListCameraFoldersErrors, ListCameraFoldersResponses, ListFilesData, ListFilesErrors, ListFilesResponses, ListJobsData, ListJobsErrors, ListJobsResponses, ListLocationsData, ListLocationsErrors, ListLocationsResponses, ListPresetsData, ListPresetsErrors, ListPresetsResponses, ListSessionFramesData, ListSessionFramesErrors, ListSessionFramesResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListSettingsData, ListSettingsErrors, ListSettingsResponses, ListTimelapsePresetsData, ListTimelapsePresetsErrors, ListTimelapsePresetsResponses, ListVideosData, ListVideosErrors, ListVideosResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, ManualFocusData, ManualFocusErrors, ManualFocusResponses, MountLocationData, MountLocationErrors, MountLocationResponses, PairKioskData, PairKioskErrors, PairKioskResponses, PauseTimelapseData, PauseTimelapseErrors, PauseTimelapseResponses, PreviewTimelapseData, PreviewTimelapseDraftData, PreviewTimelapseDraftErrors, PreviewTimelapseDraftResponses, PreviewTimelapseErrors, PreviewTimelapseResponses, RefreshSettingsData, RefreshSettingsErrors, RefreshSettingsResponses, RenameSessionData, RenameSessionErrors, RenameSessionResponses, RenderSessionVideoData, RenderSessionVideoErrors, RenderSessionVideoResponses, ResetConfigData, ResetConfigErrors, ResetConfigResponses, ResetFocusPositionData, ResetFocusPositionErrors, ResetFocusPositionResponses, ResumeTimelapseData, ResumeTimelapseErrors, ResumeTimelapseResponses, RevokeAllAuthSessionsData, RevokeAllAuthSessionsErrors, RevokeAllAuthSessionsResponses, RevokeAuthSessionData, RevokeAuthSessionErrors, RevokeAuthSessionResponses, RotateKioskTokenData, RotateKioskTokenErrors, RotateKioskTokenResponses, RunBackupData, RunBackupErrors, RunBackupResponses, SetAfPointData, SetAfPointErrors, SetAfPointResponses, SetCameraDatetimeData, SetCameraDatetimeErrors, SetCameraDatetimeResponses, SetCaptureTargetData, SetCaptureTargetErrors, SetCaptureTargetResponses, SetKioskDisplayData, SetKioskDisplayErrors, SetKioskDisplayResponses, SetPasswordData, SetPasswordErrors, SetPasswordResponses, SetSettingData, SetSettingErrors, SetSettingResponses, SetStorageBackupsData, SetStorageBackupsErrors, SetStorageBackupsResponses, SetStorageTargetData, SetStorageTargetErrors, SetStorageTargetResponses, SetTimelapseConfigData, SetTimelapseConfigErrors, SetTimelapseConfigResponses, StartBracketCaptureData, StartBracketCaptureErrors, StartBracketCaptureResponses, StartBulbCaptureData, StartBulbCaptureErrors, StartBulbCaptureResponses, StartFocusStackData, StartFocusStackErrors, StartFocusStackResponses, StartLiveviewData, StartLiveviewErrors, StartLiveviewResponses, StartOffloadData, StartOffloadErrors, StartOffloadResponses, StartRecordingData, StartRecordingErrors, StartRecordingResponses, StartTimelapseData, StartTimelapseErrors, StartTimelapseResponses, StartVerifyData, StartVerifyErrors, StartVerifyResponses, StopLiveviewData, StopLiveviewErrors, StopLiveviewResponses, StopRecordingData, StopRecordingErrors, StopRecordingResponses, StopTimelapseData, StopTimelapseErrors, StopTimelapseResponses, StreamKioskDisplayData, StreamKioskDisplayResponse, StreamKioskDisplayResponses, StreamKioskScaleData, StreamKioskScaleResponse, StreamKioskScaleResponses, TestSmbLocationData, TestSmbLocationErrors, TestSmbLocationResponses, TriggerCaptureData, TriggerCaptureErrors, TriggerCaptureResponses, UnmountLocationData, UnmountLocationErrors, UnmountLocationResponses, UpdateConfigData, UpdateConfigErrors, UpdateConfigResponses, UpdateLocationData, UpdateLocationErrors, UpdateLocationResponses, UpdatePresetData, UpdatePresetErrors, UpdatePresetResponses, UpdateSettingsData, UpdateSettingsErrors, UpdateSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,12 +19,171 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
+ * Pair Kiosk
+ *
+ * Open, rate-limited. Redeems a pairing code for a kiosk session cookie.
+ */
+export const pairKiosk = <ThrowOnError extends boolean = false>(options: Options<PairKioskData, ThrowOnError>): RequestResult<PairKioskResponses, PairKioskErrors, ThrowOnError> => (options.client ?? client).post<PairKioskResponses, PairKioskErrors, ThrowOnError>({
+    url: '/api/v1/auth/kiosk',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Rotate Kiosk Token
+ *
+ * Write a new kiosk token file and revoke every kiosk session (the kiosk re-pairs).
+ */
+export const rotateKioskToken = <ThrowOnError extends boolean = false>(options?: Options<RotateKioskTokenData, ThrowOnError>): RequestResult<RotateKioskTokenResponses, RotateKioskTokenErrors, ThrowOnError> => (options?.client ?? client).post<RotateKioskTokenResponses, RotateKioskTokenErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/auth/kiosk-token/rotate',
+    ...options
+});
+
+/**
+ * Get Kiosk Pairing Code
+ *
+ * Open, rate-limited. Trades the kiosk device token for a single-use code (30 s).
+ */
+export const getKioskPairingCode = <ThrowOnError extends boolean = false>(options: Options<GetKioskPairingCodeData, ThrowOnError>): RequestResult<GetKioskPairingCodeResponses, GetKioskPairingCodeErrors, ThrowOnError> => (options.client ?? client).post<GetKioskPairingCodeResponses, GetKioskPairingCodeErrors, ThrowOnError>({
+    url: '/api/v1/auth/kiosk/code',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Login
+ *
+ * Open, rate-limited (429 with Retry-After). Sets the session cookie.
+ *
+ * ``password`` signs in with the app password. ``api_key`` works only while no password is set.
+ */
+export const login = <ThrowOnError extends boolean = false>(options: Options<LoginData, ThrowOnError>): RequestResult<LoginResponses, LoginErrors, ThrowOnError> => (options.client ?? client).post<LoginResponses, LoginErrors, ThrowOnError>({
+    url: '/api/v1/auth/login',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Logout
+ *
+ * Open. Revokes this browser's session and clears its cookie.
+ */
+export const logout = <ThrowOnError extends boolean = false>(options?: Options<LogoutData, ThrowOnError>): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> => (options?.client ?? client).post<LogoutResponses, LogoutErrors, ThrowOnError>({ url: '/api/v1/auth/logout', ...options });
+
+/**
+ * Delete Password
+ *
+ * Remove the app password (needs the current one). Browser sessions are revoked; with
+ * no API key either, the app returns to open mode.
+ */
+export const deletePassword = <ThrowOnError extends boolean = false>(options: Options<DeletePasswordData, ThrowOnError>): RequestResult<DeletePasswordResponses, DeletePasswordErrors, ThrowOnError> => (options.client ?? client).delete<DeletePasswordResponses, DeletePasswordErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/auth/password',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set Password
+ *
+ * Set or change the app password; signs this browser in and revokes other browser sessions.
+ *
+ * ``current`` is required only when a password is already set (403 when wrong).
+ */
+export const setPassword = <ThrowOnError extends boolean = false>(options: Options<SetPasswordData, ThrowOnError>): RequestResult<SetPasswordResponses, SetPasswordErrors, ThrowOnError> => (options.client ?? client).put<SetPasswordResponses, SetPasswordErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/auth/password',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List Auth Sessions
+ */
+export const listAuthSessions = <ThrowOnError extends boolean = false>(options?: Options<ListAuthSessionsData, ThrowOnError>): RequestResult<ListAuthSessionsResponses, ListAuthSessionsErrors, ThrowOnError> => (options?.client ?? client).get<ListAuthSessionsResponses, ListAuthSessionsErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/auth/sessions',
+    ...options
+});
+
+/**
+ * Revoke All Auth Sessions
+ *
+ * Sign out every other browser. Keeps this session and the kiosk sessions.
+ */
+export const revokeAllAuthSessions = <ThrowOnError extends boolean = false>(options?: Options<RevokeAllAuthSessionsData, ThrowOnError>): RequestResult<RevokeAllAuthSessionsResponses, RevokeAllAuthSessionsErrors, ThrowOnError> => (options?.client ?? client).post<RevokeAllAuthSessionsResponses, RevokeAllAuthSessionsErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/auth/sessions/revoke-all',
+    ...options
+});
+
+/**
+ * Revoke Auth Session
+ */
+export const revokeAuthSession = <ThrowOnError extends boolean = false>(options: Options<RevokeAuthSessionData, ThrowOnError>): RequestResult<RevokeAuthSessionResponses, RevokeAuthSessionErrors, ThrowOnError> => (options.client ?? client).delete<RevokeAuthSessionResponses, RevokeAuthSessionErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/auth/sessions/{session_id}',
+    ...options
+});
+
+/**
+ * Get Auth Status
+ *
+ * Open. What the login screen needs: whether sign-in is required and whether it is done.
+ */
+export const getAuthStatus = <ThrowOnError extends boolean = false>(options?: Options<GetAuthStatusData, ThrowOnError>): RequestResult<GetAuthStatusResponses, GetAuthStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetAuthStatusResponses, GetAuthStatusErrors, ThrowOnError>({ url: '/api/v1/auth/status', ...options });
+
+/**
  * Run Backup
  *
  * Start a sync now (a run in progress is repeated once it ends).
  */
 export const runBackup = <ThrowOnError extends boolean = false>(options?: Options<RunBackupData, ThrowOnError>): RequestResult<RunBackupResponses, RunBackupErrors, ThrowOnError> => (options?.client ?? client).post<RunBackupResponses, RunBackupErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/backup/run',
     ...options
 });
@@ -33,7 +192,11 @@ export const runBackup = <ThrowOnError extends boolean = false>(options?: Option
  * Get Backup Status
  */
 export const getBackupStatus = <ThrowOnError extends boolean = false>(options?: Options<GetBackupStatusData, ThrowOnError>): RequestResult<GetBackupStatusResponses, GetBackupStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetBackupStatusResponses, GetBackupStatusErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/backup/status',
     ...options
 });
@@ -42,7 +205,11 @@ export const getBackupStatus = <ThrowOnError extends boolean = false>(options?: 
  * Get Camera
  */
 export const getCamera = <ThrowOnError extends boolean = false>(options?: Options<GetCameraData, ThrowOnError>): RequestResult<GetCameraResponses, GetCameraErrors, ThrowOnError> => (options?.client ?? client).get<GetCameraResponses, GetCameraErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera',
     ...options
 });
@@ -51,7 +218,11 @@ export const getCamera = <ThrowOnError extends boolean = false>(options?: Option
  * Get Camera Battery
  */
 export const getCameraBattery = <ThrowOnError extends boolean = false>(options?: Options<GetCameraBatteryData, ThrowOnError>): RequestResult<GetCameraBatteryResponses, GetCameraBatteryErrors, ThrowOnError> => (options?.client ?? client).get<GetCameraBatteryResponses, GetCameraBatteryErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/battery',
     ...options
 });
@@ -60,7 +231,11 @@ export const getCameraBattery = <ThrowOnError extends boolean = false>(options?:
  * Get Capture Target
  */
 export const getCaptureTarget = <ThrowOnError extends boolean = false>(options?: Options<GetCaptureTargetData, ThrowOnError>): RequestResult<GetCaptureTargetResponses, GetCaptureTargetErrors, ThrowOnError> => (options?.client ?? client).get<GetCaptureTargetResponses, GetCaptureTargetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/capture-target',
     ...options
 });
@@ -71,7 +246,11 @@ export const getCaptureTarget = <ThrowOnError extends boolean = false>(options?:
  * `card`, `ram` or a raw choice. 409 during a recording or time-lapse.
  */
 export const setCaptureTarget = <ThrowOnError extends boolean = false>(options: Options<SetCaptureTargetData, ThrowOnError>): RequestResult<SetCaptureTargetResponses, SetCaptureTargetErrors, ThrowOnError> => (options.client ?? client).put<SetCaptureTargetResponses, SetCaptureTargetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/capture-target',
     ...options,
     headers: {
@@ -84,7 +263,11 @@ export const setCaptureTarget = <ThrowOnError extends boolean = false>(options: 
  * Connect Camera
  */
 export const connectCamera = <ThrowOnError extends boolean = false>(options?: Options<ConnectCameraData, ThrowOnError>): RequestResult<ConnectCameraResponses, ConnectCameraErrors, ThrowOnError> => (options?.client ?? client).post<ConnectCameraResponses, ConnectCameraErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/connect',
     ...options
 });
@@ -95,7 +278,11 @@ export const connectCamera = <ThrowOnError extends boolean = false>(options?: Op
  * Camera clock, server clock and their offset.
  */
 export const getCameraDatetime = <ThrowOnError extends boolean = false>(options?: Options<GetCameraDatetimeData, ThrowOnError>): RequestResult<GetCameraDatetimeResponses, GetCameraDatetimeErrors, ThrowOnError> => (options?.client ?? client).get<GetCameraDatetimeResponses, GetCameraDatetimeErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/datetime',
     ...options
 });
@@ -109,7 +296,11 @@ export const getCameraDatetime = <ThrowOnError extends boolean = false>(options?
  * 409 while another owner holds the camera.
  */
 export const setCameraDatetime = <ThrowOnError extends boolean = false>(options: Options<SetCameraDatetimeData, ThrowOnError>): RequestResult<SetCameraDatetimeResponses, SetCameraDatetimeErrors, ThrowOnError> => (options.client ?? client).put<SetCameraDatetimeResponses, SetCameraDatetimeErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/datetime',
     ...options,
     headers: {
@@ -122,7 +313,11 @@ export const setCameraDatetime = <ThrowOnError extends boolean = false>(options:
  * Disconnect Camera
  */
 export const disconnectCamera = <ThrowOnError extends boolean = false>(options?: Options<DisconnectCameraData, ThrowOnError>): RequestResult<DisconnectCameraResponses, DisconnectCameraErrors, ThrowOnError> => (options?.client ?? client).post<DisconnectCameraResponses, DisconnectCameraErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/disconnect',
     ...options
 });
@@ -131,16 +326,44 @@ export const disconnectCamera = <ThrowOnError extends boolean = false>(options?:
  * List Camera Files
  */
 export const listCameraFiles = <ThrowOnError extends boolean = false>(options?: Options<ListCameraFilesData, ThrowOnError>): RequestResult<ListCameraFilesResponses, ListCameraFilesErrors, ThrowOnError> => (options?.client ?? client).get<ListCameraFilesResponses, ListCameraFilesErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/files',
     ...options
+});
+
+/**
+ * Delete Camera Files
+ *
+ * Delete several files from the card. Failures (for example another owner holds the
+ * camera lease) are reported per file; the rest are still deleted.
+ */
+export const deleteCameraFiles = <ThrowOnError extends boolean = false>(options: Options<DeleteCameraFilesData, ThrowOnError>): RequestResult<DeleteCameraFilesResponses, DeleteCameraFilesErrors, ThrowOnError> => (options.client ?? client).post<DeleteCameraFilesResponses, DeleteCameraFilesErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/camera/files/delete',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**
  * Download All Camera Files
  */
 export const downloadAllCameraFiles = <ThrowOnError extends boolean = false>(options: Options<DownloadAllCameraFilesData, ThrowOnError>): RequestResult<DownloadAllCameraFilesResponses, DownloadAllCameraFilesErrors, ThrowOnError> => (options.client ?? client).post<DownloadAllCameraFilesResponses, DownloadAllCameraFilesErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/files/download-all',
     ...options,
     headers: {
@@ -155,7 +378,11 @@ export const downloadAllCameraFiles = <ThrowOnError extends boolean = false>(opt
  * Delete one file from the card. 409 while another owner holds the camera lease.
  */
 export const deleteCameraFile = <ThrowOnError extends boolean = false>(options: Options<DeleteCameraFileData, ThrowOnError>): RequestResult<DeleteCameraFileResponses, DeleteCameraFileErrors, ThrowOnError> => (options.client ?? client).delete<DeleteCameraFileResponses, DeleteCameraFileErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/files/{folder}/{name}',
     ...options
 });
@@ -164,7 +391,11 @@ export const deleteCameraFile = <ThrowOnError extends boolean = false>(options: 
  * Download Camera File
  */
 export const downloadCameraFile = <ThrowOnError extends boolean = false>(options: Options<DownloadCameraFileData, ThrowOnError>): RequestResult<DownloadCameraFileResponses, DownloadCameraFileErrors, ThrowOnError> => (options.client ?? client).get<DownloadCameraFileResponses, DownloadCameraFileErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/files/{folder}/{name}',
     ...options
 });
@@ -173,7 +404,11 @@ export const downloadCameraFile = <ThrowOnError extends boolean = false>(options
  * List Camera Folders
  */
 export const listCameraFolders = <ThrowOnError extends boolean = false>(options?: Options<ListCameraFoldersData, ThrowOnError>): RequestResult<ListCameraFoldersResponses, ListCameraFoldersErrors, ThrowOnError> => (options?.client ?? client).get<ListCameraFoldersResponses, ListCameraFoldersErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/folders',
     ...options
 });
@@ -188,7 +423,11 @@ export const listCameraFolders = <ThrowOnError extends boolean = false>(options?
  * A client that goes away cancels the render (a still-queued camera read never runs).
  */
 export const getCameraPreview = <ThrowOnError extends boolean = false>(options: Options<GetCameraPreviewData, ThrowOnError>): RequestResult<GetCameraPreviewResponses, GetCameraPreviewErrors, ThrowOnError> => (options.client ?? client).get<GetCameraPreviewResponses, GetCameraPreviewErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/preview',
     ...options
 });
@@ -197,7 +436,11 @@ export const getCameraPreview = <ThrowOnError extends boolean = false>(options: 
  * Get Camera Storage
  */
 export const getCameraStorage = <ThrowOnError extends boolean = false>(options?: Options<GetCameraStorageData, ThrowOnError>): RequestResult<GetCameraStorageResponses, GetCameraStorageErrors, ThrowOnError> => (options?.client ?? client).get<GetCameraStorageResponses, GetCameraStorageErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/storage',
     ...options
 });
@@ -206,7 +449,11 @@ export const getCameraStorage = <ThrowOnError extends boolean = false>(options?:
  * Get Camera Summary
  */
 export const getCameraSummary = <ThrowOnError extends boolean = false>(options?: Options<GetCameraSummaryData, ThrowOnError>): RequestResult<GetCameraSummaryResponses, GetCameraSummaryErrors, ThrowOnError> => (options?.client ?? client).get<GetCameraSummaryResponses, GetCameraSummaryErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/summary',
     ...options
 });
@@ -215,7 +462,11 @@ export const getCameraSummary = <ThrowOnError extends boolean = false>(options?:
  * Get Camera Thumbnail
  */
 export const getCameraThumbnail = <ThrowOnError extends boolean = false>(options: Options<GetCameraThumbnailData, ThrowOnError>): RequestResult<GetCameraThumbnailResponses, GetCameraThumbnailErrors, ThrowOnError> => (options.client ?? client).get<GetCameraThumbnailResponses, GetCameraThumbnailErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/camera/thumbnail',
     ...options
 });
@@ -224,7 +475,11 @@ export const getCameraThumbnail = <ThrowOnError extends boolean = false>(options
  * Capture Photo
  */
 export const capturePhoto = <ThrowOnError extends boolean = false>(options: Options<CapturePhotoData, ThrowOnError>): RequestResult<CapturePhotoResponses, CapturePhotoErrors, ThrowOnError> => (options.client ?? client).post<CapturePhotoResponses, CapturePhotoErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/capture',
     ...options,
     headers: {
@@ -239,7 +494,11 @@ export const capturePhoto = <ThrowOnError extends boolean = false>(options: Opti
  * Capture one bracket set (every step applied and shot), then restore the settings.
  */
 export const startBracketCapture = <ThrowOnError extends boolean = false>(options: Options<StartBracketCaptureData, ThrowOnError>): RequestResult<StartBracketCaptureResponses, StartBracketCaptureErrors, ThrowOnError> => (options.client ?? client).post<StartBracketCaptureResponses, StartBracketCaptureErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/capture/bracket',
     ...options,
     headers: {
@@ -252,7 +511,11 @@ export const startBracketCapture = <ThrowOnError extends boolean = false>(option
  * Get Bulb Status
  */
 export const getBulbStatus = <ThrowOnError extends boolean = false>(options?: Options<GetBulbStatusData, ThrowOnError>): RequestResult<GetBulbStatusResponses, GetBulbStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetBulbStatusResponses, GetBulbStatusErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/capture/bulb',
     ...options
 });
@@ -264,7 +527,11 @@ export const getBulbStatus = <ThrowOnError extends boolean = false>(options?: Op
  * it closes the shutter at once and still keeps the frame.
  */
 export const startBulbCapture = <ThrowOnError extends boolean = false>(options: Options<StartBulbCaptureData, ThrowOnError>): RequestResult<StartBulbCaptureResponses, StartBulbCaptureErrors, ThrowOnError> => (options.client ?? client).post<StartBulbCaptureResponses, StartBulbCaptureErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/capture/bulb',
     ...options,
     headers: {
@@ -277,7 +544,11 @@ export const startBulbCapture = <ThrowOnError extends boolean = false>(options: 
  * Trigger Capture
  */
 export const triggerCapture = <ThrowOnError extends boolean = false>(options?: Options<TriggerCaptureData, ThrowOnError>): RequestResult<TriggerCaptureResponses, TriggerCaptureErrors, ThrowOnError> => (options?.client ?? client).post<TriggerCaptureResponses, TriggerCaptureErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/capture/trigger',
     ...options
 });
@@ -286,7 +557,11 @@ export const triggerCapture = <ThrowOnError extends boolean = false>(options?: O
  * Get Config
  */
 export const getConfig = <ThrowOnError extends boolean = false>(options?: Options<GetConfigData, ThrowOnError>): RequestResult<GetConfigResponses, GetConfigErrors, ThrowOnError> => (options?.client ?? client).get<GetConfigResponses, GetConfigErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/config',
     ...options
 });
@@ -295,7 +570,11 @@ export const getConfig = <ThrowOnError extends boolean = false>(options?: Option
  * Update Config
  */
 export const updateConfig = <ThrowOnError extends boolean = false>(options: Options<UpdateConfigData, ThrowOnError>): RequestResult<UpdateConfigResponses, UpdateConfigErrors, ThrowOnError> => (options.client ?? client).patch<UpdateConfigResponses, UpdateConfigErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/config',
     ...options,
     headers: {
@@ -308,7 +587,11 @@ export const updateConfig = <ThrowOnError extends boolean = false>(options: Opti
  * Delete Api Key
  */
 export const deleteApiKey = <ThrowOnError extends boolean = false>(options?: Options<DeleteApiKeyData, ThrowOnError>): RequestResult<DeleteApiKeyResponses, DeleteApiKeyErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteApiKeyResponses, DeleteApiKeyErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/config/api-key',
     ...options
 });
@@ -319,7 +602,11 @@ export const deleteApiKey = <ThrowOnError extends boolean = false>(options?: Opt
  * Generate (or rotate) the API key. The plaintext key is returned only here.
  */
 export const createApiKey = <ThrowOnError extends boolean = false>(options?: Options<CreateApiKeyData, ThrowOnError>): RequestResult<CreateApiKeyResponses, CreateApiKeyErrors, ThrowOnError> => (options?.client ?? client).post<CreateApiKeyResponses, CreateApiKeyErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/config/api-key',
     ...options
 });
@@ -331,7 +618,11 @@ export const createApiKey = <ThrowOnError extends boolean = false>(options?: Opt
  * ``demo_camera`` when the demo camera was on.
  */
 export const resetConfig = <ThrowOnError extends boolean = false>(options?: Options<ResetConfigData, ThrowOnError>): RequestResult<ResetConfigResponses, ResetConfigErrors, ThrowOnError> => (options?.client ?? client).post<ResetConfigResponses, ResetConfigErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/config/reset',
     ...options
 });
@@ -340,7 +631,11 @@ export const resetConfig = <ThrowOnError extends boolean = false>(options?: Opti
  * Get Config Schema
  */
 export const getConfigSchema = <ThrowOnError extends boolean = false>(options?: Options<GetConfigSchemaData, ThrowOnError>): RequestResult<GetConfigSchemaResponses, GetConfigSchemaErrors, ThrowOnError> => (options?.client ?? client).get<GetConfigSchemaResponses, GetConfigSchemaErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/config/schema',
     ...options
 });
@@ -353,7 +648,11 @@ export const getConfigSchema = <ThrowOnError extends boolean = false>(options?: 
  * generated client carry the event types.
  */
 export const getEventSchema = <ThrowOnError extends boolean = false>(options?: Options<GetEventSchemaData, ThrowOnError>): RequestResult<GetEventSchemaResponses, GetEventSchemaErrors, ThrowOnError> => (options?.client ?? client).get<GetEventSchemaResponses, GetEventSchemaErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/events/schema',
     ...options
 });
@@ -362,16 +661,71 @@ export const getEventSchema = <ThrowOnError extends boolean = false>(options?: O
  * List Files
  */
 export const listFiles = <ThrowOnError extends boolean = false>(options?: Options<ListFilesData, ThrowOnError>): RequestResult<ListFilesResponses, ListFilesErrors, ThrowOnError> => (options?.client ?? client).get<ListFilesResponses, ListFilesErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/files',
     ...options
 });
 
 /**
+ * Delete Files
+ *
+ * Delete many files. Failures are reported per path; the others are still deleted.
+ */
+export const deleteFiles = <ThrowOnError extends boolean = false>(options: Options<DeleteFilesData, ThrowOnError>): RequestResult<DeleteFilesResponses, DeleteFilesErrors, ThrowOnError> => (options.client ?? client).post<DeleteFilesResponses, DeleteFilesErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/files/delete',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Create Zip Download
+ *
+ * Issue a single-use download URL (60 s). One path downloads the file itself, several
+ * stream a ZIP archive.
+ */
+export const createZipDownload = <ThrowOnError extends boolean = false>(options: Options<CreateZipDownloadData, ThrowOnError>): RequestResult<CreateZipDownloadResponses, CreateZipDownloadErrors, ThrowOnError> => (options.client ?? client).post<CreateZipDownloadResponses, CreateZipDownloadErrors, ThrowOnError>({
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/files/zip',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Download Zip
+ *
+ * Redeem a ticket from ``POST /files/zip``. No other credential is needed; a ticket
+ * works once.
+ */
+export const downloadZip = <ThrowOnError extends boolean = false>(options: Options<DownloadZipData, ThrowOnError>): RequestResult<DownloadZipResponses, DownloadZipErrors, ThrowOnError> => (options.client ?? client).get<DownloadZipResponses, DownloadZipErrors, ThrowOnError>({ url: '/api/v1/files/zip/{ticket}', ...options });
+
+/**
  * Delete File
  */
 export const deleteFile = <ThrowOnError extends boolean = false>(options: Options<DeleteFileData, ThrowOnError>): RequestResult<DeleteFileResponses, DeleteFileErrors, ThrowOnError> => (options.client ?? client).delete<DeleteFileResponses, DeleteFileErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/files/{path}',
     ...options
 });
@@ -380,7 +734,11 @@ export const deleteFile = <ThrowOnError extends boolean = false>(options: Option
  * Download File
  */
 export const downloadFile = <ThrowOnError extends boolean = false>(options: Options<DownloadFileData, ThrowOnError>): RequestResult<DownloadFileResponses, DownloadFileErrors, ThrowOnError> => (options.client ?? client).get<DownloadFileResponses, DownloadFileErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/files/{path}',
     ...options
 });
@@ -389,7 +747,11 @@ export const downloadFile = <ThrowOnError extends boolean = false>(options: Opti
  * Get Focus Status
  */
 export const getFocus = <ThrowOnError extends boolean = false>(options?: Options<GetFocusData, ThrowOnError>): RequestResult<GetFocusResponses, GetFocusErrors, ThrowOnError> => (options?.client ?? client).get<GetFocusResponses, GetFocusErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/focus',
     ...options
 });
@@ -398,7 +760,11 @@ export const getFocus = <ThrowOnError extends boolean = false>(options?: Options
  * Autofocus
  */
 export const autofocus = <ThrowOnError extends boolean = false>(options?: Options<AutofocusData, ThrowOnError>): RequestResult<AutofocusResponses, AutofocusErrors, ThrowOnError> => (options?.client ?? client).post<AutofocusResponses, AutofocusErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/focus/af',
     ...options
 });
@@ -407,7 +773,11 @@ export const autofocus = <ThrowOnError extends boolean = false>(options?: Option
  * Manual Focus
  */
 export const manualFocus = <ThrowOnError extends boolean = false>(options: Options<ManualFocusData, ThrowOnError>): RequestResult<ManualFocusResponses, ManualFocusErrors, ThrowOnError> => (options.client ?? client).post<ManualFocusResponses, ManualFocusErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/focus/mf',
     ...options,
     headers: {
@@ -422,7 +792,11 @@ export const manualFocus = <ThrowOnError extends boolean = false>(options: Optio
  * Move the camera's AF point (``changeafarea``) to a normalized live view position.
  */
 export const setAfPoint = <ThrowOnError extends boolean = false>(options: Options<SetAfPointData, ThrowOnError>): RequestResult<SetAfPointResponses, SetAfPointErrors, ThrowOnError> => (options.client ?? client).post<SetAfPointResponses, SetAfPointErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/focus/point',
     ...options,
     headers: {
@@ -435,7 +809,11 @@ export const setAfPoint = <ThrowOnError extends boolean = false>(options: Option
  * Reset Focus Position
  */
 export const resetFocusPosition = <ThrowOnError extends boolean = false>(options?: Options<ResetFocusPositionData, ThrowOnError>): RequestResult<ResetFocusPositionResponses, ResetFocusPositionErrors, ThrowOnError> => (options?.client ?? client).post<ResetFocusPositionResponses, ResetFocusPositionErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/focus/reset',
     ...options
 });
@@ -446,7 +824,11 @@ export const resetFocusPosition = <ThrowOnError extends boolean = false>(options
  * Capture N shots, moving focus between them; returns the job (kind ``focus-stack``).
  */
 export const startFocusStack = <ThrowOnError extends boolean = false>(options: Options<StartFocusStackData, ThrowOnError>): RequestResult<StartFocusStackResponses, StartFocusStackErrors, ThrowOnError> => (options.client ?? client).post<StartFocusStackResponses, StartFocusStackErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/focus/stack',
     ...options,
     headers: {
@@ -466,7 +848,11 @@ export const getHealth = <ThrowOnError extends boolean = false>(options?: Option
  * Get Info
  */
 export const getInfo = <ThrowOnError extends boolean = false>(options?: Options<GetInfoData, ThrowOnError>): RequestResult<GetInfoResponses, GetInfoErrors, ThrowOnError> => (options?.client ?? client).get<GetInfoResponses, GetInfoErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/info',
     ...options
 });
@@ -475,7 +861,11 @@ export const getInfo = <ThrowOnError extends boolean = false>(options?: Options<
  * List Jobs
  */
 export const listJobs = <ThrowOnError extends boolean = false>(options?: Options<ListJobsData, ThrowOnError>): RequestResult<ListJobsResponses, ListJobsErrors, ThrowOnError> => (options?.client ?? client).get<ListJobsResponses, ListJobsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/jobs',
     ...options
 });
@@ -486,7 +876,11 @@ export const listJobs = <ThrowOnError extends boolean = false>(options?: Options
  * Cancel a job (no-op for finished jobs) and return its final state.
  */
 export const cancelJob = <ThrowOnError extends boolean = false>(options: Options<CancelJobData, ThrowOnError>): RequestResult<CancelJobResponses, CancelJobErrors, ThrowOnError> => (options.client ?? client).delete<CancelJobResponses, CancelJobErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/jobs/{job_id}',
     ...options
 });
@@ -495,7 +889,11 @@ export const cancelJob = <ThrowOnError extends boolean = false>(options: Options
  * Get Job
  */
 export const getJob = <ThrowOnError extends boolean = false>(options: Options<GetJobData, ThrowOnError>): RequestResult<GetJobResponses, GetJobErrors, ThrowOnError> => (options.client ?? client).get<GetJobResponses, GetJobErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/jobs/{job_id}',
     ...options
 });
@@ -516,7 +914,11 @@ export const streamKioskDisplay = <ThrowOnError extends boolean = false>(options
  * Record the kiosk screen state (the kiosk page sends off when idle, on at a touch).
  */
 export const setKioskDisplay = <ThrowOnError extends boolean = false>(options: Options<SetKioskDisplayData, ThrowOnError>): RequestResult<SetKioskDisplayResponses, SetKioskDisplayErrors, ThrowOnError> => (options.client ?? client).post<SetKioskDisplayResponses, SetKioskDisplayErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/kiosk/display',
     ...options,
     headers: {
@@ -539,7 +941,11 @@ export const streamKioskScale = <ThrowOnError extends boolean = false>(options?:
  * Get Liveview Status
  */
 export const getLiveview = <ThrowOnError extends boolean = false>(options?: Options<GetLiveviewData, ThrowOnError>): RequestResult<GetLiveviewResponses, GetLiveviewErrors, ThrowOnError> => (options?.client ?? client).get<GetLiveviewResponses, GetLiveviewErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/liveview',
     ...options
 });
@@ -548,7 +954,11 @@ export const getLiveview = <ThrowOnError extends boolean = false>(options?: Opti
  * Get Liveview Snapshot
  */
 export const getLiveviewSnapshot = <ThrowOnError extends boolean = false>(options?: Options<GetLiveviewSnapshotData, ThrowOnError>): RequestResult<GetLiveviewSnapshotResponses, GetLiveviewSnapshotErrors, ThrowOnError> => (options?.client ?? client).get<GetLiveviewSnapshotResponses, GetLiveviewSnapshotErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/liveview/snapshot',
     ...options
 });
@@ -559,7 +969,11 @@ export const getLiveviewSnapshot = <ThrowOnError extends boolean = false>(option
  * Start the stream and keep it running until stopped, even with no clients.
  */
 export const startLiveview = <ThrowOnError extends boolean = false>(options?: Options<StartLiveviewData, ThrowOnError>): RequestResult<StartLiveviewResponses, StartLiveviewErrors, ThrowOnError> => (options?.client ?? client).post<StartLiveviewResponses, StartLiveviewErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/liveview/start',
     ...options
 });
@@ -568,7 +982,11 @@ export const startLiveview = <ThrowOnError extends boolean = false>(options?: Op
  * Stop Liveview
  */
 export const stopLiveview = <ThrowOnError extends boolean = false>(options?: Options<StopLiveviewData, ThrowOnError>): RequestResult<StopLiveviewResponses, StopLiveviewErrors, ThrowOnError> => (options?.client ?? client).post<StopLiveviewResponses, StopLiveviewErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/liveview/stop',
     ...options
 });
@@ -577,7 +995,11 @@ export const stopLiveview = <ThrowOnError extends boolean = false>(options?: Opt
  * List Locations
  */
 export const listLocations = <ThrowOnError extends boolean = false>(options?: Options<ListLocationsData, ThrowOnError>): RequestResult<ListLocationsResponses, ListLocationsErrors, ThrowOnError> => (options?.client ?? client).get<ListLocationsResponses, ListLocationsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations',
     ...options
 });
@@ -586,7 +1008,11 @@ export const listLocations = <ThrowOnError extends boolean = false>(options?: Op
  * Add Location
  */
 export const addLocation = <ThrowOnError extends boolean = false>(options: Options<AddLocationData, ThrowOnError>): RequestResult<AddLocationResponses, AddLocationErrors, ThrowOnError> => (options.client ?? client).post<AddLocationResponses, AddLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations',
     ...options,
     headers: {
@@ -599,7 +1025,11 @@ export const addLocation = <ThrowOnError extends boolean = false>(options: Optio
  * Test Smb Location
  */
 export const testSmbLocation = <ThrowOnError extends boolean = false>(options: Options<TestSmbLocationData, ThrowOnError>): RequestResult<TestSmbLocationResponses, TestSmbLocationErrors, ThrowOnError> => (options.client ?? client).post<TestSmbLocationResponses, TestSmbLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations/test-smb',
     ...options,
     headers: {
@@ -612,7 +1042,11 @@ export const testSmbLocation = <ThrowOnError extends boolean = false>(options: O
  * Delete Location
  */
 export const deleteLocation = <ThrowOnError extends boolean = false>(options: Options<DeleteLocationData, ThrowOnError>): RequestResult<DeleteLocationResponses, DeleteLocationErrors, ThrowOnError> => (options.client ?? client).delete<DeleteLocationResponses, DeleteLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations/{location_id}',
     ...options
 });
@@ -621,7 +1055,11 @@ export const deleteLocation = <ThrowOnError extends boolean = false>(options: Op
  * Update Location
  */
 export const updateLocation = <ThrowOnError extends boolean = false>(options: Options<UpdateLocationData, ThrowOnError>): RequestResult<UpdateLocationResponses, UpdateLocationErrors, ThrowOnError> => (options.client ?? client).patch<UpdateLocationResponses, UpdateLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations/{location_id}',
     ...options,
     headers: {
@@ -637,7 +1075,11 @@ export const updateLocation = <ThrowOnError extends boolean = false>(options: Op
  * result is ``{returncode, output}``; cancelling the job stops the repair.
  */
 export const checkLocation = <ThrowOnError extends boolean = false>(options: Options<CheckLocationData, ThrowOnError>): RequestResult<CheckLocationResponses, CheckLocationErrors, ThrowOnError> => (options.client ?? client).post<CheckLocationResponses, CheckLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations/{location_id}/fsck',
     ...options
 });
@@ -646,7 +1088,11 @@ export const checkLocation = <ThrowOnError extends boolean = false>(options: Opt
  * Mount Location
  */
 export const mountLocation = <ThrowOnError extends boolean = false>(options: Options<MountLocationData, ThrowOnError>): RequestResult<MountLocationResponses, MountLocationErrors, ThrowOnError> => (options.client ?? client).post<MountLocationResponses, MountLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations/{location_id}/mount',
     ...options
 });
@@ -655,7 +1101,11 @@ export const mountLocation = <ThrowOnError extends boolean = false>(options: Opt
  * Unmount Location
  */
 export const unmountLocation = <ThrowOnError extends boolean = false>(options: Options<UnmountLocationData, ThrowOnError>): RequestResult<UnmountLocationResponses, UnmountLocationErrors, ThrowOnError> => (options.client ?? client).post<UnmountLocationResponses, UnmountLocationErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/locations/{location_id}/unmount',
     ...options
 });
@@ -668,7 +1118,11 @@ export const unmountLocation = <ThrowOnError extends boolean = false>(options: O
  * render-held sessions and files modified in the last 10 seconds are skipped.
  */
 export const startOffload = <ThrowOnError extends boolean = false>(options: Options<StartOffloadData, ThrowOnError>): RequestResult<StartOffloadResponses, StartOffloadErrors, ThrowOnError> => (options.client ?? client).post<StartOffloadResponses, StartOffloadErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/offload',
     ...options,
     headers: {
@@ -683,7 +1137,11 @@ export const startOffload = <ThrowOnError extends boolean = false>(options: Opti
  * User presets plus the read-only built-in bracket presets (`builtin: true`).
  */
 export const listPresets = <ThrowOnError extends boolean = false>(options?: Options<ListPresetsData, ThrowOnError>): RequestResult<ListPresetsResponses, ListPresetsErrors, ThrowOnError> => (options?.client ?? client).get<ListPresetsResponses, ListPresetsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets',
     ...options
 });
@@ -694,7 +1152,11 @@ export const listPresets = <ThrowOnError extends boolean = false>(options?: Opti
  * Create a preset. Names are unique per kind (case-insensitive), 1-80 characters.
  */
 export const createPreset = <ThrowOnError extends boolean = false>(options: Options<CreatePresetData, ThrowOnError>): RequestResult<CreatePresetResponses, CreatePresetErrors, ThrowOnError> => (options.client ?? client).post<CreatePresetResponses, CreatePresetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets',
     ...options,
     headers: {
@@ -709,7 +1171,11 @@ export const createPreset = <ThrowOnError extends boolean = false>(options: Opti
  * All user presets as a JSON document (built-ins excluded) for backup or transfer.
  */
 export const exportPresets = <ThrowOnError extends boolean = false>(options?: Options<ExportPresetsData, ThrowOnError>): RequestResult<ExportPresetsResponses, ExportPresetsErrors, ThrowOnError> => (options?.client ?? client).get<ExportPresetsResponses, ExportPresetsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/export',
     ...options
 });
@@ -721,7 +1187,11 @@ export const exportPresets = <ThrowOnError extends boolean = false>(options?: Op
  * writable settings).
  */
 export const createPresetFromCamera = <ThrowOnError extends boolean = false>(options: Options<CreatePresetFromCameraData, ThrowOnError>): RequestResult<CreatePresetFromCameraResponses, CreatePresetFromCameraErrors, ThrowOnError> => (options.client ?? client).post<CreatePresetFromCameraResponses, CreatePresetFromCameraErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/from-camera',
     ...options,
     headers: {
@@ -737,7 +1207,11 @@ export const createPresetFromCamera = <ThrowOnError extends boolean = false>(opt
  * `replace=true` swaps the whole user set for the valid items.
  */
 export const importPresets = <ThrowOnError extends boolean = false>(options: Options<ImportPresetsData, ThrowOnError>): RequestResult<ImportPresetsResponses, ImportPresetsErrors, ThrowOnError> => (options.client ?? client).post<ImportPresetsResponses, ImportPresetsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/import',
     ...options,
     headers: {
@@ -752,7 +1226,11 @@ export const importPresets = <ThrowOnError extends boolean = false>(options: Opt
  * Delete a user preset. Built-ins answer 403.
  */
 export const deletePreset = <ThrowOnError extends boolean = false>(options: Options<DeletePresetData, ThrowOnError>): RequestResult<DeletePresetResponses, DeletePresetErrors, ThrowOnError> => (options.client ?? client).delete<DeletePresetResponses, DeletePresetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/{preset_id}',
     ...options
 });
@@ -761,7 +1239,11 @@ export const deletePreset = <ThrowOnError extends boolean = false>(options: Opti
  * Get Preset
  */
 export const getPreset = <ThrowOnError extends boolean = false>(options: Options<GetPresetData, ThrowOnError>): RequestResult<GetPresetResponses, GetPresetErrors, ThrowOnError> => (options.client ?? client).get<GetPresetResponses, GetPresetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/{preset_id}',
     ...options
 });
@@ -772,7 +1254,11 @@ export const getPreset = <ThrowOnError extends boolean = false>(options: Options
  * Replace a user preset (same kind). Built-ins answer 403.
  */
 export const updatePreset = <ThrowOnError extends boolean = false>(options: Options<UpdatePresetData, ThrowOnError>): RequestResult<UpdatePresetResponses, UpdatePresetErrors, ThrowOnError> => (options.client ?? client).put<UpdatePresetResponses, UpdatePresetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/{preset_id}',
     ...options,
     headers: {
@@ -790,7 +1276,11 @@ export const updatePreset = <ThrowOnError extends boolean = false>(options: Opti
  * time-lapse config or one-shot bracket endpoint.
  */
 export const applyPreset = <ThrowOnError extends boolean = false>(options: Options<ApplyPresetData, ThrowOnError>): RequestResult<ApplyPresetResponses, ApplyPresetErrors, ThrowOnError> => (options.client ?? client).post<ApplyPresetResponses, ApplyPresetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/presets/{preset_id}/apply',
     ...options
 });
@@ -799,7 +1289,11 @@ export const applyPreset = <ThrowOnError extends boolean = false>(options: Optio
  * Get Recording Status
  */
 export const getRecording = <ThrowOnError extends boolean = false>(options?: Options<GetRecordingData, ThrowOnError>): RequestResult<GetRecordingResponses, GetRecordingErrors, ThrowOnError> => (options?.client ?? client).get<GetRecordingResponses, GetRecordingErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/recording',
     ...options
 });
@@ -811,7 +1305,11 @@ export const getRecording = <ThrowOnError extends boolean = false>(options?: Opt
  * is switched on if needed.
  */
 export const startRecording = <ThrowOnError extends boolean = false>(options: Options<StartRecordingData, ThrowOnError>): RequestResult<StartRecordingResponses, StartRecordingErrors, ThrowOnError> => (options.client ?? client).post<StartRecordingResponses, StartRecordingErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/recording/start',
     ...options,
     headers: {
@@ -826,7 +1324,11 @@ export const startRecording = <ThrowOnError extends boolean = false>(options: Op
  * Stop the recording; returns the clip and the download job id, if requested.
  */
 export const stopRecording = <ThrowOnError extends boolean = false>(options?: Options<StopRecordingData, ThrowOnError>): RequestResult<StopRecordingResponses, StopRecordingErrors, ThrowOnError> => (options?.client ?? client).post<StopRecordingResponses, StopRecordingErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/recording/stop',
     ...options
 });
@@ -835,7 +1337,11 @@ export const stopRecording = <ThrowOnError extends boolean = false>(options?: Op
  * List Sessions
  */
 export const listSessions = <ThrowOnError extends boolean = false>(options?: Options<ListSessionsData, ThrowOnError>): RequestResult<ListSessionsResponses, ListSessionsErrors, ThrowOnError> => (options?.client ?? client).get<ListSessionsResponses, ListSessionsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/sessions',
     ...options
 });
@@ -844,7 +1350,11 @@ export const listSessions = <ThrowOnError extends boolean = false>(options?: Opt
  * Delete Session
  */
 export const deleteSession = <ThrowOnError extends boolean = false>(options: Options<DeleteSessionData, ThrowOnError>): RequestResult<DeleteSessionResponses, DeleteSessionErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSessionResponses, DeleteSessionErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/sessions/{session_id}',
     ...options
 });
@@ -853,7 +1363,11 @@ export const deleteSession = <ThrowOnError extends boolean = false>(options: Opt
  * Get Session
  */
 export const getSession = <ThrowOnError extends boolean = false>(options: Options<GetSessionData, ThrowOnError>): RequestResult<GetSessionResponses, GetSessionErrors, ThrowOnError> => (options.client ?? client).get<GetSessionResponses, GetSessionErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/sessions/{session_id}',
     ...options
 });
@@ -862,7 +1376,11 @@ export const getSession = <ThrowOnError extends boolean = false>(options: Option
  * Rename Session
  */
 export const renameSession = <ThrowOnError extends boolean = false>(options: Options<RenameSessionData, ThrowOnError>): RequestResult<RenameSessionResponses, RenameSessionErrors, ThrowOnError> => (options.client ?? client).patch<RenameSessionResponses, RenameSessionErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/sessions/{session_id}',
     ...options,
     headers: {
@@ -875,7 +1393,11 @@ export const renameSession = <ThrowOnError extends boolean = false>(options: Opt
  * List Session Frames
  */
 export const listSessionFrames = <ThrowOnError extends boolean = false>(options: Options<ListSessionFramesData, ThrowOnError>): RequestResult<ListSessionFramesResponses, ListSessionFramesErrors, ThrowOnError> => (options.client ?? client).get<ListSessionFramesResponses, ListSessionFramesErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/sessions/{session_id}/frames',
     ...options
 });
@@ -886,7 +1408,11 @@ export const listSessionFrames = <ThrowOnError extends boolean = false>(options:
  * Start rendering the session's frames (so far) into a video; returns the job.
  */
 export const renderSessionVideo = <ThrowOnError extends boolean = false>(options: Options<RenderSessionVideoData, ThrowOnError>): RequestResult<RenderSessionVideoResponses, RenderSessionVideoErrors, ThrowOnError> => (options.client ?? client).post<RenderSessionVideoResponses, RenderSessionVideoErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/sessions/{session_id}/video',
     ...options,
     headers: {
@@ -899,7 +1425,11 @@ export const renderSessionVideo = <ThrowOnError extends boolean = false>(options
  * List Settings
  */
 export const listSettings = <ThrowOnError extends boolean = false>(options?: Options<ListSettingsData, ThrowOnError>): RequestResult<ListSettingsResponses, ListSettingsErrors, ThrowOnError> => (options?.client ?? client).get<ListSettingsResponses, ListSettingsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/settings',
     ...options
 });
@@ -908,7 +1438,11 @@ export const listSettings = <ThrowOnError extends boolean = false>(options?: Opt
  * Update Settings
  */
 export const updateSettings = <ThrowOnError extends boolean = false>(options: Options<UpdateSettingsData, ThrowOnError>): RequestResult<UpdateSettingsResponses, UpdateSettingsErrors, ThrowOnError> => (options.client ?? client).patch<UpdateSettingsResponses, UpdateSettingsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/settings',
     ...options,
     headers: {
@@ -923,7 +1457,11 @@ export const updateSettings = <ThrowOnError extends boolean = false>(options: Op
  * Re-read every setting from the camera, bypassing the cache (slow on a real body).
  */
 export const refreshSettings = <ThrowOnError extends boolean = false>(options?: Options<RefreshSettingsData, ThrowOnError>): RequestResult<RefreshSettingsResponses, RefreshSettingsErrors, ThrowOnError> => (options?.client ?? client).post<RefreshSettingsResponses, RefreshSettingsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/settings/refresh',
     ...options
 });
@@ -932,7 +1470,11 @@ export const refreshSettings = <ThrowOnError extends boolean = false>(options?: 
  * Get Setting
  */
 export const getSetting = <ThrowOnError extends boolean = false>(options: Options<GetSettingData, ThrowOnError>): RequestResult<GetSettingResponses, GetSettingErrors, ThrowOnError> => (options.client ?? client).get<GetSettingResponses, GetSettingErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/settings/{name}',
     ...options
 });
@@ -941,7 +1483,11 @@ export const getSetting = <ThrowOnError extends boolean = false>(options: Option
  * Set Setting
  */
 export const setSetting = <ThrowOnError extends boolean = false>(options: Options<SetSettingData, ThrowOnError>): RequestResult<SetSettingResponses, SetSettingErrors, ThrowOnError> => (options.client ?? client).put<SetSettingResponses, SetSettingErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/settings/{name}',
     ...options,
     headers: {
@@ -954,7 +1500,11 @@ export const setSetting = <ThrowOnError extends boolean = false>(options: Option
  * Set Storage Backups
  */
 export const setStorageBackups = <ThrowOnError extends boolean = false>(options: Options<SetStorageBackupsData, ThrowOnError>): RequestResult<SetStorageBackupsResponses, SetStorageBackupsErrors, ThrowOnError> => (options.client ?? client).put<SetStorageBackupsResponses, SetStorageBackupsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/storage/backups',
     ...options,
     headers: {
@@ -973,7 +1523,11 @@ export const setStorageBackups = <ThrowOnError extends boolean = false>(options:
  * format; the disk may then be left blank or half-written.
  */
 export const formatDisk = <ThrowOnError extends boolean = false>(options: Options<FormatDiskData, ThrowOnError>): RequestResult<FormatDiskResponses, FormatDiskErrors, ThrowOnError> => (options.client ?? client).post<FormatDiskResponses, FormatDiskErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/storage/disks/{disk}/format',
     ...options,
     headers: {
@@ -986,7 +1540,11 @@ export const formatDisk = <ThrowOnError extends boolean = false>(options: Option
  * Set Storage Target
  */
 export const setStorageTarget = <ThrowOnError extends boolean = false>(options: Options<SetStorageTargetData, ThrowOnError>): RequestResult<SetStorageTargetResponses, SetStorageTargetErrors, ThrowOnError> => (options.client ?? client).put<SetStorageTargetResponses, SetStorageTargetErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/storage/target',
     ...options,
     headers: {
@@ -1001,7 +1559,11 @@ export const setStorageTarget = <ThrowOnError extends boolean = false>(options: 
  * JPEG thumbnail of the file at ``path`` (relative to the output dir).
  */
 export const getThumbnail = <ThrowOnError extends boolean = false>(options: Options<GetThumbnailData, ThrowOnError>): RequestResult<GetThumbnailResponses, GetThumbnailErrors, ThrowOnError> => (options.client ?? client).get<GetThumbnailResponses, GetThumbnailErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/thumbnails/{path}',
     ...options
 });
@@ -1010,7 +1572,11 @@ export const getThumbnail = <ThrowOnError extends boolean = false>(options: Opti
  * Get Timelapse Status
  */
 export const getTimelapseStatus = <ThrowOnError extends boolean = false>(options?: Options<GetTimelapseStatusData, ThrowOnError>): RequestResult<GetTimelapseStatusResponses, GetTimelapseStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetTimelapseStatusResponses, GetTimelapseStatusErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse',
     ...options
 });
@@ -1019,7 +1585,11 @@ export const getTimelapseStatus = <ThrowOnError extends boolean = false>(options
  * Set Timelapse Config
  */
 export const setTimelapseConfig = <ThrowOnError extends boolean = false>(options: Options<SetTimelapseConfigData, ThrowOnError>): RequestResult<SetTimelapseConfigResponses, SetTimelapseConfigErrors, ThrowOnError> => (options.client ?? client).put<SetTimelapseConfigResponses, SetTimelapseConfigErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/config',
     ...options,
     headers: {
@@ -1032,7 +1602,11 @@ export const setTimelapseConfig = <ThrowOnError extends boolean = false>(options
  * Pause Timelapse
  */
 export const pauseTimelapse = <ThrowOnError extends boolean = false>(options?: Options<PauseTimelapseData, ThrowOnError>): RequestResult<PauseTimelapseResponses, PauseTimelapseErrors, ThrowOnError> => (options?.client ?? client).post<PauseTimelapseResponses, PauseTimelapseErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/pause',
     ...options
 });
@@ -1041,7 +1615,11 @@ export const pauseTimelapse = <ThrowOnError extends boolean = false>(options?: O
  * List Timelapse Presets
  */
 export const listTimelapsePresets = <ThrowOnError extends boolean = false>(options?: Options<ListTimelapsePresetsData, ThrowOnError>): RequestResult<ListTimelapsePresetsResponses, ListTimelapsePresetsErrors, ThrowOnError> => (options?.client ?? client).get<ListTimelapsePresetsResponses, ListTimelapsePresetsErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/presets',
     ...options
 });
@@ -1050,7 +1628,11 @@ export const listTimelapsePresets = <ThrowOnError extends boolean = false>(optio
  * Preview Timelapse
  */
 export const previewTimelapse = <ThrowOnError extends boolean = false>(options?: Options<PreviewTimelapseData, ThrowOnError>): RequestResult<PreviewTimelapseResponses, PreviewTimelapseErrors, ThrowOnError> => (options?.client ?? client).get<PreviewTimelapseResponses, PreviewTimelapseErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/preview',
     ...options
 });
@@ -1061,7 +1643,11 @@ export const previewTimelapse = <ThrowOnError extends boolean = false>(options?:
  * Validate and estimate a draft; nothing is saved and it works during a run.
  */
 export const previewTimelapseDraft = <ThrowOnError extends boolean = false>(options: Options<PreviewTimelapseDraftData, ThrowOnError>): RequestResult<PreviewTimelapseDraftResponses, PreviewTimelapseDraftErrors, ThrowOnError> => (options.client ?? client).post<PreviewTimelapseDraftResponses, PreviewTimelapseDraftErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/preview',
     ...options,
     headers: {
@@ -1074,7 +1660,11 @@ export const previewTimelapseDraft = <ThrowOnError extends boolean = false>(opti
  * Resume Timelapse
  */
 export const resumeTimelapse = <ThrowOnError extends boolean = false>(options?: Options<ResumeTimelapseData, ThrowOnError>): RequestResult<ResumeTimelapseResponses, ResumeTimelapseErrors, ThrowOnError> => (options?.client ?? client).post<ResumeTimelapseResponses, ResumeTimelapseErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/resume',
     ...options
 });
@@ -1083,7 +1673,11 @@ export const resumeTimelapse = <ThrowOnError extends boolean = false>(options?: 
  * Start Timelapse
  */
 export const startTimelapse = <ThrowOnError extends boolean = false>(options?: Options<StartTimelapseData, ThrowOnError>): RequestResult<StartTimelapseResponses, StartTimelapseErrors, ThrowOnError> => (options?.client ?? client).post<StartTimelapseResponses, StartTimelapseErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/start',
     ...options
 });
@@ -1092,7 +1686,11 @@ export const startTimelapse = <ThrowOnError extends boolean = false>(options?: O
  * Stop Timelapse
  */
 export const stopTimelapse = <ThrowOnError extends boolean = false>(options?: Options<StopTimelapseData, ThrowOnError>): RequestResult<StopTimelapseResponses, StopTimelapseErrors, ThrowOnError> => (options?.client ?? client).post<StopTimelapseResponses, StopTimelapseErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/timelapse/stop',
     ...options
 });
@@ -1104,7 +1702,11 @@ export const stopTimelapse = <ThrowOnError extends boolean = false>(options?: Op
  * missing and unlisted counts and lists).
  */
 export const startVerify = <ThrowOnError extends boolean = false>(options: Options<StartVerifyData, ThrowOnError>): RequestResult<StartVerifyResponses, StartVerifyErrors, ThrowOnError> => (options.client ?? client).post<StartVerifyResponses, StartVerifyErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/verify',
     ...options,
     headers: {
@@ -1117,7 +1719,11 @@ export const startVerify = <ThrowOnError extends boolean = false>(options: Optio
  * List Videos
  */
 export const listVideos = <ThrowOnError extends boolean = false>(options?: Options<ListVideosData, ThrowOnError>): RequestResult<ListVideosResponses, ListVideosErrors, ThrowOnError> => (options?.client ?? client).get<ListVideosResponses, ListVideosErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/videos',
     ...options
 });
@@ -1126,7 +1732,11 @@ export const listVideos = <ThrowOnError extends boolean = false>(options?: Optio
  * Delete Video
  */
 export const deleteVideo = <ThrowOnError extends boolean = false>(options: Options<DeleteVideoData, ThrowOnError>): RequestResult<DeleteVideoResponses, DeleteVideoErrors, ThrowOnError> => (options.client ?? client).delete<DeleteVideoResponses, DeleteVideoErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/videos/{session_id}/{name}',
     ...options
 });
@@ -1137,7 +1747,11 @@ export const deleteVideo = <ThrowOnError extends boolean = false>(options: Optio
  * Stream the video; HTTP Range requests are supported.
  */
 export const downloadVideo = <ThrowOnError extends boolean = false>(options: Options<DownloadVideoData, ThrowOnError>): RequestResult<DownloadVideoResponses, DownloadVideoErrors, ThrowOnError> => (options.client ?? client).get<DownloadVideoResponses, DownloadVideoErrors, ThrowOnError>({
-    security: [{ name: 'X-API-Key', type: 'apiKey' }],
+    security: [{ name: 'X-API-Key', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'ncc_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/videos/{session_id}/{name}',
     ...options
 });

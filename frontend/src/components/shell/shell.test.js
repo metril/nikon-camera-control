@@ -6,7 +6,6 @@ import { useCameraStore } from '@/stores/camera'
 import { useToastsStore } from '@/stores/toasts'
 import { useJobsStore } from '@/stores/jobs'
 import { useAuthStore } from '@/stores/auth'
-import { useEventsStore } from '@/stores/events'
 import { useConfigStore } from '@/stores/config'
 import { useStorageStore } from '@/stores/storage'
 import { useLayoutMode } from '@/composables/useLayoutMode'
@@ -15,8 +14,9 @@ import CameraGate from './CameraGate.vue'
 import { jobSummary } from './jobSummary'
 import ToastHost from './ToastHost.vue'
 import JobsPanel from './JobsPanel.vue'
-import ApiKeyPrompt from './ApiKeyPrompt.vue'
+import LoginScreen from './LoginScreen.vue'
 
+const login = vi.fn()
 const getConfig = vi.fn()
 vi.mock('@/api', async (orig) => ({
   ...(await orig()),
@@ -368,49 +368,116 @@ describe('jobSummary', () => {
   })
 })
 
-describe('ApiKeyPrompt', () => {
+describe('LoginScreen', () => {
   beforeEach(() => {
-    getConfig.mockReset()
+    login.mockReset()
     localStorage.clear()
   })
+  const type = (value) => {
+    const input = document.body.querySelector('input')
+    input.value = value
+    input.dispatchEvent(new Event('input'))
+  }
+  const submit = () =>
+    document.body.querySelector('form').dispatchEvent(new Event('submit', { cancelable: true }))
 
-  it('is shown only when a key is required and stores a verified key', async () => {
+  it('is shown only when sign-in is required and signs in with the password', async () => {
     const p = pinia()
     const auth = useAuthStore()
-    const events = useEventsStore()
-    events.restart = vi.fn()
+    auth.status = {
+      auth_required: true,
+      password_set: true,
+      api_key_set: false,
+      authenticated: false,
+    }
+    const config = useConfigStore()
+    config.fetch = vi.fn(async () => {})
+    config.fetchSchema = vi.fn(async () => {})
     auth.fetchInfo = vi.fn(async () => {})
-    getConfig.mockResolvedValue({})
-    const w = mount(ApiKeyPrompt, { global: { plugins: [p] }, attachTo: document.body })
+    auth.login = login
+    login.mockImplementation(async () => {
+      auth.required = false // what the real login does through applyStatus
+    })
+    const w = mount(LoginScreen, { global: { plugins: [p] }, attachTo: document.body })
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    auth.markRequired()
+    auth.required = true
     await nextTick()
-    const input = document.body.querySelector('input')
-    input.value = 'abc'
-    input.dispatchEvent(new Event('input'))
-    document.body.querySelector('form').dispatchEvent(new Event('submit', { cancelable: true }))
+    expect(document.body.textContent).toContain('Password')
+    type('hunter2')
+    submit()
     await flushPromises()
-    expect(getConfig).toHaveBeenCalled()
-    expect(auth.apiKey).toBe('abc')
+    expect(login).toHaveBeenCalledWith({ password: 'hunter2' })
     expect(auth.required).toBe(false)
+    expect(config.fetch).toHaveBeenCalled()
     w.unmount()
   })
 
-  it('rejects a bad key and stays open', async () => {
+  it('asks for the API key while no password is set', async () => {
     const p = pinia()
     const auth = useAuthStore()
-    getConfig.mockRejectedValue(Object.assign(new Error('nope'), { status: 401 }))
-    const w = mount(ApiKeyPrompt, { global: { plugins: [p] }, attachTo: document.body })
-    auth.markRequired()
+    auth.status = {
+      auth_required: true,
+      password_set: false,
+      api_key_set: true,
+      authenticated: false,
+    }
+    auth.login = login
+    auth.fetchInfo = vi.fn(async () => {})
+    const config = useConfigStore()
+    config.fetch = vi.fn(async () => {})
+    config.fetchSchema = vi.fn(async () => {})
+    login.mockResolvedValue({ ...auth.status, authenticated: true })
+    const w = mount(LoginScreen, { global: { plugins: [p] }, attachTo: document.body })
+    auth.required = true
     await nextTick()
-    const input = document.body.querySelector('input')
-    input.value = 'bad'
-    input.dispatchEvent(new Event('input'))
-    document.body.querySelector('form').dispatchEvent(new Event('submit', { cancelable: true }))
+    expect(document.body.textContent).toContain('API key')
+    type(' abc ')
+    submit()
     await flushPromises()
-    expect(auth.apiKey).toBe('')
+    expect(login).toHaveBeenCalledWith({ api_key: 'abc' })
+    w.unmount()
+  })
+
+  it('shows the server message verbatim and stays open', async () => {
+    const p = pinia()
+    const auth = useAuthStore()
+    auth.status = {
+      auth_required: true,
+      password_set: true,
+      api_key_set: false,
+      authenticated: false,
+    }
+    auth.login = login
+    login.mockRejectedValue(new Error('Too many failed attempts. Try again in 240 seconds.'))
+    const w = mount(LoginScreen, { global: { plugins: [p] }, attachTo: document.body })
+    auth.required = true
+    await nextTick()
+    type('bad')
+    submit()
+    await flushPromises()
     expect(auth.required).toBe(true)
-    expect(document.body.querySelector('[data-test="error"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-test="error"]').textContent.trim()).toBe(
+      'Too many failed attempts. Try again in 240 seconds.',
+    )
+    w.unmount()
+  })
+
+  it('shows why kiosk pairing failed, verbatim, before anyone types', async () => {
+    const p = pinia()
+    const auth = useAuthStore()
+    auth.status = {
+      auth_required: true,
+      password_set: true,
+      api_key_set: false,
+      authenticated: false,
+    }
+    auth.pairError = 'That pairing code has expired.'
+    const w = mount(LoginScreen, { global: { plugins: [p] }, attachTo: document.body })
+    auth.required = true
+    await nextTick()
+    expect(document.body.querySelector('[data-test="error"]').textContent.trim()).toBe(
+      'That pairing code has expired.',
+    )
     w.unmount()
   })
 })
