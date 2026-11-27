@@ -3,12 +3,16 @@
  * `compact` (touch portrait / narrow): two tools inline, the rest under a More button. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import { useKeyboardHints } from '@/composables/useKeyboardHints'
 import { useLiveViewStore } from '@/stores/liveview'
 import { useToastsStore } from '@/stores/toasts'
 
 const props = defineProps({ compact: Boolean })
 const lv = useLiveViewStore()
 const toasts = useToastsStore()
+const { hints } = useKeyboardHints()
+const KEYS = { grid: '3', hist: 'H', clip: 'C', peak: 'P', loupe: 'L', onion: 'O' }
+const tip = (key, text) => (hints.value && KEYS[key] ? `${text} (${KEYS[key]})` : text)
 const GRID_LABEL = { thirds: 'Thirds', golden: 'Golden', centre: 'Centre', off: 'Grid off' }
 
 const items = computed(() => [
@@ -17,7 +21,7 @@ const items = computed(() => [
     icon: 'Grid3x3',
     label: GRID_LABEL[lv.tools.grid] || 'Thirds',
     pressed: lv.tools.grid !== 'off',
-    title: 'Grid: press to cycle thirds, golden, centre, off',
+    title: tip('grid', 'Grid: press to cycle thirds, golden, centre, off'),
     aria: `Grid: ${GRID_LABEL[lv.tools.grid] || 'Thirds'}. Press to change`,
     click: () => {
       lv.cycleGrid()
@@ -73,7 +77,7 @@ onBeforeUnmount(() => ro?.disconnect())
         type="button"
         :data-testid="`lv-tool-${t.key}`"
         :aria-pressed="t.pressed ?? lv.tools[t.key]"
-        :title="t.title || t.label"
+        :title="t.title || tip(t.key, t.label)"
         :aria-label="t.aria || t.label"
         @click="run(t)"
       >
@@ -106,7 +110,7 @@ onBeforeUnmount(() => ro?.disconnect())
         type="button"
         :data-testid="`lv-tool-${t.key}`"
         :aria-pressed="t.pressed ?? lv.tools[t.key]"
-        :title="t.title || t.label"
+        :title="t.title || tip(t.key, t.label)"
         :aria-label="t.aria || t.label"
         @click="run(t)"
       >

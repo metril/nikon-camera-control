@@ -1,5 +1,6 @@
 <script setup>
 /** Bottom-centre focus pill: large and small steps nearer and farther, Autofocus in the middle. */
+import { useKeyboardHints } from '@/composables/useKeyboardHints'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
 defineProps({
@@ -9,6 +10,8 @@ defineProps({
 })
 /** step(direction, size): direction -1 nearer / 1 farther; size 'small' | 'large' */
 const emit = defineEmits(['step', 'autofocus', 'mode'])
+const { hints } = useKeyboardHints()
+const tip = (text, key) => (hints.value ? `${text} (${key})` : text)
 </script>
 
 <template>
@@ -17,7 +20,7 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       type="button"
       :disabled="disabled"
       aria-label="Large step nearer"
-      title="Large step nearer"
+      :title="tip('Large step nearer', 'Shift+<')"
       class="step s1"
       data-testid="lv-focus-near-large"
       @click="emit('step', -1, 'large')"
@@ -28,7 +31,7 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       type="button"
       :disabled="disabled"
       aria-label="Small step nearer"
-      title="Small step nearer"
+      :title="tip('Small step nearer', ',')"
       class="step s2"
       data-testid="lv-focus-near-small"
       @click="emit('step', -1, 'small')"
@@ -63,7 +66,7 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       class="af"
       aria-label="Autofocus"
       :disabled="disabled || busy"
-      title="Autofocus at the focus point"
+      :title="tip('Autofocus at the focus point', 'Enter')"
       data-testid="lv-autofocus"
       @click="emit('autofocus')"
     >
@@ -74,7 +77,7 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       type="button"
       :disabled="disabled"
       aria-label="Small step farther"
-      title="Small step farther"
+      :title="tip('Small step farther', '.')"
       class="step s3"
       data-testid="lv-focus-far-small"
       @click="emit('step', 1, 'small')"
@@ -85,7 +88,7 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       type="button"
       :disabled="disabled"
       aria-label="Large step farther"
-      title="Large step farther"
+      :title="tip('Large step farther', 'Shift+>')"
       class="step s4"
       data-testid="lv-focus-far-large"
       @click="emit('step', 1, 'large')"

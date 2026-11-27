@@ -1,6 +1,8 @@
 <script setup>
 /** The newest saved photos. A strip under the live view, or a 2-column grid in the side column. */
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { fileUrl } from '@/api'
+import { useLayoutMode } from '@/composables/useLayoutMode'
 import { useCameraStore } from '@/stores/camera'
 import { useCaptureStore } from '@/stores/capture'
 import { useFilesStore } from '@/stores/files'
@@ -11,6 +13,10 @@ const emit = defineEmits(['open-gallery'])
 const camera = useCameraStore()
 const capture = useCaptureStore()
 const files = useFilesStore()
+const { isTouch } = useLayoutMode()
+/** How many fit without scrolling: 6 on touch (3 across), 8 on desktop (4 across). */
+const limit = computed(() => (isTouch.value ? 6 : 8))
+const shownList = computed(() => capture.recent.slice(0, limit.value))
 
 const thumbs = ref({}) // path -> src
 const releases = new Map() // path -> release
@@ -32,7 +38,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [capture.recent, shown.value],
+  () => [shownList.value, shown.value],
   ([list, on]) => {
     // free the blob URLs of captures that left the strip
     const keep = new Set(list.map((f) => f.path))
@@ -52,7 +58,7 @@ watch(
         .acquireThumbnail(f.path, 200)
         .then((h) => {
           pending.delete(f.path)
-          if (gone || !capture.recent.some((r) => r.path === f.path)) return h.release()
+          if (gone || !shownList.value.some((r) => r.path === f.path)) return h.release()
           releases.set(f.path, h.release)
           thumbs.value = { ...thumbs.value, [f.path]: h.url }
         })
@@ -71,6 +77,19 @@ watch(
   () => camera.connected,
   (on) => on && capture.loadRecent().catch(() => {}),
 )
+const ext = (f) => (f.name?.split('.').pop() || '').toUpperCase()
+const badge = (f) => (['JPG', 'JPEG', ''].includes(ext(f)) ? '' : ext(f))
+const MIME = { JPG: 'image/jpeg', JPEG: 'image/jpeg', NEF: 'image/x-nikon-nef', MP4: 'video/mp4' }
+/** Dragging a thumbnail to the desktop saves the file (Chromium DownloadURL). */
+function onDragStart(e, f) {
+  const url = new URL(fileUrl(f.path), location.href).href
+  e.dataTransfer?.setData(
+    'DownloadURL',
+    `${MIME[ext(f)] || 'application/octet-stream'}:${f.name}:${url}`,
+  )
+  e.dataTransfer?.setData('text/uri-list', url)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+}
 const newest = (i) =>
   i === 0 && capture.lastCapture?.files?.some((f) => f.path === capture.recent[0]?.path)
 </script>
@@ -83,20 +102,27 @@ const newest = (i) =>
         Open gallery
       </UiButton>
     </div>
-    <div v-if="capture.recent.length" class="filmrow">
+    <div v-if="shownList.length" class="filmrow">
       <button
-        v-for="(f, i) in capture.recent"
+        v-for="(f, i) in shownList"
         :key="f.path"
         type="button"
         class="thumb"
         :class="{ new: newest(i) }"
         :aria-label="`Open ${f.name} in Gallery`"
+        :title="f.name"
+        :draggable="!isTouch"
+        @dragstart="onDragStart($event, f)"
         @click="emit('open-gallery', f)"
       >
-        <img v-if="thumbs[f.path]" :src="thumbs[f.path]" alt="" />
+        <img v-if="thumbs[f.path]" :src="thumbs[f.path]" alt="" draggable="false" />
+        <span v-if="badge(f)" class="ext">{{ badge(f) }}</span>
       </button>
     </div>
-    <p v-else class="text-sm text-camera-muted">Captures appear here.</p>
+    <p v-if="shownList.length && !isTouch" class="hint">
+      Drag a thumbnail to your desktop to save it.
+    </p>
+    <p v-else-if="!shownList.length" class="text-sm text-camera-muted">Captures appear here.</p>
   </div>
 </template>
 
@@ -143,32 +169,42 @@ const newest = (i) =>
 html[data-layout='touch'] .thumb {
   width: 150px;
 }
-/* Desktop 1200px and wider, and touch landscape: a 2-column grid that fills the side column under
-   the shutter. It is the only part of the column that scrolls. */
-@media (min-width: 1200px) {
-  html[data-layout='desktop'] .filmrow {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    overflow-x: hidden;
-    overflow-y: auto;
-    max-height: 100%;
-    align-content: start;
-  }
-  html[data-layout='desktop'] .thumb {
-    width: auto;
-  }
+.ext {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  font:
+    11px ui-monospace,
+    Menlo,
+    monospace;
+  color: theme('colors.camera.text');
 }
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: theme('colors.camera.muted');
+}
+/* Wide landscape (desktop and kiosk): a grid under the shutter, 4 across on desktop (8 shown) and
+   3 across on touch (6 shown). Nothing here scrolls: the count is capped to what fits. */
 @media (min-width: 900px) and (orientation: landscape) {
-  html[data-layout='touch'] .filmrow {
+  .filmrow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    overflow-x: hidden;
-    overflow-y: auto;
-    max-height: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    overflow: hidden;
+    padding-bottom: 0;
     align-content: start;
   }
+  html[data-layout='touch'] .filmrow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .thumb,
   html[data-layout='touch'] .thumb {
-    width: auto;
+    width: 100%;
+    align-self: start;
   }
 }
 </style>

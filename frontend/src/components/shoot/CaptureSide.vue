@@ -1,16 +1,18 @@
 <script setup>
 /** Side column: capture mode, shutter, that mode's settings, and the last capture. */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
 import { useCaptureStore } from '@/stores/capture'
 import { CAPTURE_MODES, useShootStore } from '@/stores/shoot'
 import { useKeyboardHints } from '@/composables/useKeyboardHints'
+import { useLayoutMode } from '@/composables/useLayoutMode'
 import { fileKind } from '@/labels'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModal from '@/components/ui/UiModal.vue'
+import UiPopover from '@/components/ui/UiPopover.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
 import BracketSettings from './BracketSettings.vue'
 import BulbSettings from './BulbSettings.vue'
@@ -43,12 +45,29 @@ async function shootToCardOnly() {
   }
 }
 const { hints } = useKeyboardHints()
+const { isTouch } = useLayoutMode()
 
 const modes = CAPTURE_MODES.map(({ value, label }) => ({ value, label }))
 const modesLocked = computed(() => shoot.anyRunning || capture.inFlight)
 const modeTitle = computed(() => CAPTURE_MODES.find((m) => m.value === shoot.mode)?.title)
 const SETTINGS = { bracket: BracketSettings, bulb: BulbSettings, stack: StackSettings }
 const settingsView = computed(() => SETTINGS[shoot.mode] || null)
+
+const STEP_LABEL = { 0.333: '1/3', 0.667: '2/3' }
+const stepText = (v) => STEP_LABEL[Math.round(v * 1000) / 1000] || String(v)
+/** One line that says what the mode will do; on touch it opens the mode's settings. */
+const summary = computed(() => {
+  const running = shoot.running ? ' · running' : ''
+  if (shoot.mode === 'bracket')
+    return `Bracket · ${shoot.bracket.frames} frames · ${stepText(shoot.bracket.step)} EV${running}`
+  if (shoot.mode === 'bulb') return `Bulb · ${shoot.bulbForm.seconds} s${running}`
+  if (shoot.mode === 'stack') return `Stack · ${shoot.stack.shots} shots${running}`
+  return 'Single shot · no extra settings'
+})
+const settingsOpen = ref(false)
+const summaryBtn = ref(null)
+// the popover belongs to the current mode: switching mode or layout closes it
+watch([() => shoot.mode, isTouch], () => (settingsOpen.value = false))
 
 const result = computed(() => capture.lastCapture)
 const first = computed(() => result.value?.files?.[0] || result.value?.camera_files?.[0] || null)
@@ -63,7 +82,7 @@ const recordingOpen = ref(false)
 
 <template>
   <div class="side">
-    <div class="sidecard" :class="{ has: !!settingsView }">
+    <div class="sidecard" :class="{ has: !!settingsView && !isTouch }">
       <UiSegmented
         v-model="shoot.mode"
         class="modes w-full"
@@ -83,10 +102,14 @@ const recordingOpen = ref(false)
           :disabled="!shoot.canPress"
           :aria-label="shoot.label"
           aria-describedby="shutter-reason"
+          :title="hints && !isTouch ? `${shoot.label} (Space)` : undefined"
           data-testid="capture-btn"
           @click="shoot.press()"
         />
-        <span class="slabel tabular-nums" data-testid="shutter-label">{{ shoot.label }}</span>
+        <span class="slabel tabular-nums"
+          ><span data-testid="shutter-label">{{ shoot.label }}</span>
+          <kbd v-if="hints && !isTouch">Space</kbd></span
+        >
         <span class="chip" data-testid="download-chip">
           <template v-if="shoot.noTargetBlocks">Not saving to storage</template>
           <template v-else-if="triggerOnly"><i class="dot" />Trigger only · stays on card</template>
@@ -116,17 +139,49 @@ const recordingOpen = ref(false)
           <template v-else-if="shoot.blockedReason && !shoot.stoppable">{{
             shoot.blockedReason
           }}</template>
-          <span v-else-if="hints" class="kbdonly"><kbd>Space</kbd></span>
         </span>
       </div>
-      <div v-if="settingsView" class="msettings">
+      <div v-if="settingsView && !isTouch" class="msettings" data-testid="inline-settings">
         <component :is="settingsView" @navigate="(...a) => emit('navigate', ...a)" />
       </div>
     </div>
 
+    <!-- Touch: a one-line summary opens the mode's settings in a popover -->
+    <template v-if="isTouch">
+      <button
+        v-if="settingsView"
+        ref="summaryBtn"
+        type="button"
+        class="summary"
+        data-testid="mode-summary"
+        aria-haspopup="dialog"
+        :aria-expanded="settingsOpen"
+        @click="settingsOpen = true"
+      >
+        <span>{{ summary }}</span>
+        <UiIcon name="ChevronRight" :size="18" />
+      </button>
+      <div v-else class="summary static" data-testid="mode-summary">
+        <span>{{ summary }}</span>
+      </div>
+      <UiPopover
+        :open="settingsOpen && !!settingsView"
+        :anchor="summaryBtn"
+        :title="modeTitle"
+        data-testid="mode-settings-popover"
+        @close="settingsOpen = false"
+      >
+        <div class="flex flex-col gap-4">
+          <component :is="settingsView" @navigate="(...a) => emit('navigate', ...a)" />
+          <UiButton variant="primary" class="self-end" @click="settingsOpen = false">Done</UiButton>
+        </div>
+      </UiPopover>
+    </template>
+
     <div
       v-if="first || (capture.lastError && !shoot.noTarget)"
       class="lastinfo"
+      :class="{ compact: isTouch }"
       data-testid="last-capture"
     >
       <template v-if="first">
@@ -147,10 +202,10 @@ const recordingOpen = ref(false)
     </div>
 
     <div class="tools">
-      <UiButton variant="ghost" size="sm" class="-ml-2.5" @click="cameraSettingsOpen = true">
+      <UiButton size="sm" class="w-full" @click="cameraSettingsOpen = true">
         <UiIcon name="SlidersHorizontal" :size="16" /> All camera settings
       </UiButton>
-      <UiButton variant="ghost" size="sm" class="-mr-2.5" @click="recordingOpen = true">
+      <UiButton size="sm" class="w-full" @click="recordingOpen = true">
         <UiIcon name="Video" :size="16" /> Record video
       </UiButton>
     </div>
@@ -256,10 +311,62 @@ const recordingOpen = ref(false)
   white-space: nowrap;
 }
 .tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.summary {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 14px;
+  background: theme('colors.camera.surface');
+  border: 1px solid theme('colors.camera.subtle');
+  border-radius: theme('borderRadius.card');
+  font-size: 14px;
+  color: theme('colors.camera.text');
+  text-align: left;
+}
+button.summary {
+  cursor: pointer;
+}
+button.summary:hover {
+  border-color: theme('colors.camera.border');
+}
+.summary.static {
+  color: theme('colors.camera.muted');
+}
+.lastinfo.compact {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.lastinfo.compact .nm {
+  min-width: 0;
+}
+/* Desktop: the shutter sits left of its label, as a row */
+html[data-layout='desktop'] .shutterwrap {
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-items: start;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 4px;
+  padding: 0;
+}
+html[data-layout='desktop'] .shutterwrap > :first-child {
+  grid-row: 1 / span 3;
+}
+html[data-layout='desktop'] .reason {
+  text-align: left;
+}
+html[data-layout='desktop'] .sidecard {
+  gap: 14px;
+  padding: 14px;
 }
 kbd {
   font:
@@ -280,6 +387,9 @@ kbd {
   display: inline-flex;
   align-items: center;
   line-height: 1;
+}
+html[data-layout='touch'] .reason {
+  min-height: 0;
 }
 html[data-layout='touch'] .sidecard {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -304,14 +414,16 @@ html[data-layout='touch'] .msettings {
 @media (min-width: 900px) and (orientation: landscape) {
   html[data-layout='touch'] .sidecard {
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+  html[data-layout='touch'] .side {
+    gap: 10px;
   }
   html[data-layout='touch'] .msettings {
     border-top: 1px solid theme('colors.camera.subtle');
     padding-top: 16px;
   }
-}
-html[data-layout='touch'] .kbdonly {
-  display: none;
 }
 html[data-layout='touch'] .chip,
 html[data-layout='touch'] .reason,

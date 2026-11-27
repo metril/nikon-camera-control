@@ -7,6 +7,7 @@ import { useShootStore } from '@/stores/shoot'
 import { useStorageStore } from '@/stores/storage'
 import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
+import { resetLayoutMode, useLayoutMode } from '@/composables/useLayoutMode'
 import { mountCard, button } from './testing'
 
 vi.mock('@/api', async (orig) => ({ ...(await orig()), api: {}, downloadBlob: vi.fn() }))
@@ -124,13 +125,13 @@ describe('CaptureSide', () => {
 
   it('shows the Space hint, and hides it when keyboard hints are off', async () => {
     setup()
-    expect(wrapper.find('.kbdonly').text()).toBe('Space')
+    expect(wrapper.find('.slabel kbd').text()).toBe('Space')
     wrapper.unmount()
     localStorage.setItem('hints', '0')
     const { useKeyboardHints } = await import('@/composables/useKeyboardHints')
     useKeyboardHints().setHints(false)
     setup()
-    expect(wrapper.find('.kbdonly').exists()).toBe(false)
+    expect(wrapper.find('.slabel kbd').exists()).toBe(false)
     useKeyboardHints().setHints(true)
   })
 
@@ -204,5 +205,58 @@ describe('CaptureSide', () => {
     await button(wrapper, 'Shoot to card only').trigger('click')
     await flushPromises()
     expect(useToastsStore(pinia).items.at(-1).message).toContain('nope')
+  })
+
+  describe('touch layout', () => {
+    const useTouch = () => {
+      localStorage.setItem('layout', 'touch')
+      resetLayoutMode()
+    }
+    afterEach(() => {
+      localStorage.removeItem('layout')
+      resetLayoutMode()
+    })
+
+    it('desktop shows the mode settings inline and no summary line', async () => {
+      setup()
+      useShootStore().mode = 'bracket'
+      await flushPromises()
+      expect(wrapper.find('[data-testid="inline-settings"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="mode-summary"]').exists()).toBe(false)
+    })
+
+    it.each([
+      ['bracket', /^Bracket · 3 frames · 1 EV$/, 'Frames'],
+      ['bulb', /^Bulb · 30 s$/, 'Exposure'],
+      ['stack', /^Stack · 10 shots$/, 'Settle time'],
+    ])('%s: a one-line summary opens its settings in a popover', async (mode, text, label) => {
+      useTouch()
+      setup()
+      useShootStore().mode = mode
+      await flushPromises()
+      expect(useLayoutMode().isTouch.value).toBe(true)
+      expect(wrapper.find('[data-testid="inline-settings"]').exists()).toBe(false)
+      const sum = wrapper.find('[data-testid="mode-summary"]')
+      expect(sum.text()).toMatch(text)
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+      await sum.trigger('click')
+      await flushPromises()
+      const dlg = document.body.querySelector('[data-testid="mode-settings-popover"]')
+      expect(dlg).not.toBeNull()
+      expect(dlg.textContent).toContain(label) // every control of the mode is reachable
+      const done = [...dlg.querySelectorAll('button')].find((b) => b.textContent === 'Done')
+      done.click()
+      await flushPromises()
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    })
+
+    it('Single has a static summary and no popover', async () => {
+      useTouch()
+      setup()
+      await flushPromises()
+      const sum = wrapper.find('[data-testid="mode-summary"]')
+      expect(sum.text()).toBe('Single shot · no extra settings')
+      expect(sum.element.tagName).not.toBe('BUTTON')
+    })
   })
 })
