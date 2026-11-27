@@ -49,6 +49,11 @@ class DownloadAllRequest(BaseModel):
     file: CameraFileRef | None = Field(
         default=None, description="Download only this file (folder is then ignored)"
     )
+    files: list[CameraFileRef] | None = Field(
+        default=None,
+        max_length=1000,
+        description="Download only these files (folder and file are then ignored)",
+    )
     folder: str | None = Field(
         default=None, description="Camera folder to download (recursively); null = whole card"
     )
@@ -59,3 +64,18 @@ class DownloadAllRequest(BaseModel):
     @classmethod
     def _folder(cls, v: str | None) -> str | None:
         return None if v is None else validate_camera_folder(v)
+
+
+class DeleteCameraFilesRequest(BaseModel):
+    files: list[CameraFileRef] = Field(min_length=1, max_length=1000)
+
+
+class CameraFileFailure(BaseModel):
+    folder: str
+    name: str
+    error: str
+
+
+class DeleteCameraFilesResult(BaseModel):
+    deleted: list[CameraFileRef]
+    failed: list[CameraFileFailure]

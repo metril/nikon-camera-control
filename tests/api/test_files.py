@@ -1,9 +1,15 @@
+import asyncio
+import io
 import os
+import zipfile
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi import FastAPI
 from PIL import Image
+
+import backend.services.files as files_mod
 
 F = "/api/v1/files"
 T = "/api/v1/thumbnails"
@@ -171,3 +177,97 @@ async def test_nested_paths_with_encoded_slashes_resolve(
         assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
     assert (await client.delete(f"{F}/sessions%2Fs1%2Fdeep%2Ff.jpg")).status_code == 200
     assert (await client.get(f"{F}/sessions%2Fs1%2Fdeep%2Ff.jpg")).status_code == 404
+
+
+# ---- bulk delete and ZIP downloads ---------------------------------------------------------
+async def test_bulk_delete_partial_failure_and_traversal(
+    app: FastAPI, client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    o = _out(app)
+    _jpg(o / "a.jpg")
+    _jpg(o / "d" / "b.jpg")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep")
+    r = await client.post(
+        f"{F}/delete",
+        json={"paths": ["a.jpg", "nope.jpg", "d", "../outside.txt", "/etc/passwd", "d/b.jpg"]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["deleted"] == ["a.jpg", "d/b.jpg"]
+    assert {f["path"] for f in body["failed"]} == {"nope.jpg", "d", "../outside.txt", "/etc/passwd"}
+    assert outside.exists() and (o / "d").is_dir() and not (o / "a.jpg").exists()
+    assert (await client.get(F)).json()["total"] == 0  # index invalidated
+    assert (await client.post(f"{F}/delete", json={"paths": []})).status_code == 422
+
+
+async def test_zip_contents_and_ticket_is_single_use(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    o = _out(app)
+    _jpg(o / "a.jpg")
+    _jpg(o / "s" / "a.jpg")
+    (o / "s" / "big.bin").write_bytes(os.urandom(3 * 1024 * 1024))
+    paths = ["a.jpg", "s/a.jpg", "s/big.bin", "a.jpg"]
+    r = await client.post(f"{F}/zip", json={"paths": paths})
+    assert r.status_code == 200
+    url = r.json()["url"]
+    assert url.startswith("/api/v1/files/zip/")
+    got = await client.get(url)
+    assert got.status_code == 200 and got.headers["content-type"] == "application/zip"
+    assert "attachment" in got.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(got.content)) as zf:
+        assert zf.testzip() is None
+        assert zf.namelist() == ["a.jpg", "s/a.jpg", "s/big.bin"]  # deduped, folders kept
+        assert all(i.compress_type == zipfile.ZIP_STORED for i in zf.infolist())
+        assert zf.read("s/big.bin") == (o / "s" / "big.bin").read_bytes()
+        assert zf.read("a.jpg") == (o / "a.jpg").read_bytes()
+    assert (await client.get(url)).status_code == 404  # single use
+
+
+async def test_zip_single_path_streams_the_file_itself(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    o = _out(app)
+    _jpg(o / "s" / "one.jpg")
+    url = (await client.post(f"{F}/zip", json={"paths": ["s/one.jpg"]})).json()["url"]
+    got = await client.get(url)
+    assert got.content == (o / "s" / "one.jpg").read_bytes()
+    assert "one.jpg" in got.headers["content-disposition"]
+    assert (await client.get(url)).status_code == 404
+
+
+@pytest.mark.parametrize("bad", ["../x.jpg", "/etc/passwd", "a/../../x", ".hidden", "x.jpg.part"])
+async def test_zip_rejects_bad_paths(app: FastAPI, client: httpx.AsyncClient, bad: str) -> None:
+    _jpg(_out(app) / "a.jpg")
+    r = await client.post(f"{F}/zip", json={"paths": ["a.jpg", bad]})
+    assert r.status_code == 400
+
+
+async def test_zip_missing_file_is_404_and_ticket_expires(
+    app: FastAPI, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _jpg(_out(app) / "a.jpg")
+    assert (await client.post(f"{F}/zip", json={"paths": ["a.jpg", "gone.jpg"]})).status_code == 404
+    url = (await client.post(f"{F}/zip", json={"paths": ["a.jpg"]})).json()["url"]
+    real = files_mod.time.monotonic
+    monkeypatch.setattr(
+        files_mod.time, "monotonic", lambda: real() + files_mod.ZIP_TICKET_TTL_S + 1
+    )
+    assert (await client.get(url)).status_code == 404
+    assert (await client.get(f"{F}/zip/not-a-ticket")).status_code == 404
+
+
+async def test_zip_stream_worker_stops_when_client_goes_away(tmp_path: Path) -> None:
+    import threading
+
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"x" * (32 * 1024 * 1024))  # far more than the queue can buffer
+    gen = files_mod.FileService.stream_zip([(big, "big.bin")])
+    assert await anext(gen)
+    await gen.aclose()
+    for _ in range(100):
+        if not [t for t in threading.enumerate() if t.name == "zip-stream"]:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("zip worker thread kept running")

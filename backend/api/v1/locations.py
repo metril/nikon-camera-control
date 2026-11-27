@@ -262,6 +262,7 @@ async def start_offload(
                 sc.kind,
                 session_id=sc.session_id,
                 before=sc.before,
+                paths=sc.paths,
                 exclude_sessions=in_use,
                 min_age_s=OFFLOAD_MIN_AGE_S,
             )

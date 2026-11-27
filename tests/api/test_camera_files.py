@@ -947,3 +947,49 @@ async def test_preview_accepts_cache_buster_params(
     f = await _first(connected_client, "jpeg")
     q = {"folder": f["folder"], "name": f["name"], "size": f["size"], "mtime": f["mtime"]}
     assert (await connected_client.get(P, params=q)).status_code == 200
+
+
+async def test_bulk_delete_camera_files_partial_failure(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 2)
+    names = [i["name"] for i in (await c.get(F, params={"folder": CARD_FOLDER})).json()["items"]]
+    refs = [{"folder": CARD_FOLDER, "name": n} for n in names]
+    ghost = {"folder": CARD_FOLDER, "name": "NOPE.JPG"}
+    r = await c.post(f"{F}/delete", json={"files": [refs[0], ghost, refs[1]]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["deleted"] == refs
+    assert [(f["folder"], f["name"]) for f in body["failed"]] == [(CARD_FOLDER, "NOPE.JPG")]
+    assert (await c.get(F, params={"folder": CARD_FOLDER})).json()["total"] == 0
+    bad = await c.post(f"{F}/delete", json={"files": [{"folder": "/a/../b", "name": "x"}]})
+    assert bad.status_code in (400, 422)
+
+
+async def test_bulk_delete_camera_files_lease_conflict_is_per_file(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine")
+    name = (await c.get(F, params={"folder": CARD_FOLDER})).json()["items"][0]["name"]
+    async with app.state.camera_service.lease("timelapse"):
+        r = await c.post(f"{F}/delete", json={"files": [{"folder": CARD_FOLDER, "name": name}]})
+    assert r.status_code == 200 and r.json()["deleted"] == []
+    assert r.json()["failed"][0]["name"] == name
+
+
+async def test_download_selected_files_only(
+    app: FastAPI, connected_client: httpx.AsyncClient, tmp_dirs: Any
+) -> None:
+    c = connected_client
+    await _shoot(c, app, "JPEG Fine", 3)
+    names = [i["name"] for i in (await c.get(F, params={"folder": CARD_FOLDER})).json()["items"]]
+    pick = [{"folder": CARD_FOLDER, "name": n} for n in names[:2]]
+    pick.append({"folder": CARD_FOLDER, "name": "NOPE.JPG"})
+    r = await c.post(f"{F}/download-all", json={"files": pick})
+    j = await _wait_job(c, r.json()["id"], _finished)
+    assert j["status"] == "completed"
+    assert (j["result"]["downloaded"], j["result"]["failed"]) == (2, 1)
+    assert j["result"]["failed_names"] == ["NOPE.JPG"]
+    assert sorted(p.name for p in (tmp_dirs.output_dir / "camera").iterdir()) == sorted(names[:2])

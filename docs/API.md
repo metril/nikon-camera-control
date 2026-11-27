@@ -81,6 +81,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/camera/thumbnail` | `get_camera_thumbnail` | Get Camera Thumbnail |
 | GET | `/api/v1/camera/preview` | `get_camera_preview` | Get Camera Preview |
 | POST | `/api/v1/camera/files/download-all` | `download_all_camera_files` | Download All Camera Files |
+| POST | `/api/v1/camera/files/delete` | `delete_camera_files` | Delete Camera Files |
 | GET | `/api/v1/camera/files/{folder}/{name}` | `download_camera_file` | Download Camera File |
 | DELETE | `/api/v1/camera/files/{folder}/{name}` | `delete_camera_file` | Delete Camera File |
 
@@ -115,7 +116,10 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 
 | Method | Path | operation_id | Summary |
 |---|---|---|---|
+| GET | `/api/v1/files/zip/{ticket}` | `download_zip` | Download Zip |
 | GET | `/api/v1/files` | `list_files` | List Files |
+| POST | `/api/v1/files/delete` | `delete_files` | Delete Files |
+| POST | `/api/v1/files/zip` | `create_zip_download` | Create Zip Download |
 | GET | `/api/v1/files/{path}` | `download_file` | Download File |
 | DELETE | `/api/v1/files/{path}` | `delete_file` | Delete File |
 | GET | `/api/v1/thumbnails/{path}` | `get_thumbnail` | Get Thumbnail |
@@ -546,6 +550,7 @@ operation_id: `download_all_camera_files`
 | Field | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | `file` | CameraFileRef \| null | no |  |  | Download only this file (folder is then ignored) |
+| `files` | list[CameraFileRef] \| null | no |  | `maxItems=1000` | Download only these files (folder and file are then ignored) |
 | `folder` | string \| null | no |  |  | Camera folder to download (recursively); null = whole card |
 | `delete_after` | boolean | no | `false` |  | Delete each file from the card after |
 | `only_new` | boolean | no | `true` |  | Skip files already downloaded earlier |
@@ -555,6 +560,31 @@ operation_id: `download_all_camera_files`
 | Status | Description | Body |
 |---|---|---|
 | 202 | Successful Response | `application/json`: `JobOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/camera/files/delete`
+
+operation_id: `delete_camera_files`
+
+Delete several files from the card. Failures (for example another owner holds the
+camera lease) are reported per file; the rest are still deleted.
+
+**Request body** (`application/json`): `DeleteCameraFilesRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `files` | list[CameraFileRef] | yes |  | `minItems=1`, `maxItems=1000` |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `DeleteCameraFilesResult` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
@@ -863,6 +893,31 @@ generated client carry the event types.
 
 ## files
 
+### `GET /api/v1/files/zip/{ticket}`
+
+operation_id: `download_zip`
+
+Redeem a ticket from ``POST /files/zip``. No other credential is needed; a ticket
+works once.
+
+**Parameters**
+
+| Name | In | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|---|
+| `ticket` | path | string | yes |  |  |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | A ZIP archive, or the single file itself | `application/zip`: `string(binary)` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
 ### `GET /api/v1/files`
 
 operation_id: `list_files`
@@ -882,6 +937,55 @@ operation_id: `list_files`
 | Status | Description | Body |
 |---|---|---|
 | 200 | Successful Response | `application/json`: `FilePage` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/files/delete`
+
+operation_id: `delete_files`
+
+Delete many files. Failures are reported per path; the others are still deleted.
+
+**Request body** (`application/json`): `DeletePathsRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `paths` | list[string] | yes |  | `minItems=1`, `maxItems=5000` | Paths to delete |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `DeletePathsResult` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+### `POST /api/v1/files/zip`
+
+operation_id: `create_zip_download`
+
+Issue a single-use download URL (60 s). One path downloads the file itself, several
+stream a ZIP archive.
+
+**Request body** (`application/json`): `ZipRequest`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `paths` | list[string] | yes |  | `minItems=1`, `maxItems=5000` | Files to download (one path = the file itself) |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `ZipTicket` |
 | 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
 | 404 | Not found | `application/json`: `ErrorResponse` |
 | 409 | Conflict with current state | `application/json`: `ErrorResponse` |
