@@ -106,13 +106,19 @@ while true; do
   rm -f "$PROFILE"/Singleton*
   SCALE=$(resolve_scale "$(fetch_setting)")
   echo "$SCALE" > /tmp/kiosk-scale
+  # Scale the compositor output before Chromium starts (it then renders natively at that scale).
+  # Not --force-device-scale-factor: under Wayland it mis-sizes the window (part of the screen
+  # stays black). Changing the output scale under a running Chromium breaks touch, hence the relaunch.
   setpriv --reuid kiosk --regid seat --keep-groups env \
     XDG_RUNTIME_DIR=/tmp/xdg HOME=/kiosk-profile LIBSEAT_BACKEND=seatd WLR_NO_HARDWARE_CURSORS=1 \
-    cage -s -- chromium --kiosk --no-sandbox --ozone-platform=wayland \
-      --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL --touch-events=enabled --force-device-scale-factor="$SCALE" \
-      --noerrdialogs --disable-session-crashed-bubble --no-first-run --password-store=basic \
-      --disk-cache-dir=/tmp/chromium-cache \
-      --user-data-dir="$PROFILE" "$APP/?layout=touch" &
+    KIOSK_SCALE="$SCALE" PROFILE="$PROFILE" APP="$APP" \
+    cage -s -- sh -c '
+      for o in $(wlr-randr | awk "/^[^ ]/ {print \$1}"); do wlr-randr --output "$o" --scale "$KIOSK_SCALE"; done
+      exec chromium --kiosk --no-sandbox --ozone-platform=wayland \
+        --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL --touch-events=enabled \
+        --noerrdialogs --disable-session-crashed-bubble --no-first-run --password-store=basic \
+        --disk-cache-dir=/tmp/chromium-cache \
+        --user-data-dir="$PROFILE" "$APP/?layout=touch"' &
   CHILD=$!
   wait "$CHILD"
   echo "kiosk: chromium exited, restarting in 3s"; sleep 3
