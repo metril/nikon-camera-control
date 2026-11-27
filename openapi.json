@@ -162,6 +162,123 @@
         "title": "ApplyResult",
         "type": "object"
       },
+      "AuthSessionListOut": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/AuthSessionOut"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "title": "AuthSessionListOut",
+        "type": "object"
+      },
+      "AuthSessionOut": {
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "title": "Created",
+            "type": "string"
+          },
+          "current": {
+            "description": "True for the session making this request",
+            "title": "Current",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Public handle; not a credential",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "browser",
+              "kiosk"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_seen": {
+            "format": "date-time",
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "created",
+          "last_seen",
+          "user_agent",
+          "current"
+        ],
+        "title": "AuthSessionOut",
+        "type": "object"
+      },
+      "AuthStatusOut": {
+        "properties": {
+          "api_key_set": {
+            "title": "Api Key Set",
+            "type": "boolean"
+          },
+          "auth_required": {
+            "description": "True when a password or API key is set",
+            "title": "Auth Required",
+            "type": "boolean"
+          },
+          "authenticated": {
+            "description": "Whether this request's credentials are accepted",
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "password_set": {
+            "description": "True when an app password exists (or is locked)",
+            "title": "Password Set",
+            "type": "boolean"
+          },
+          "session_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "browser",
+                  "kiosk"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Kind of the session cookie in use, if any",
+            "title": "Session Kind"
+          }
+        },
+        "required": [
+          "auth_required",
+          "password_set",
+          "api_key_set",
+          "authenticated",
+          "session_kind"
+        ],
+        "title": "AuthStatusOut",
+        "type": "object"
+      },
       "AutofocusResult": {
         "properties": {
           "focused": {
@@ -2906,6 +3023,7 @@
       "InfoOut": {
         "properties": {
           "auth_enabled": {
+            "description": "True when a password or API key is set",
             "title": "Auth Enabled",
             "type": "boolean"
           },
@@ -2946,6 +3064,11 @@
             "description": "Free disk space of the output dir",
             "title": "Output Free Bytes"
           },
+          "password_set": {
+            "description": "True when an app password is set",
+            "title": "Password Set",
+            "type": "boolean"
+          },
           "started_at": {
             "description": "UTC time this server process started; a change means it restarted",
             "format": "date-time",
@@ -2961,6 +3084,7 @@
           "version",
           "backend",
           "auth_enabled",
+          "password_set",
           "output_free_bytes",
           "ffmpeg_available",
           "started_at"
@@ -3317,6 +3441,22 @@
           "on"
         ],
         "title": "KioskDisplayOut",
+        "type": "object"
+      },
+      "KioskPairIn": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The kiosk device token",
+            "maxLength": 1024,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "KioskPairIn",
         "type": "object"
       },
       "LastFrame": {
@@ -4133,6 +4273,39 @@
         "title": "LocationsOut",
         "type": "object"
       },
+      "LoginIn": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The API key; accepted only while no password is set",
+            "title": "Api Key"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The app password",
+            "title": "Password"
+          }
+        },
+        "title": "LoginIn",
+        "type": "object"
+      },
       "MediaConfig": {
         "additionalProperties": false,
         "properties": {
@@ -4454,6 +4627,52 @@
           "total"
         ],
         "title": "Page[VideoEntry]",
+        "type": "object"
+      },
+      "PasswordDeleteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "description": "The current password",
+            "maxLength": 1024,
+            "title": "Current",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current"
+        ],
+        "title": "PasswordDeleteIn",
+        "type": "object"
+      },
+      "PasswordSetIn": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The current password; required only when a password is already set",
+            "title": "Current"
+          },
+          "new": {
+            "description": "The new password",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "New",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new"
+        ],
+        "title": "PasswordSetIn",
         "type": "object"
       },
       "PresetBracketing": {
@@ -5328,6 +5547,21 @@
           "settings"
         ],
         "title": "ResolvedStep",
+        "type": "object"
+      },
+      "RevokedOut": {
+        "properties": {
+          "revoked": {
+            "description": "Number of sessions revoked",
+            "minimum": 0.0,
+            "title": "Revoked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revoked"
+        ],
+        "title": "RevokedOut",
         "type": "object"
       },
       "SessionDetail": {
@@ -7414,6 +7648,11 @@
       }
     },
     "securitySchemes": {
+      "APIKeyCookie": {
+        "in": "cookie",
+        "name": "ncc_session",
+        "type": "apiKey"
+      },
       "APIKeyHeader": {
         "in": "header",
         "name": "X-API-Key",
@@ -7427,6 +7666,781 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/kiosk": {
+      "post": {
+        "description": "Open, rate-limited. Trades the kiosk device token for a kiosk session cookie.",
+        "operationId": "pair_kiosk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KioskPairIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many failed attempts (see Retry-After)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Pair Kiosk",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/kiosk-token/rotate": {
+      "post": {
+        "description": "Write a new kiosk token file and revoke every kiosk session (the kiosk re-pairs).",
+        "operationId": "rotate_kiosk_token",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Rotate Kiosk Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Open, rate-limited (429 with Retry-After). Sets the session cookie.\n\n``password`` signs in with the app password. ``api_key`` works only while no password is set.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many failed attempts (see Retry-After)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Open. Revokes this browser's session and clears its cookie.",
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password": {
+      "delete": {
+        "description": "Remove the app password (needs the current one). Browser sessions are revoked; with\nno API key either, the app returns to open mode.",
+        "operationId": "delete_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Password",
+        "tags": [
+          "auth"
+        ]
+      },
+      "put": {
+        "description": "Set or change the app password; signs this browser in and revokes other browser sessions.\n\n``current`` is required only when a password is already set (403 when wrong).",
+        "operationId": "set_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordSetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Set Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "operationId": "list_auth_sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Auth Sessions",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/revoke-all": {
+      "post": {
+        "description": "Sign out every other browser. Keeps this session and the kiosk sessions.",
+        "operationId": "revoke_all_auth_sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Revoke All Auth Sessions",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{session_id}": {
+      "delete": {
+        "operationId": "revoke_auth_session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Revoke Auth Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/status": {
+      "get": {
+        "description": "Open. What the login screen needs: whether sign-in is required and whether it is done.",
+        "operationId": "get_auth_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Get Auth Status",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/backup/run": {
       "post": {
         "description": "Start a sync now (a run in progress is repeated once it ends).",
@@ -7506,6 +8520,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Run Backup",
@@ -7592,6 +8609,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Backup Status",
@@ -7678,6 +8698,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera",
@@ -7764,6 +8787,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera Battery",
@@ -7850,6 +8876,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Capture Target",
@@ -7945,6 +8974,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Capture Target",
@@ -8031,6 +9063,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Connect Camera",
@@ -8118,6 +9153,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera Datetime",
@@ -8213,6 +9251,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Camera Datetime",
@@ -8299,6 +9340,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Disconnect Camera",
@@ -8445,6 +9489,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Camera Files",
@@ -8542,6 +9589,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Camera Files",
@@ -8638,6 +9688,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Download All Camera Files",
@@ -8745,6 +9798,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Camera File",
@@ -8850,6 +9906,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Download Camera File",
@@ -8948,6 +10007,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Camera Folders",
@@ -9088,6 +10150,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera Preview",
@@ -9174,6 +10239,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera Storage",
@@ -9260,6 +10328,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera Summary",
@@ -9367,6 +10438,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Camera Thumbnail",
@@ -9463,6 +10537,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Capture Photo",
@@ -9560,6 +10637,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Bracket Capture",
@@ -9646,6 +10726,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Bulb Status",
@@ -9741,6 +10824,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Bulb Capture",
@@ -9827,6 +10913,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Trigger Capture",
@@ -9913,6 +11002,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Config",
@@ -10007,6 +11099,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Update Config",
@@ -10093,6 +11188,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Api Key",
@@ -10178,6 +11276,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Create Api Key",
@@ -10265,6 +11366,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Reset Config",
@@ -10351,6 +11455,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Config Schema",
@@ -10569,6 +11676,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Event Schema",
@@ -10724,6 +11834,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Files",
@@ -10821,6 +11934,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Files",
@@ -10918,6 +12034,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Create Zip Download",
@@ -11109,6 +12228,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete File",
@@ -11205,6 +12327,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Download File",
@@ -11291,6 +12416,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Focus Status",
@@ -11377,6 +12505,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Autofocus",
@@ -11473,6 +12604,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Manual Focus",
@@ -11570,6 +12704,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Af Point",
@@ -11656,6 +12793,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Reset Focus Position",
@@ -11753,6 +12893,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Focus Stack",
@@ -11861,6 +13004,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Info",
@@ -11985,6 +13131,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Jobs",
@@ -12083,6 +13232,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Cancel Job",
@@ -12178,6 +13330,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Job",
@@ -12296,6 +13451,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Kiosk Display",
@@ -12405,6 +13563,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Liveview Status",
@@ -12492,6 +13653,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Liveview Snapshot",
@@ -12579,6 +13743,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Liveview",
@@ -12665,6 +13832,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Stop Liveview",
@@ -12751,6 +13921,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Locations",
@@ -12845,6 +14018,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Add Location",
@@ -12941,6 +14117,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Test Smb Location",
@@ -13038,6 +14217,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Location",
@@ -13143,6 +14325,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Update Location",
@@ -13241,6 +14426,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Check Location",
@@ -13338,6 +14526,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Mount Location",
@@ -13435,6 +14626,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Unmount Location",
@@ -13532,6 +14726,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Offload",
@@ -13641,6 +14838,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Presets",
@@ -13751,6 +14951,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Create Preset",
@@ -13838,6 +15041,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Export Presets",
@@ -13935,6 +15141,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Create Preset From Camera",
@@ -14032,6 +15241,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Import Presets",
@@ -14133,6 +15345,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Preset",
@@ -14231,6 +15446,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Preset",
@@ -14355,6 +15573,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Update Preset",
@@ -14456,6 +15677,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Apply Preset",
@@ -14542,6 +15766,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Recording Status",
@@ -14639,6 +15866,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Recording",
@@ -14726,6 +15956,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Stop Recording",
@@ -14837,6 +16070,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Sessions",
@@ -14934,6 +16170,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Session",
@@ -15029,6 +16268,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Session",
@@ -15134,6 +16376,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Rename Session",
@@ -15254,6 +16499,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Session Frames",
@@ -15362,6 +16610,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Render Session Video",
@@ -15468,6 +16719,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Settings",
@@ -15562,6 +16816,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Update Settings",
@@ -15669,6 +16926,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Refresh Settings",
@@ -15778,6 +17038,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Setting",
@@ -15883,6 +17146,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Setting",
@@ -15979,6 +17245,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Storage Backups",
@@ -16088,6 +17357,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Format Disk",
@@ -16184,6 +17456,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Storage Target",
@@ -16303,6 +17578,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Thumbnail",
@@ -16389,6 +17667,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Get Timelapse Status",
@@ -16485,6 +17766,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Set Timelapse Config",
@@ -16571,6 +17855,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Pause Timelapse",
@@ -16657,6 +17944,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Timelapse Presets",
@@ -16743,6 +18033,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Preview Timelapse",
@@ -16838,6 +18131,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Preview Timelapse Draft",
@@ -16924,6 +18220,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Resume Timelapse",
@@ -17010,6 +18309,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Timelapse",
@@ -17096,6 +18398,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Stop Timelapse",
@@ -17193,6 +18498,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Start Verify",
@@ -17320,6 +18628,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "List Videos",
@@ -17426,6 +18737,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Delete Video",
@@ -17532,6 +18846,9 @@
         "security": [
           {
             "APIKeyHeader": []
+          },
+          {
+            "APIKeyCookie": []
           }
         ],
         "summary": "Download Video",

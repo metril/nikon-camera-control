@@ -104,7 +104,9 @@ def _envelope(
 
 async def _app_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)  # noqa: S101
-    return _envelope(request, exc.http_status, exc.code, exc.message, exc.details)
+    return _envelope(
+        request, exc.http_status, exc.code, exc.message, exc.details, headers=exc.headers
+    )
 
 
 async def _http_error(request: Request, exc: Exception) -> JSONResponse:

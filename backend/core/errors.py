@@ -42,6 +42,7 @@ class ErrorCode(StrEnum):
     FORBIDDEN = "FORBIDDEN"
     FORBIDDEN_ORIGIN = "FORBIDDEN_ORIGIN"
     BULB_SHUTTER_OPEN = "BULB_SHUTTER_OPEN"
+    RATE_LIMITED = "RATE_LIMITED"
     NO_TARGET = "NO_TARGET"
     LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
     LOCATION_BUSY = "LOCATION_BUSY"
@@ -56,6 +57,7 @@ class AppError(Exception):
     http_status: int = 500
     recoverable: bool = True
     default_message: str = "Internal error"
+    headers: dict[str, str] | None = None  # extra response headers (e.g. Retry-After)
 
     def __init__(
         self,
@@ -240,7 +242,7 @@ class ForbiddenOrigin(AppError):
 class Unauthorized(AppError):
     code = ErrorCode.UNAUTHORIZED
     http_status = 401
-    default_message = "Missing or invalid API key"
+    default_message = "Authentication required"
 
 
 class ConfigInvalid(AppError):
@@ -291,3 +293,14 @@ class FileTooLarge(AppError):
     code = ErrorCode.FILE_TOO_LARGE
     http_status = 413
     default_message = "File is too large for the target filesystem (FAT32 limit is 4 GiB)"
+
+
+class RateLimited(AppError):
+    code = ErrorCode.RATE_LIMITED
+    http_status = 429
+    default_message = "Too many failed attempts. Try again later."
+
+    def __init__(self, retry_after_s: float, message: str | None = None) -> None:
+        retry = max(1, int(retry_after_s) + 1)
+        super().__init__(message, details={"retry_after_s": retry})
+        self.headers = {"Retry-After": str(retry)}

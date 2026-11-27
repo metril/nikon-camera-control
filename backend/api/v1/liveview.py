@@ -12,7 +12,7 @@ from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.files import binary_response
 from backend.api.schemas.liveview import LiveViewStatusOut
-from backend.core.security import KeyWatch, require_api_key, ws_authorize, ws_subprotocol
+from backend.core.security import AuthWatch, require_api_key, ws_authorize, ws_subprotocol
 from backend.services.liveview import LiveViewService, Subscriber
 
 get_liveview = service_dep(
@@ -89,7 +89,7 @@ async def liveview_ws(websocket: WebSocket) -> None:
     connect and whenever the stream changes state. Stays open while the camera is away."""
     if not await ws_authorize(websocket):
         return
-    watch = KeyWatch(websocket)
+    watch = AuthWatch(websocket)
     try:
         await websocket.accept(subprotocol=ws_subprotocol(websocket))
     except BaseException:
