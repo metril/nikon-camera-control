@@ -18,6 +18,7 @@ import ApiKeyPrompt from '@/components/shell/ApiKeyPrompt.vue'
 import JobsPanel from '@/components/shell/JobsPanel.vue'
 import ToastHost from '@/components/shell/ToastHost.vue'
 import OnScreenKeyboard from '@/components/shell/OnScreenKeyboard.vue'
+import KioskSleepOverlay from '@/components/shell/KioskSleepOverlay.vue'
 import { TABS, useTabs } from '@/components/shell/useTabs'
 import { useCameraStatus } from '@/components/shell/useCameraStatus'
 import ShootView from '@/views/ShootView.vue'
@@ -142,6 +143,7 @@ const SHORTCUTS = [
     <ApiKeyPrompt />
     <ToastHost />
     <OnScreenKeyboard />
+    <KioskSleepOverlay />
 
     <UiModal :open="helpOpen" title="Keyboard shortcuts" @close="helpOpen = false">
       <dl class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-sm">

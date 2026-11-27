@@ -162,6 +162,15 @@ class KioskConfig(_Section):
         title="Display scale",
         description="Size of the touchscreen kiosk's interface. Auto works it out from the screen.",
     )
+    sleep_after_min: int = Field(
+        default=5,
+        ge=0,
+        le=1440,
+        title="Kiosk screen sleep",
+        description=(
+            "Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on."
+        ),
+    )
 
 
 class TimelapseConfig(_Section):

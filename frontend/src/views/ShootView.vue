@@ -212,17 +212,25 @@ onBeforeUnmount(unlisten)
     --lvh: calc(
       100dvh - 60px - 3px - var(--banner, 0px) - 16px - var(--stripH) - 16px - 24px - 4px
     );
+    /* The grid is exactly as tall as the room under the header, banner and main padding, so the
+       document never scrolls; the side column and recent captures scroll inside it if short. */
+    height: calc(100dvh - 60px - 3px - var(--banner, 0px) - 16px - 24px);
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas:
       'strip strip'
       'lv side'
       'lv film';
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, auto) minmax(72px, 1fr);
+  }
+  html[data-layout='touch'] .side-area {
+    min-height: 0;
+    overflow-y: auto;
   }
   html[data-layout='touch'] .film-area {
     align-self: stretch;
     align-content: start;
     min-height: 0;
+    overflow-y: auto;
   }
 }
 </style>

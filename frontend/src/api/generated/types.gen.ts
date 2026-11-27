@@ -1919,6 +1919,12 @@ export type KioskConfig = {
      * Size of the touchscreen kiosk's interface. Auto works it out from the screen.
      */
     scale?: 'auto' | '1' | '1.25' | '1.5' | '2';
+    /**
+     * Kiosk screen sleep
+     *
+     * Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.
+     */
+    sleep_after_min?: number;
 };
 
 /**
@@ -1931,6 +1937,36 @@ export type KioskConfigPatch = {
      * Size of the touchscreen kiosk's interface. Auto works it out from the screen.
      */
     scale?: 'auto' | '1' | '1.25' | '1.5' | '2' | null;
+    /**
+     * Sleep After Min
+     *
+     * Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.
+     */
+    sleep_after_min?: number | null;
+};
+
+/**
+ * KioskDisplayIn
+ */
+export type KioskDisplayIn = {
+    /**
+     * On
+     *
+     * True to wake the kiosk screen, false to let it sleep.
+     */
+    on: boolean;
+};
+
+/**
+ * KioskDisplayOut
+ */
+export type KioskDisplayOut = {
+    /**
+     * On
+     *
+     * The recorded display state.
+     */
+    on: boolean;
 };
 
 /**
@@ -6451,6 +6487,67 @@ export type GetJobResponses = {
 };
 
 export type GetJobResponse = GetJobResponses[keyof GetJobResponses];
+
+export type StreamKioskDisplayData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/kiosk/display';
+};
+
+export type StreamKioskDisplayResponses = {
+    /**
+     * One `data: on` or `data: off` line per state
+     */
+    200: Blob | File;
+};
+
+export type StreamKioskDisplayResponse = StreamKioskDisplayResponses[keyof StreamKioskDisplayResponses];
+
+export type SetKioskDisplayData = {
+    body: KioskDisplayIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/kiosk/display';
+};
+
+export type SetKioskDisplayErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SetKioskDisplayError = SetKioskDisplayErrors[keyof SetKioskDisplayErrors];
+
+export type SetKioskDisplayResponses = {
+    /**
+     * Successful Response
+     */
+    200: KioskDisplayOut;
+};
+
+export type SetKioskDisplayResponse = SetKioskDisplayResponses[keyof SetKioskDisplayResponses];
 
 export type StreamKioskScaleData = {
     body?: never;
