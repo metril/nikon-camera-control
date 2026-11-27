@@ -9,7 +9,12 @@ import pytest
 from fastapi import FastAPI
 
 HTTP_METHODS = ("get", "put", "post", "delete", "patch")
-OPEN_PATHS = {"/api/v1/health", "/api/v1/kiosk/scale", "/api/v1/kiosk/display"}
+OPEN_PATHS = {
+    "/api/v1/health",
+    "/api/v1/kiosk/scale",
+    "/api/v1/kiosk/display",
+    "/api/v1/files/zip/{ticket}",  # authorised by its single-use ticket
+}
 SNAKE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 
 
