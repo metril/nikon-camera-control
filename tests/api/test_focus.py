@@ -74,14 +74,28 @@ async def test_disconnected_is_503(client: httpx.AsyncClient) -> None:
 async def test_af_happy_path(connected_client: httpx.AsyncClient) -> None:
     c = connected_client
     r = await c.post(f"{F}/af")
-    assert r.status_code == 200 and r.json() == {"ok": True, "focused": True}
+    assert r.status_code == 200 and r.json() == {"ok": True, "focused": True, "reason": None}
     assert (await c.get(F)).json()["last_af_at"] is not None
+
+
+async def test_af_out_of_focus_is_a_result_not_an_error(
+    connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    exc = CameraOperationFailed(
+        "set_config(autofocusdrive): Out of Focus",
+        details={"camera_message": "Out of Focus", "camera_message_raw": "Out of Focus"},
+    )
+    fake_camera.fail_next("set_config", exc=exc)
+    r = await connected_client.post(f"{F}/af")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "focused": False, "reason": "Out of Focus"}
+    assert (await connected_client.get(F)).json()["last_af_at"] is None
 
 
 async def test_af_failure_keeps_camera_connected(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
-    fake_camera.fail_next("set_config", exc=CameraOperationFailed("Out of focus"))
+    fake_camera.fail_next("set_config", exc=CameraOperationFailed("Device busy elsewhere"))
     r = await connected_client.post(f"{F}/af")
     assert r.status_code == 502
     assert r.json()["error"]["code"] == "CAMERA_OPERATION_FAILED"

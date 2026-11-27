@@ -121,21 +121,20 @@ describe('App shell', () => {
     w.unmount()
   })
 
-  it('touch layout swaps the header tabs for a bottom tab bar with icons and labels', async () => {
+  it('touch layout keeps the section tabs in the header and has no bottom bar', async () => {
     const { w } = await setup()
-    expect(w.find('[data-test="bottomnav"]').exists()).toBe(false)
     useLayoutMode().setPref('touch')
     await flushPromises()
     expect(document.documentElement.dataset.layout).toBe('touch')
-    const nav = w.find('[data-test="bottomnav"]')
-    expect(nav.findAll('a').map((a) => a.text())).toEqual([
+    expect(w.find('[data-test="bottomnav"]').exists()).toBe(false)
+    const tabs = w.find('[data-test="header"] nav[aria-label="Primary"]')
+    expect(tabs.findAll('a').map((a) => a.text())).toEqual([
       'Shoot',
       'Time-lapse',
       'Gallery',
       'Settings',
     ])
-    expect(nav.find('svg').exists()).toBe(true)
-    await nav.findAll('a')[2].trigger('click')
+    await tabs.findAll('a')[2].trigger('click')
     expect(location.hash).toBe('#/gallery')
     w.unmount()
   })

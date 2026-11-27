@@ -453,7 +453,9 @@ const emptyHint = computed(() =>
               <UiIcon v-if="selected.has(f.path)" name="Check" :size="16" />
             </span>
           </button>
-          <div class="grid min-w-0 gap-0.5 px-2.5 py-2 text-xs">
+          <div
+            class="grid min-w-0 gap-0.5 px-2.5 py-2 text-xs [html[data-layout='touch']_&]:text-[length:var(--fs-min)]"
+          >
             <div class="flex min-w-0 items-center justify-between gap-2">
               <p class="min-w-0 truncate font-mono font-medium" :title="f.name">{{ f.name }}</p>
               <UiBadge :tone="kindTone(f.kind)">{{ fileKind(f.kind) }}</UiBadge>

@@ -200,4 +200,66 @@ describe('ExposureStrip', () => {
     expect(cell('iso').element.tagName).toBe('DIV')
     expect(cell('iso').attributes('title')).toContain('Busy: Time-lapse')
   })
+
+  describe('picker mode', () => {
+    async function openIn({ touch, landscape }) {
+      const { resetLayoutMode } = await import('@/composables/useLayoutMode')
+      if (touch) localStorage.setItem('layout', 'touch')
+      vi.stubGlobal('matchMedia', (q) => ({
+        matches: landscape && q.includes('orientation: landscape'),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }))
+      resetLayoutMode()
+      setup()
+      await cell('iso').trigger('click')
+      await flushPromises()
+    }
+    afterEach(async () => {
+      vi.unstubAllGlobals()
+      localStorage.removeItem('layout')
+      ;(await import('@/composables/useLayoutMode')).resetLayoutMode()
+    })
+
+    it('desktop: an anchored popover without step buttons', async () => {
+      await openIn({ touch: false, landscape: true })
+      expect(picker().classList.contains('sheet')).toBe(false)
+      expect(picker().classList.contains('big')).toBe(false)
+      expect(document.body.querySelector('[data-test="picker-next"]')).toBeNull()
+    })
+
+    it('touch landscape: an anchored popover with -/+ step buttons that step the value', async () => {
+      await openIn({ touch: true, landscape: true })
+      expect(picker().classList.contains('sheet')).toBe(false)
+      expect(picker().classList.contains('big')).toBe(true)
+      document.body.querySelector('[data-test="picker-next"]').click()
+      await flushPromises()
+      expect(useSettingsStore().set).toHaveBeenCalledWith('iso', '800')
+      document.body.querySelector('[data-test="picker-prev"]').click()
+      await flushPromises()
+      expect(useSettingsStore().set).toHaveBeenCalledWith('iso', '200')
+    })
+
+    it('touch portrait: the bottom sheet, no step buttons', async () => {
+      await openIn({ touch: true, landscape: false })
+      expect(picker().classList.contains('sheet')).toBe(true)
+      expect(document.body.querySelector('[data-test="picker-next"]')).toBeNull()
+    })
+  })
+
+  it('meter and shots left explain themselves when tapped', async () => {
+    setup({ mode: 'M' })
+    useSettingsStore().common.push({
+      name: 'lightmeter',
+      label: 'lightmeter',
+      type: 'range',
+      value: 0.3,
+      choices: [],
+      writable: false,
+    })
+    await wrapper.vm.$nextTick()
+    await cell('shots').trigger('click')
+    expect(picker().textContent).toContain('Shots left on the card')
+    await cell('shots').trigger('click')
+  })
 })

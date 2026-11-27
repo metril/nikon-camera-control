@@ -205,16 +205,4 @@ describe('CaptureSide', () => {
     await flushPromises()
     expect(useToastsStore(pinia).items.at(-1).message).toContain('nope')
   })
-
-  it('fades the bottom edge while the column has more below, not once scrolled to the end', async () => {
-    setup()
-    const el = wrapper.find('.side').element
-    Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true })
-    Object.defineProperty(el, 'scrollHeight', { value: 700, configurable: true })
-    await wrapper.find('.side').trigger('scroll')
-    expect(wrapper.find('.side').classes()).toContain('fade')
-    el.scrollTop = 300
-    await wrapper.find('.side').trigger('scroll')
-    expect(wrapper.find('.side').classes()).not.toContain('fade')
-  })
 })

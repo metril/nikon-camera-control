@@ -50,7 +50,12 @@ const emit = defineEmits(['step', 'autofocus', 'mode'])
       data-testid="lv-focus-mode"
       @click="emit('mode', mode === 'manual' ? 'af' : 'manual')"
     >
-      <span class="pre">Focus: </span>{{ mode === 'manual' ? 'Manual' : 'Auto' }}
+      <span class="mt"
+        ><span class="pre">Focus: </span>{{ mode === 'manual' ? 'Manual' : 'Auto' }}</span
+      >
+      <span class="sub" data-testid="lv-focus-sub">{{
+        mode === 'manual' ? 'Tap moves AF point' : 'Tap runs autofocus'
+      }}</span>
     </button>
     <button
       v-if="mode !== 'manual'"
@@ -139,62 +144,34 @@ button:disabled {
   padding: 0 12px;
 }
 html[data-layout='touch'] button {
-  height: 44px;
-  min-width: 44px;
+  height: 48px;
+  min-width: 48px;
 }
-/* Touch: the pill sits outside the image, in a narrow rail on landscape screens */
 html[data-layout='touch'] .lv-focus {
+  gap: 4px;
   flex-wrap: wrap;
   justify-content: center;
-  border-radius: 24px;
   max-width: 100%;
 }
-@media (max-width: 480px) {
-  html[data-layout='touch'] .lbl {
-    display: none;
-  }
+/* The mode button names its mode and says what a tap does (no hover tooltips on a finger) */
+html[data-layout='touch'] .lv-focus .mode {
+  flex-direction: column;
+  gap: 0;
+  line-height: 1.15;
+  padding: 0 12px;
+  border: 1px solid theme('colors.camera.border');
 }
-/* The frame is a size container (see LiveViewPanel): icon-only Autofocus when narrow */
-/* Landscape rail: « ‹ › » on one line, Autofocus under it, the AF mode last */
-@media (min-width: 900px) and (orientation: landscape) {
-  html[data-layout='touch'] .lv-focus {
-    display: grid;
-    grid-template-columns: repeat(4, 44px);
-    justify-content: center;
-    gap: 6px 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    backdrop-filter: none;
-  }
-  html[data-layout='touch'] .lv-focus .lbl {
-    display: inline;
-  }
-  html[data-layout='touch'] .lv-focus .pre {
-    display: inline;
-  }
-  html[data-layout='touch'] .lv-focus .s1 {
-    order: 1;
-  }
-  html[data-layout='touch'] .lv-focus .s2 {
-    order: 2;
-  }
-  html[data-layout='touch'] .lv-focus .s3 {
-    order: 3;
-  }
-  html[data-layout='touch'] .lv-focus .s4 {
-    order: 4;
-  }
-  html[data-layout='touch'] .lv-focus .af {
-    order: 5;
-    grid-column: 1 / -1;
-    margin: 0;
-  }
-  html[data-layout='touch'] .lv-focus .mode {
-    order: 6;
-    grid-column: 1 / -1;
-    border: 1px solid theme('colors.camera.border');
-  }
+.sub {
+  display: none;
+  font-size: var(--fs-min, 13px);
+  font-weight: 400;
+  color: theme('colors.camera.muted');
+}
+html[data-layout='touch'] .sub {
+  display: block;
+}
+html[data-layout='touch'] .pre {
+  display: inline;
 }
 .pre {
   display: none;
@@ -203,5 +180,14 @@ html[data-layout='touch'] .lv-focus {
   .lbl {
     display: none;
   }
+}
+@container lv (max-width: 560px) {
+  html[data-layout='touch'] .pre,
+  html[data-layout='touch'] .sub {
+    display: none;
+  }
+}
+html[data-layout='touch'] button {
+  font-size: var(--fs-min);
 }
 </style>

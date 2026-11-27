@@ -1,7 +1,9 @@
 <script setup>
-/** Value picker for the exposure strip: a popover under the cell on desktop, a bottom sheet on touch. */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useLayoutMode } from '@/composables/useLayoutMode'
+/** Value picker for the exposure strip: a popover under the cell (desktop, and touch landscape with
+ * bigger options and step buttons), a bottom sheet on touch portrait. */
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useLayoutMode, useTouchLandscape } from '@/composables/useLayoutMode'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import { uid } from '@/components/ui/uid'
 
 const props = defineProps({
@@ -14,27 +16,52 @@ const props = defineProps({
   /** Options carry a description: two-line rows in a wider panel. */
   twoLine: Boolean,
   emptyText: { type: String, default: 'Nothing to choose.' },
+  /** Touch landscape popover: show -/+ buttons that step to the previous / next value. */
+  steppable: Boolean,
 })
-const emit = defineEmits(['select', 'close'])
+const emit = defineEmits(['select', 'close', 'step'])
 
 const { isTouch } = useLayoutMode()
+const landscape = useTouchLandscape()
+/** Touch portrait: a bottom sheet. Desktop and touch landscape: a popover under the cell. */
+const sheet = computed(() => isTouch.value && !landscape.value)
+const big = computed(() => isTouch.value && landscape.value) // popover with 56px options
+/** Columns of options in the touch popover: 2 for few values, up to 4 for long lists. */
+const cols = computed(() => {
+  if (props.twoLine) return 2
+  const n = props.options.length
+  return n > 24 ? 4 : n > 8 ? 3 : 2
+})
 const panel = ref(null)
 const titleId = uid('picker')
 const style = ref({})
 
+const WIDTH = { 2: 300, 3: 400, 4: 500 } // touch popover width by column count
 function place() {
-  if (isTouch.value || !props.anchor?.getBoundingClientRect) return
+  if (sheet.value || !props.anchor?.getBoundingClientRect) return
   const r = props.anchor.getBoundingClientRect()
-  const width = props.twoLine ? 300 : 240
+  const width = big.value ? WIDTH[cols.value] : props.twoLine ? 300 : 240
   const below = window.innerHeight - r.bottom - 20
   const above = r.top - 20
   const flip = below < 160 && above > below // too little room under the cell: open upwards
+  // touch: at most 60% of the live view's height
+  const lv = big.value
+    ? document
+        .querySelector('[aria-label="Live view"], [data-test="lv-gate"]')
+        ?.getBoundingClientRect().height
+    : 0
+  const cap = lv ? lv * 0.6 : 340
   style.value = {
     left: `${Math.min(window.innerWidth - width - 16, Math.max(8, r.left))}px`,
     ...(flip ? { bottom: `${window.innerHeight - r.top + 6}px` } : { top: `${r.bottom + 6}px` }),
-    maxHeight: `${Math.max(80, Math.min(340, flip ? above : below))}px`,
+    maxHeight: `${Math.max(80, Math.min(cap, flip ? above : below))}px`,
+    ...(big.value ? { width: `${width}px` } : {}),
   }
 }
+watch([sheet, big], () => {
+  if (sheet.value) style.value = {}
+  else place()
+})
 
 const rows = () => [...(panel.value?.querySelectorAll('[role="option"]:not(:disabled)') || [])]
 function onKeydown(e) {
@@ -82,14 +109,14 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div class="picker-scrim" :class="{ sheet: isTouch }" @pointerdown.self="emit('close')" />
+    <div class="picker-scrim" :class="{ sheet }" @pointerdown.self="emit('close')" />
     <div
       ref="panel"
       class="picker"
-      :class="{ wide: twoLine, sheet: isTouch }"
+      :class="{ wide: twoLine, sheet, big }"
       :style="style"
       role="dialog"
-      :aria-modal="isTouch ? 'true' : undefined"
+      :aria-modal="sheet ? 'true' : undefined"
       :aria-labelledby="titleId"
       tabindex="-1"
       data-test="picker"
@@ -100,9 +127,35 @@ onBeforeUnmount(() => {
         <header>
           <span :id="titleId">{{ title }}</span>
           <span v-if="lockedReason" class="note" data-test="picker-locked">{{ lockedReason }}</span>
+          <span v-if="big && steppable" class="steps">
+            <button
+              type="button"
+              aria-label="Previous value"
+              data-test="picker-prev"
+              :disabled="locked"
+              @click="emit('step', -1)"
+            >
+              <UiIcon name="Minus" :size="20" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next value"
+              data-test="picker-next"
+              :disabled="locked"
+              @click="emit('step', 1)"
+            >
+              <UiIcon name="Plus" :size="20" />
+            </button>
+          </span>
         </header>
       </div>
-      <div class="opts" role="listbox" :aria-label="title">
+      <div
+        class="opts"
+        :class="{ grid: big }"
+        :style="big ? { '--cols': cols } : undefined"
+        role="listbox"
+        :aria-label="title"
+      >
         <button
           v-for="o in options"
           :key="String(o.value)"
@@ -244,6 +297,56 @@ onBeforeUnmount(() => {
 .grab {
   display: none;
 }
+html[data-layout='touch'] .picker.big header {
+  padding: 8px 12px;
+  min-height: 68px;
+  font-size: 16px;
+}
+.steps {
+  display: inline-flex;
+  gap: var(--tap-gap, 8px);
+  margin-left: auto;
+}
+.steps button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid theme('colors.camera.border');
+  border-radius: theme('borderRadius.control');
+  background: theme('colors.camera.raised');
+  color: theme('colors.camera.text');
+  cursor: pointer;
+}
+.steps button:active:not(:disabled) {
+  background: theme('colors.camera.hover');
+}
+.steps button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+html[data-layout='touch'] .picker.big .opts.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 4px;
+  align-content: start;
+  padding: 8px;
+}
+html[data-layout='touch'] .picker.big .opt {
+  height: 56px;
+  font-size: 16px;
+  padding: 0 12px;
+}
+html[data-layout='touch'] .picker.big .opt.two {
+  min-height: 56px;
+  height: auto;
+}
+html[data-layout='touch'] .picker.big .note,
+html[data-layout='touch'] .picker.big .opt .sub,
+html[data-layout='touch'] .picker.big .empty {
+  font-size: var(--fs-min, 13px);
+}
 html[data-layout='touch'] .picker.sheet {
   left: 0 !important;
   right: 0;
@@ -284,5 +387,9 @@ html[data-layout='touch'] .picker.sheet .opt {
 html[data-layout='touch'] .picker.sheet .opt.two {
   min-height: 64px;
   height: auto;
+}
+html[data-layout='touch'] .note,
+html[data-layout='touch'] .opt .sub {
+  font-size: var(--fs-min);
 }
 </style>

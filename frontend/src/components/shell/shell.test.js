@@ -186,6 +186,20 @@ describe('AppHeader and camera chip', () => {
     w.unmount()
   })
 
+  it('keeps the section tabs in the header on touch, and the shortcuts button hidden by CSS only', async () => {
+    const p = pinia()
+    useCameraStore().fetchStorage = vi.fn(async () => {})
+    useLayoutMode().setPref('touch')
+    const w = mountHeader(p)
+    await nextTick()
+    const tabs = w.findAll('nav[aria-label="Primary"] a')
+    expect(tabs.map((a) => a.text())).toEqual(['Shoot', 'Time-lapse', 'Gallery', 'Settings'])
+    await tabs[1].trigger('click')
+    expect(w.emitted('select').at(-1)).toEqual(['timelapse'])
+    useLayoutMode().setPref('desktop')
+    w.unmount()
+  })
+
   it('switches the layout from the header; the toggle stays in touch layout', async () => {
     const p = pinia()
     useCameraStore().fetchStorage = vi.fn(async () => {})

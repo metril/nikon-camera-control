@@ -22,7 +22,7 @@ import { useCaptureStore } from '@/stores/capture'
 import { useFilesStore } from '@/stores/files'
 import { liveviewPauseReason } from '@/labels'
 import { useVisibility } from '@/composables'
-import { useLayoutMode } from '@/composables/useLayoutMode'
+import { useLayoutMode, useTouchLandscape } from '@/composables/useLayoutMode'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -49,7 +49,10 @@ const focusMode = ref(readFocusMode()) // 'af' | 'manual', remembered per browse
 const capture = useCaptureStore()
 const files = useFilesStore()
 const visible = useVisibility()
-const { isTouch } = useLayoutMode() // touch: tools and focus sit outside the image
+const { isTouch } = useLayoutMode()
+const landscape = useTouchLandscape()
+// touch portrait / narrow: only two tools inline, the rest under More
+const compactTools = computed(() => isTouch.value && !landscape.value)
 
 const imgRef = ref(null)
 const canvasRef = ref(null)
@@ -479,7 +482,8 @@ async function runAutofocus(move = false) {
     const r = await focus.autofocus()
     if (r?.focused === false) {
       focusState.value = 'idle'
-      toasts.warn('Autofocus could not lock. Try another spot or focus by hand.')
+      const why = r.reason ? ` (camera: “${r.reason}”)` : ''
+      toasts.warn(`Autofocus could not lock${why}`)
     } else {
       focusState.value = 'locked'
       lockTimer = setTimeout(() => (focusState.value = 'idle'), LOCK_MS)
@@ -590,7 +594,6 @@ onUnmounted(() => {
   <section
     ref="stageRef"
     class="lv-stage overflow-hidden rounded-card border border-camera-subtle bg-black"
-    :class="{ 'has-rail': isTouch && !showPlaceholder }"
     aria-label="Live view"
   >
     <div class="lv-frame" :style="{ '--ar': aspect, '--arn': ratio }">
@@ -680,8 +683,8 @@ onUnmounted(() => {
         </UiEmpty>
       </div>
 
-      <div v-if="!isTouch" class="lv-top">
-        <LiveViewToolbar v-if="!showPlaceholder" class="min-w-0" />
+      <div class="lv-top">
+        <LiveViewToolbar v-if="!showPlaceholder" class="min-w-0" :compact="compactTools" />
       </div>
 
       <div
@@ -691,7 +694,7 @@ onUnmounted(() => {
         aria-label="Live view actions"
       >
         <button
-          v-if="hasFrame && !isTouch"
+          v-if="hasFrame"
           type="button"
           data-testid="lv-snapshot"
           :disabled="snapshotting"
@@ -730,7 +733,7 @@ onUnmounted(() => {
           >· {{ dropped }} dropped</span
         >
       </div>
-      <div v-if="!showPlaceholder && !isTouch" class="lv-focuswrap">
+      <div v-if="!showPlaceholder" class="lv-focuswrap">
         <FocusPill
           :disabled="!camera.connected"
           :busy="afBusy"
@@ -743,29 +746,6 @@ onUnmounted(() => {
       <div v-if="!showPlaceholder && tools.hist" class="lv-histwrap">
         <HistogramOverlay :histogram="histogram" />
       </div>
-    </div>
-    <div v-if="isTouch && !showPlaceholder" class="lv-controls" data-testid="lv-controls">
-      <LiveViewToolbar compact />
-      <FocusPill
-        :disabled="!camera.connected"
-        :busy="afBusy"
-        :mode="focusMode"
-        @mode="setFocusMode"
-        @step="focusStep"
-        @autofocus="runAutofocus()"
-      />
-      <button
-        v-if="hasFrame && wanted && camera.connected"
-        type="button"
-        class="lv-snap"
-        data-testid="lv-snapshot"
-        :disabled="snapshotting"
-        aria-label="Snapshot"
-        title="Snapshot"
-        @click="snapshot"
-      >
-        <UiIcon name="Download" :size="16" /> <span>Snapshot</span>
-      </button>
     </div>
   </section>
 </template>
@@ -787,6 +767,7 @@ onUnmounted(() => {
   margin: 0 auto;
   aspect-ratio: var(--ar);
   container: lv / inline-size;
+  --act: var(--ctl-sm); /* size of the snapshot / fullscreen / stop buttons */
   background: #000;
 }
 .lv-stage:fullscreen .lv-frame {
@@ -803,7 +784,7 @@ onUnmounted(() => {
   top: 10px;
   left: 10px;
   /* leave room for the three action buttons on the right */
-  right: calc(18px + 3 * var(--ctl-sm) + 12px);
+  right: calc(18px + 3 * var(--act) + 12px);
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -826,6 +807,9 @@ onUnmounted(() => {
   background: theme('colors.camera.overlay');
   border: 1px solid theme('colors.camera.border');
   backdrop-filter: blur(6px);
+}
+html[data-layout='touch'] .lv-pill {
+  gap: 4px;
 }
 .lv-pill button {
   display: inline-flex;
@@ -856,8 +840,8 @@ onUnmounted(() => {
   color: theme('colors.camera.danger');
 }
 html[data-layout='touch'] .lv-pill button {
-  width: 44px;
-  height: 44px;
+  width: var(--act);
+  height: var(--act);
 }
 .lv-badge {
   position: absolute;
@@ -887,96 +871,24 @@ html[data-layout='touch'] .lv-pill button {
   right: 12px;
   bottom: 12px;
 }
-/* Touch: tools, focus and snapshot live outside the image, in a row under it */
-.lv-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
-  background: theme('colors.camera.surface');
-  border-top: 1px solid theme('colors.camera.subtle');
-}
-.lv-snap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 44px;
-  padding: 0 14px;
-  border-radius: 9999px;
-  border: 1px solid theme('colors.camera.border');
-  background: none;
-  color: theme('colors.camera.muted');
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.lv-snap:active:not(:disabled) {
-  color: theme('colors.camera.text');
-  background: rgba(255, 255, 255, 0.12);
-}
-.lv-stage:fullscreen .lv-controls {
-  display: none;
-}
-/* Touch landscape (kiosk): the controls form a rail beside the image, so the frame is as big as the
-   height allows and no space is left empty. --lvh (the height left for the image) comes from ShootView. */
+/* Touch, landscape (kiosk): the frame is as big as the height left (--lvh, set by ShootView) allows */
 @media (min-width: 900px) and (orientation: landscape) {
-  html[data-layout='touch'] .lv-stage:not(:fullscreen) {
-    display: flex;
-  }
   html[data-layout='touch'] .lv-stage:not(:fullscreen) .lv-frame {
-    flex: none;
-    align-self: flex-start;
-    margin: 0;
-    /* live view off: the placeholder fills the whole frame area */
-    width: 100%;
-    aspect-ratio: auto;
-    height: var(--lvh, auto);
+    width: min(100%, calc(var(--lvh, 9999px) * var(--arn)));
   }
-  html[data-layout='touch'] .lv-stage.has-rail:not(:fullscreen) .lv-frame {
-    aspect-ratio: var(--ar);
-    height: auto;
-    width: min(calc(100% - var(--rail)), calc(var(--lvh, 9999px) * var(--arn)));
-  }
-  html[data-layout='touch'] .lv-stage {
-    --rail: 184px;
-  }
-  html[data-layout='touch'] .lv-controls {
-    flex: 1;
-    min-width: 0;
-    max-height: var(--lvh, none);
-    gap: 4px;
-    padding: 4px;
-    flex-wrap: nowrap;
-    flex-direction: column;
-    align-items: stretch;
-    border-top: 0;
-    border-left: 1px solid theme('colors.camera.subtle');
-    overflow-x: hidden;
-    overflow-y: auto;
-    /* scroll shadows: a fade at whichever edge has more to scroll to */
-    background:
-      linear-gradient(theme('colors.camera.surface') 30%, transparent) top / 100% 24px local
-        no-repeat,
-      linear-gradient(transparent, theme('colors.camera.surface') 70%) bottom / 100% 24px local
-        no-repeat,
-      linear-gradient(rgba(0, 0, 0, 0.55), transparent) top / 100% 12px scroll no-repeat,
-      linear-gradient(transparent, rgba(0, 0, 0, 0.55)) bottom / 100% 12px scroll no-repeat,
-      theme('colors.camera.surface');
-  }
-  html[data-layout='touch'] .lv-controls :deep(.lv-tools),
-  html[data-layout='touch'] .lv-controls :deep(.lv-toolbar),
-  html[data-layout='touch'] .lv-controls :deep(.lv-morepop) {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    border-radius: 24px;
-  }
-  html[data-layout='touch'] .lv-controls :deep(.lv-toolbar button),
-  html[data-layout='touch'] .lv-controls :deep(.lv-morepop button),
-  html[data-layout='touch'] .lv-snap {
-    width: 100%;
-    justify-content: flex-start;
+}
+html[data-layout='touch'] .lv-frame {
+  --act: 48px;
+}
+/* shrink-to-fit would wrap the pill at half the frame width (it is placed at left: 50%) */
+html[data-layout='touch'] .lv-focuswrap {
+  width: max-content;
+  max-width: calc(100% - 24px);
+}
+/* Touch, wide frames: the histogram sits above the focus pill instead of beside it */
+@container lv (min-width: 721px) {
+  html[data-layout='touch'] .lv-histwrap {
+    bottom: calc(12px + 48px + 22px);
   }
 }
 /* Narrower frames: the focus pill moves left and lifts above the Live badge (never overlapping) */
@@ -997,15 +909,24 @@ html[data-layout='touch'] .lv-pill button {
     bottom: 12px;
   }
   .lv-histwrap {
-    bottom: calc(12px + var(--ctl-sm) + 14px);
+    bottom: calc(12px + var(--act) + 14px);
   }
 }
 @container lv (max-width: 420px) {
   .lv-focuswrap {
-    bottom: calc(12px + var(--ctl-sm) + 14px);
+    bottom: calc(12px + var(--act) + 14px);
   }
   .lv-histwrap {
     display: none;
   }
+}
+/* Touch, frames up to 720px: the focus pill is full width at the left, so lift the histogram above it */
+@container lv (max-width: 720px) {
+  html[data-layout='touch'] .lv-histwrap {
+    bottom: calc(50px + 56px + 8px);
+  }
+}
+html[data-layout='touch'] .lv-badge {
+  font-size: var(--fs-min);
 }
 </style>

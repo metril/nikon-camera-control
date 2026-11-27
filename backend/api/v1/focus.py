@@ -60,7 +60,8 @@ async def get_focus_status(svc: FocusDep) -> FocusStatus:
 
 @router.post("/af", operation_id="autofocus", response_model=AutofocusResult)
 async def autofocus(svc: FocusDep) -> AutofocusResult:
-    return AutofocusResult(focused=await svc.autofocus())
+    focused, reason = await svc.autofocus()
+    return AutofocusResult(focused=focused, reason=reason)
 
 
 @router.post("/point", operation_id="set_af_point", response_model=AfPointResult)
