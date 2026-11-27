@@ -26,6 +26,38 @@ describe('api client', () => {
     expect(new URL(req.url).pathname).toBe('/api/v1/camera')
   })
 
+  it('turns a 422 validation envelope into readable text', async () => {
+    fetch.mockResolvedValue(
+      json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed',
+            details: {
+              errors: [
+                {
+                  loc: ['body', 'new'],
+                  msg: 'String should have at least 8 characters',
+                  type: 'string_too_short',
+                },
+                { loc: ['body'], msg: 'Value error, time is required', type: 'value_error' },
+              ],
+            },
+          },
+        },
+        422,
+      ),
+    )
+    const e = await api.setPassword({ body: { new: 'abc' } }).catch((x) => x)
+    expect(e.message).toBe('new: String should have at least 8 characters; time is required')
+  })
+
+  it('reads a plain FastAPI {detail: [...]} 422 too', async () => {
+    fetch.mockResolvedValue(json({ detail: [{ loc: ['body', 'mode'], msg: 'bad mode' }] }, 422))
+    const e = await api.setCameraDatetime({ body: {} }).catch((x) => x)
+    expect(e.message).toBe('mode: bad mode')
+  })
+
   it('unwraps the error envelope into ApiError', async () => {
     fetch.mockResolvedValue(
       json(

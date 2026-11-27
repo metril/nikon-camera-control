@@ -26,6 +26,8 @@ const next = ref('')
 const confirm = ref('')
 const pwBusy = ref(false)
 const pwError = ref('')
+const MIN_PASSWORD = 8 // server rule: PasswordSetIn.new min_length (max 256)
+const tooShort = computed(() => !!next.value && next.value.length < MIN_PASSWORD)
 const mismatch = computed(() => !!confirm.value && next.value !== confirm.value)
 
 async function runPassword(fn, done) {
@@ -157,6 +159,13 @@ const saved = () => {
           :label="passwordSet ? 'New password' : 'Password'"
           data-test="new"
         />
+        <p
+          class="text-xs"
+          :class="tooShort ? 'text-camera-danger' : 'text-camera-muted'"
+          data-test="pw-hint"
+        >
+          At least {{ MIN_PASSWORD }} characters.
+        </p>
         <UiText v-model="confirm" type="password" label="Repeat password" data-test="confirm" />
         <p v-if="mismatch" class="text-sm text-camera-danger" data-test="mismatch">
           The passwords do not match.
@@ -169,7 +178,7 @@ const saved = () => {
             type="submit"
             variant="primary"
             :loading="pwBusy"
-            :disabled="!next || next !== confirm || (passwordSet && !current)"
+            :disabled="!next || tooShort || next !== confirm || (passwordSet && !current)"
             data-test="save-password"
           >
             {{ passwordSet ? 'Change password' : 'Set password' }}

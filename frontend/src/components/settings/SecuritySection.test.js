@@ -57,6 +57,19 @@ describe('SecuritySection', () => {
     expect(auth.setPassword).toHaveBeenCalledWith({ current: '', next: 'secret-pass' })
   })
 
+  it('states the password rule up front and blocks shorter passwords', async () => {
+    const { w } = await setup(
+      status({ auth_required: false, password_set: false, authenticated: true }),
+    )
+    expect(w.find('[data-test="pw-hint"]').text()).toContain('At least 8 characters')
+    await typeIn(w, 'new', 'short')
+    await typeIn(w, 'confirm', 'short')
+    expect(w.find('[data-test="save-password"]').attributes('disabled')).toBeDefined()
+    await typeIn(w, 'new', 'longenough')
+    await typeIn(w, 'confirm', 'longenough')
+    expect(w.find('[data-test="save-password"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('changing needs the current password and shows the server error verbatim', async () => {
     const { w, auth } = await setup()
     auth.setPassword = vi.fn(async () => {
