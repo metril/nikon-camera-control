@@ -42,3 +42,27 @@ def binary_response(
             "content": {mime: {"schema": {"type": "string", "format": "binary"}}},
         }
     }
+
+
+class DeletePathsRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=5000, description="Paths to delete")
+
+
+class FailedPath(BaseModel):
+    path: str
+    error: str
+
+
+class DeletePathsResult(BaseModel):
+    deleted: list[str]
+    failed: list[FailedPath]
+
+
+class ZipRequest(BaseModel):
+    paths: list[str] = Field(
+        min_length=1, max_length=5000, description="Files to download (one path = the file itself)"
+    )
+
+
+class ZipTicket(BaseModel):
+    url: str = Field(description="Single-use download URL, valid for 60 seconds")

@@ -5,23 +5,31 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from starlette.datastructures import State
 
 from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.common import Ok
-from backend.api.schemas.files import FileEntry, FilePage, FolderEntry, binary_response
+from backend.api.schemas.files import (
+    DeletePathsRequest,
+    DeletePathsResult,
+    FailedPath,
+    FileEntry,
+    FilePage,
+    FolderEntry,
+    ZipRequest,
+    ZipTicket,
+    binary_response,
+)
 from backend.core.security import require_api_key
 from backend.services.files import FileService, KindFilter, SortOrder
 
-router = APIRouter(
-    prefix="/files",
-    tags=["files"],
-    dependencies=[Depends(require_api_key)],
-    responses=ERROR_RESPONSES,
-)
+# The ZIP download route is authorised by its single-use ticket (a plain browser navigation
+# cannot send an API key), so it lives on the unauthenticated router; the rest is included below.
+router = APIRouter(tags=["files"], responses=ERROR_RESPONSES)
+_authed = APIRouter(prefix="/files", dependencies=[Depends(require_api_key)])
 
 
 def build_file_service(s: State) -> FileService:
@@ -32,7 +40,7 @@ get_files = service_dep("files", build_file_service)
 FilesDep = Annotated[FileService, Depends(get_files)]
 
 
-@router.get("", operation_id="list_files", response_model=FilePage)
+@_authed.get("", operation_id="list_files", response_model=FilePage)
 async def list_files(
     svc: FilesDep,
     folder: Annotated[str, Query(description="Folder relative to the output dir")] = "",
@@ -62,7 +70,44 @@ async def list_files(
     )
 
 
+@_authed.post("/delete", operation_id="delete_files", response_model=DeletePathsResult)
+async def delete_files(body: DeletePathsRequest, svc: FilesDep) -> DeletePathsResult:
+    """Delete many files. Failures are reported per path; the others are still deleted."""
+    deleted, failed = await svc.delete_many(body.paths)
+    return DeletePathsResult(
+        deleted=deleted, failed=[FailedPath(path=p, error=e) for p, e in failed]
+    )
+
+
+@_authed.post("/zip", operation_id="create_zip_download", response_model=ZipTicket)
+async def create_zip_download(body: ZipRequest, svc: FilesDep, request: Request) -> ZipTicket:
+    """Issue a single-use download URL (60 s). One path downloads the file itself, several
+    stream a ZIP archive."""
+    ticket = svc.create_zip_ticket(body.paths)
+    return ZipTicket(url=request.url_for("download_zip", ticket=ticket).path)
+
+
 @router.get(
+    "/files/zip/{ticket}",
+    operation_id="download_zip",
+    name="download_zip",
+    response_class=StreamingResponse,
+    responses=binary_response("application/zip", "A ZIP archive, or the single file itself"),
+)
+async def download_zip(ticket: str, svc: FilesDep) -> Response:
+    """Redeem a ticket from ``POST /files/zip``. No other credential is needed; a ticket
+    works once."""
+    plan = svc.redeem_zip_ticket(ticket)
+    if plan.single is not None:
+        return FileResponse(plan.single, filename=plan.single.name)
+    return StreamingResponse(
+        svc.stream_zip(plan.items),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="photos.zip"'},
+    )
+
+
+@_authed.get(
     "/{path:path}",
     operation_id="download_file",
     response_class=FileResponse,
@@ -73,7 +118,10 @@ async def download_file(path: str, svc: FilesDep) -> FileResponse:
     return FileResponse(p, filename=p.name)
 
 
-@router.delete("/{path:path}", operation_id="delete_file", response_model=Ok)
+@_authed.delete("/{path:path}", operation_id="delete_file", response_model=Ok)
 async def delete_file(path: str, svc: FilesDep) -> Ok:
     await svc.delete(path)
     return Ok()
+
+
+router.include_router(_authed)

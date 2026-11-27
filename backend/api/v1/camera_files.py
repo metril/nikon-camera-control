@@ -16,7 +16,10 @@ from backend.api.deps import service_dep
 from backend.api.errors import ERROR_RESPONSES
 from backend.api.schemas.camera_files import (
     CameraFileEntry,
+    CameraFileFailure,
     CameraFileOrder,
+    DeleteCameraFilesRequest,
+    DeleteCameraFilesResult,
     DownloadAllRequest,
     FolderListOut,
     FolderOut,
@@ -149,6 +152,21 @@ async def get_camera_preview(
 )
 async def download_all_camera_files(body: DownloadAllRequest, svc: FilesDep) -> JobOut:
     return JobOut.model_validate(svc.start_download_all(body).model_dump())
+
+
+@router.post(
+    "/files/delete", operation_id="delete_camera_files", response_model=DeleteCameraFilesResult
+)
+async def delete_camera_files(
+    body: DeleteCameraFilesRequest, svc: FilesDep
+) -> DeleteCameraFilesResult:
+    """Delete several files from the card. Failures (for example another owner holds the
+    camera lease) are reported per file; the rest are still deleted."""
+    deleted, failed = await svc.delete_many(body.files)
+    return DeleteCameraFilesResult(
+        deleted=deleted,
+        failed=[CameraFileFailure(folder=r.folder, name=r.name, error=e) for r, e in failed],
+    )
 
 
 @router.get(

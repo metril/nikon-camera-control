@@ -463,3 +463,29 @@ async def test_cancelling_a_format_job_terminates_it_and_frees_the_disk(env: Env
     assert j["status"] == "cancelled" and cancelled.is_set()
     assert DISK not in svc._format_busy
     assert (await env.c.get(f"{V}/locations")).json()["locations"][0]["id"] == lid
+
+
+async def test_offload_explicit_files_copy_and_traversal(env: Env) -> None:
+    lid = await _setup_target(env)
+    await env.c.post(f"{V}/locations", json={"kind": "smb", "name": "NAS", "unc": "//nas/b"})
+    await env.app.state.storage.refresh()
+    src = env.helper.base / lid
+    (src / "pics").mkdir(exist_ok=True)
+    for n in ("a.jpg", "b.jpg", "c.jpg"):
+        (src / "pics" / n).write_bytes(n.encode() * 100)
+    _age(src)
+    body = {
+        "from_id": lid,
+        "to_id": "smb-nas",
+        "scope": {"kind": "files", "paths": ["pics/a.jpg", "pics/c.jpg", "pics/missing.jpg"]},
+        "keep_source": True,
+    }
+    j = await _wait_job(env.c, (await env.c.post(f"{V}/offload", json=body)).json()["id"])
+    assert j["status"] == "completed" and j["result"]["total"] == 2 and j["result"]["copied"] == 2
+    dst = env.helper.base / "smb-nas" / "pics"
+    assert sorted(p.name for p in dst.glob("*.jpg")) == ["a.jpg", "c.jpg"]
+    assert sorted(p.name for p in (src / "pics").glob("*.jpg")) == ["a.jpg", "b.jpg", "c.jpg"]
+    for bad in (["../x"], ["/etc/passwd"], []):
+        b2 = {**body, "scope": {"kind": "files", "paths": bad}}
+        r = await env.c.post(f"{V}/offload", json=b2)
+        assert r.status_code in (400, 422), (bad, r.status_code)

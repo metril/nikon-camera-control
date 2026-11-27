@@ -811,6 +811,24 @@ export type CameraFileEntry = {
 };
 
 /**
+ * CameraFileFailure
+ */
+export type CameraFileFailure = {
+    /**
+     * Error
+     */
+    error: string;
+    /**
+     * Folder
+     */
+    folder: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * CameraFileOut
  */
 export type CameraFileOut = {
@@ -1300,6 +1318,56 @@ export type Counters = {
 };
 
 /**
+ * DeleteCameraFilesRequest
+ */
+export type DeleteCameraFilesRequest = {
+    /**
+     * Files
+     */
+    files: Array<CameraFileRef>;
+};
+
+/**
+ * DeleteCameraFilesResult
+ */
+export type DeleteCameraFilesResult = {
+    /**
+     * Deleted
+     */
+    deleted: Array<CameraFileRef>;
+    /**
+     * Failed
+     */
+    failed: Array<CameraFileFailure>;
+};
+
+/**
+ * DeletePathsRequest
+ */
+export type DeletePathsRequest = {
+    /**
+     * Paths
+     *
+     * Paths to delete
+     */
+    paths: Array<string>;
+};
+
+/**
+ * DeletePathsResult
+ */
+export type DeletePathsResult = {
+    /**
+     * Deleted
+     */
+    deleted: Array<string>;
+    /**
+     * Failed
+     */
+    failed: Array<FailedPath>;
+};
+
+/**
  * DiskRef
  */
 export type DiskRef = {
@@ -1347,6 +1415,12 @@ export type DownloadAllRequest = {
      * Download only this file (folder is then ignored)
      */
     file?: CameraFileRef | null;
+    /**
+     * Files
+     *
+     * Download only these files (folder and file are then ignored)
+     */
+    files?: Array<CameraFileRef> | null;
     /**
      * Folder
      *
@@ -1450,6 +1524,20 @@ export type Estimate = {
      * Total Shots
      */
     total_shots: number;
+};
+
+/**
+ * FailedPath
+ */
+export type FailedPath = {
+    /**
+     * Error
+     */
+    error: string;
+    /**
+     * Path
+     */
+    path: string;
 };
 
 /**
@@ -2534,7 +2622,13 @@ export type OffloadScope = {
     /**
      * Kind
      */
-    kind: 'all' | 'session' | 'older_than';
+    kind: 'all' | 'session' | 'older_than' | 'files';
+    /**
+     * Paths
+     *
+     * For kind=files: paths relative to the source root (use keep_source to copy)
+     */
+    paths?: Array<string> | null;
     /**
      * Session Id
      *
@@ -4304,6 +4398,30 @@ export type VideoEntry = {
     size: number;
 };
 
+/**
+ * ZipRequest
+ */
+export type ZipRequest = {
+    /**
+     * Paths
+     *
+     * Files to download (one path = the file itself)
+     */
+    paths: Array<string>;
+};
+
+/**
+ * ZipTicket
+ */
+export type ZipTicket = {
+    /**
+     * Url
+     *
+     * Single-use download URL, valid for 60 seconds
+     */
+    url: string;
+};
+
 export type RunBackupData = {
     body?: never;
     path?: never;
@@ -4819,6 +4937,51 @@ export type ListCameraFilesResponses = {
 };
 
 export type ListCameraFilesResponse = ListCameraFilesResponses[keyof ListCameraFilesResponses];
+
+export type DeleteCameraFilesData = {
+    body: DeleteCameraFilesRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/camera/files/delete';
+};
+
+export type DeleteCameraFilesErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DeleteCameraFilesError = DeleteCameraFilesErrors[keyof DeleteCameraFilesErrors];
+
+export type DeleteCameraFilesResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeleteCameraFilesResult;
+};
+
+export type DeleteCameraFilesResponse = DeleteCameraFilesResponses[keyof DeleteCameraFilesResponses];
 
 export type DownloadAllCameraFilesData = {
     body: DownloadAllRequest;
@@ -5900,6 +6063,146 @@ export type ListFilesResponses = {
 };
 
 export type ListFilesResponse = ListFilesResponses[keyof ListFilesResponses];
+
+export type DeleteFilesData = {
+    body: DeletePathsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/files/delete';
+};
+
+export type DeleteFilesErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DeleteFilesError = DeleteFilesErrors[keyof DeleteFilesErrors];
+
+export type DeleteFilesResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeletePathsResult;
+};
+
+export type DeleteFilesResponse = DeleteFilesResponses[keyof DeleteFilesResponses];
+
+export type CreateZipDownloadData = {
+    body: ZipRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/files/zip';
+};
+
+export type CreateZipDownloadErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type CreateZipDownloadError = CreateZipDownloadErrors[keyof CreateZipDownloadErrors];
+
+export type CreateZipDownloadResponses = {
+    /**
+     * Successful Response
+     */
+    200: ZipTicket;
+};
+
+export type CreateZipDownloadResponse = CreateZipDownloadResponses[keyof CreateZipDownloadResponses];
+
+export type DownloadZipData = {
+    body?: never;
+    path: {
+        /**
+         * Ticket
+         */
+        ticket: string;
+    };
+    query?: never;
+    url: '/api/v1/files/zip/{ticket}';
+};
+
+export type DownloadZipErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DownloadZipError = DownloadZipErrors[keyof DownloadZipErrors];
+
+export type DownloadZipResponses = {
+    /**
+     * A ZIP archive, or the single file itself
+     */
+    200: Blob | File;
+};
+
+export type DownloadZipResponse = DownloadZipResponses[keyof DownloadZipResponses];
 
 export type DeleteFileData = {
     body?: never;

@@ -154,9 +154,14 @@ class BackupStatusOut(BaseModel):
 
 
 class OffloadScope(BaseModel):
-    kind: Literal["all", "session", "older_than"]
+    kind: Literal["all", "session", "older_than", "files"]
     session_id: str | None = Field(default=None, description="For kind=session")
     before: datetime | None = Field(default=None, description="For kind=older_than")
+    paths: list[str] | None = Field(
+        default=None,
+        max_length=5000,
+        description="For kind=files: paths relative to the source root (use keep_source to copy)",
+    )
 
 
 class OffloadRequest(BaseModel):
