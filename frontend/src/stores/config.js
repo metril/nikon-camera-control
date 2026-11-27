@@ -43,25 +43,36 @@ export const useConfigStore = defineStore('config', () => {
       return out
     })
 
-  /** Generate or rotate the key. Returns the plaintext key (shown once) and stores it for this browser. */
+  /**
+   * Generate or rotate the API key (for scripts). Returns the plaintext key, shown once. Changing
+   * it closes every socket with 4401, so this browser re-reads its session afterwards.
+   */
   async function createApiKey() {
     const auth = useAuthStore()
-    auth.keyChanging = true // the server closes both sockets with 4401: do not flash the key prompt
+    auth.changing = true
     try {
       const out = await guard(lastError, () => api.createApiKey())
       config.value = out.config
-      auth.setKey(out.api_key) // watchers restart the event and live view sockets
-      auth.authEnabled = true
+      // Without a password the key is the only credential: sign this browser in with it.
+      if (!auth.status?.password_set) await auth.login({ api_key: out.api_key }).catch(() => {})
+      else await auth.fetchStatus().catch(() => {})
       return out.api_key
     } finally {
-      auth.keyChanging = false
+      auth.changing = false
+      auth.epoch++
     }
   }
   async function deleteApiKey() {
-    await guard(lastError, () => api.deleteApiKey())
-    useAuthStore().clearKey()
-    useAuthStore().authEnabled = false
-    if (config.value) config.value = { ...config.value, api_key_set: false }
+    const auth = useAuthStore()
+    auth.changing = true
+    try {
+      await guard(lastError, () => api.deleteApiKey())
+      if (config.value) config.value = { ...config.value, api_key_set: false }
+      await auth.fetchStatus().catch(() => {})
+    } finally {
+      auth.changing = false
+      auth.epoch++
+    }
   }
 
   const onChanged = ({ config: c, restart_required }) => {

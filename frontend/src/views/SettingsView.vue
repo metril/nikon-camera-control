@@ -23,7 +23,7 @@ import SchemaField from '@/components/settings/SchemaField.vue'
 import SettingRow from '@/components/settings/SettingRow.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import CameraClockRow from '@/components/settings/CameraClockRow.vue'
-import ApiKeySection from '@/components/settings/ApiKeySection.vue'
+import SecuritySection from '@/components/settings/SecuritySection.vue'
 import DemoCameraSection from '@/components/settings/DemoCameraSection.vue'
 import StorageSection from '@/components/settings/StorageSection.vue'
 import AboutSection from '@/components/settings/AboutSection.vue'
@@ -162,7 +162,7 @@ async function load() {
   }
 }
 // One section is shown beside the list. The list is data-driven: an entry may bring its own
-// component (API key today, Security later) and Advanced brings sub-tabs.
+// component (Security) and Advanced brings sub-tabs.
 const root = ref(null)
 const index = computed(() => [
   { id: 'display', label: 'Display' },
@@ -171,7 +171,7 @@ const index = computed(() => [
   ...shownSections.value.map((s) => ({ id: s.key, label: s.title })),
   ...(advancedGroups.value.length ? [{ id: 'advanced', label: 'Advanced' }] : []),
   { id: 'demo_camera', label: 'Demo camera' },
-  { id: 'api-key', label: 'API key', component: ApiKeySection },
+  { id: 'security', label: 'Security', component: SecuritySection },
   { id: 'about', label: 'About', component: AboutSection },
 ])
 const activeId = ref('display')
@@ -931,7 +931,7 @@ html[data-layout='touch'] .side {
   gap: 12px;
   padding: 6px 28px 12px;
 }
-/* Whole-card sections (Storage, API key, About) sit flat inside the pane. */
+/* Whole-card sections (Storage, Security, About) sit flat inside the pane. */
 .pane-body > :deep(section.rounded-card) {
   border: 0;
   background: none;

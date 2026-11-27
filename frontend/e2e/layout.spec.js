@@ -15,7 +15,7 @@ const SETTINGS_SECTIONS = [
   'Media',
   'Advanced',
   'Demo camera',
-  ['API key', /api key|security/i],
+  'Security',
   'About',
 ]
 const TIMELAPSE_TABS = ['Timing', 'Bracket', 'Run', 'Sessions'] // touch only

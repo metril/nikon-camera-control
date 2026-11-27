@@ -1,5 +1,4 @@
-import { api, fileUrl } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { fileUrl } from '@/api'
 
 export function formatSize(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return '-'
@@ -36,16 +35,10 @@ export function formatDuration(s) {
 export const kindTone = (kind) => ({ raw: 'warn', video: 'accent' })[kind] || 'neutral'
 
 /**
- * Resolve a file URL usable by <img>/<video>. Without an API key it is the plain URL; with one
- * the file is fetched as a blob (headers) and exposed as an object URL. Call `release()` when done.
+ * Resolve a file URL usable by <img>/<video>. The session cookie authenticates plain URLs, so this
+ * is just the URL. Call `release()` when done (a no-op, kept so callers need not care).
  */
-async function resolve(plain, fetchBlob) {
-  if (!useAuthStore().apiKey) return { url: plain, release() {} }
-  const url = URL.createObjectURL(await fetchBlob())
-  return { url, release: () => URL.revokeObjectURL(url) }
-}
-export const resolveFile = (path) =>
-  resolve(fileUrl(path), () => api.downloadFile({ path: { path }, parseAs: 'blob' }))
+export const resolveFile = async (path) => ({ url: fileUrl(path), release() {} })
 
 const SYSTEM_FOLDERS = new Set(['system volume information', '$recycle.bin', 'lost+found'])
 /** OS/system folders (and any dot-folder) never belong in the gallery's folder chips. */
