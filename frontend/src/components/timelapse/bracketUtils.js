@@ -103,3 +103,15 @@ export function formatDuration(s) {
   const sec = t % 60
   return h ? `${h} h ${m} min` : m ? `${m} min ${sec} s` : `${sec} s`
 }
+
+const CLOCK = { hour: '2-digit', minute: '2-digit', hour12: false }
+/** Local clock time when something lasting `durationS` seconds from `nowMs` ends. A weekday
+ * prefix marks a different day ("Sat 07:12"); null when the duration is unknown. */
+export function formatEndsAt(nowMs, durationS) {
+  if (!Number.isFinite(nowMs) || !Number.isFinite(durationS) || durationS < 0) return null
+  const end = new Date(nowMs + durationS * 1000)
+  const clock = end.toLocaleTimeString([], CLOCK)
+  return end.toDateString() === new Date(nowMs).toDateString()
+    ? clock
+    : `${end.toLocaleDateString([], { weekday: 'short' })} ${clock}`
+}
