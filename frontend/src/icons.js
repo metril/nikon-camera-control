@@ -36,6 +36,7 @@ export {
   Keyboard,
   Layers,
   ListChecks,
+  ExternalLink,
   Maximize,
   Minimize,
   Minus,

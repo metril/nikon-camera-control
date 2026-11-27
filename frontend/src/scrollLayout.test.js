@@ -15,11 +15,12 @@ describe('scroll layout', () => {
   it('reserves the root scrollbar gutter so pages do not shift', () => {
     expect(css).toMatch(/html\s*\{[^}]*scrollbar-gutter:\s*stable/)
   })
-  it('fixes the touch landscape Shoot grid to the viewport and scrolls inside it', () => {
+  it('fits the Shoot grid to the main area on wide landscape and sizes the live view from its row', () => {
     const view = read('./views/ShootView.vue')
-    expect(view).toMatch(/height:\s*calc\(100dvh - 60px - 3px - var\(--banner/)
-    expect(view).toMatch(/\.side-area\s*\{[^}]*overflow-y:\s*auto/)
-    expect(view).toMatch(/\.film-area\s*\{[^}]*overflow-y:\s*auto/)
+    expect(view).toMatch(/\.shootroot\s*\{[^}]*height:\s*100%/)
+    expect(view).toMatch(/\.lvwrap\s*\{[^}]*container-type:\s*size[^}]*--lvh:\s*100cqh/)
+    expect(view).not.toMatch(/100dvh - \d+px/)
+    expect(read('./components/shoot/LiveViewPanel.vue')).toMatch(/var\(--lvh, 9999px\)/)
   })
   it('the frame is exactly the viewport and clips overflow; the page body never scrolls', () => {
     const frame = rule(css, '.app-frame')

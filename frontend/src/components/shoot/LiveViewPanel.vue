@@ -23,6 +23,7 @@ import { useFilesStore } from '@/stores/files'
 import { liveviewPauseReason } from '@/labels'
 import { useVisibility } from '@/composables'
 import { useLayoutMode, useTouchLandscape } from '@/composables/useLayoutMode'
+import { useKeyboardHints } from '@/composables/useKeyboardHints'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -32,6 +33,9 @@ import HistogramOverlay from './overlays/HistogramOverlay.vue'
 import { computeHistogram, computeClipping, computePeaking } from './overlays/analysis.js'
 import { drawGrid, drawFocusBrackets, drawLoupe } from './overlays/drawing.js'
 
+const props = defineProps({
+  /** Rendered inside the pop-out window: no pop-out button. */ popout: Boolean,
+})
 const STALE_MS = 3000
 const ANALYSIS_WIDTH = 480 // frames are downsampled to this width for histogram, clipping, peaking
 const FOCUS_STEP = { small: 150, large: 1000 } // fallback until the config loads
@@ -51,6 +55,9 @@ const files = useFilesStore()
 const visible = useVisibility()
 const { isTouch } = useLayoutMode()
 const landscape = useTouchLandscape()
+const { hints } = useKeyboardHints()
+const showPopout = computed(() => !isTouch.value && !props.popout)
+const tip = (text, key) => (hints.value && key ? `${text} (${key})` : text)
 // touch portrait / narrow: only two tools inline, the rest under More
 const compactTools = computed(() => isTouch.value && !landscape.value)
 
@@ -558,6 +565,42 @@ async function snapshot() {
   }
 }
 
+/** Open the live view in its own window (desktop); this page keeps working. */
+function popOut() {
+  const w = window.open(
+    `${location.pathname}?popout=liveview`,
+    'nikon-liveview',
+    'popup=yes,width=1080,height=740',
+  )
+  if (!w) toasts.warn('The browser blocked the pop-out window. Allow pop-ups for this page.')
+}
+
+/**
+ * Live view keys, called by the Shoot view for keys it does not use itself. Returns true when
+ * the key was handled. 3 grid, H histogram, C clipping, P peaking, L loupe, O last shot,
+ * F full screen, , and . focus steps (Shift for large), Enter autofocus.
+ */
+function hotkey(e) {
+  const k = e.key
+  const toggles = { h: 'hist', c: 'clip', p: 'peak', l: 'loupe', o: 'onion' }
+  const live = wanted.value && camera.connected
+  if (k === '3') liveview.cycleGrid()
+  else if (toggles[k.toLowerCase()] && k.length === 1) liveview.toggleTool(toggles[k.toLowerCase()])
+  else if (k.toLowerCase() === 'f' && hasFrame.value) toggleFullscreen()
+  else if (live && (k === ',' || k === '<')) focusStep(-1, k === '<' ? 'large' : 'small')
+  else if (live && (k === '.' || k === '>')) focusStep(1, k === '>' ? 'large' : 'small')
+  else if (
+    live &&
+    k === 'Enter' &&
+    focusMode.value !== 'manual' &&
+    !e.target?.closest?.('button, a, [role="button"], summary')
+  )
+    runAutofocus()
+  else return false
+  return true
+}
+defineExpose({ hotkey, popOut })
+
 function toggleFullscreen() {
   const el = stageRef.value
   if (!el) return
@@ -596,7 +639,7 @@ onUnmounted(() => {
     class="lv-stage overflow-hidden rounded-card border border-camera-subtle bg-black"
     aria-label="Live view"
   >
-    <div class="lv-frame" :style="{ '--ar': aspect, '--arn': ratio }">
+    <div class="lv-frame" :style="{ '--ar': aspect, '--arn': ratio, '--nact': showPopout ? 4 : 3 }">
       <img
         v-show="!canvasMode && hasFrame"
         ref="imgRef"
@@ -709,10 +752,20 @@ onUnmounted(() => {
           type="button"
           data-testid="lv-fullscreen"
           :aria-label="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-          :title="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          :title="tip(fullscreen ? 'Exit fullscreen' : 'Fullscreen', 'F')"
           @click="toggleFullscreen"
         >
           <UiIcon :name="fullscreen ? 'Minimize' : 'Maximize'" :size="16" />
+        </button>
+        <button
+          v-if="showPopout"
+          type="button"
+          data-testid="lv-popout"
+          aria-label="Pop out live view"
+          title="Pop out live view"
+          @click="popOut"
+        >
+          <UiIcon name="ExternalLink" :size="16" />
         </button>
         <button
           type="button"
@@ -784,7 +837,7 @@ onUnmounted(() => {
   top: 10px;
   left: 10px;
   /* leave room for the three action buttons on the right */
-  right: calc(18px + 3 * var(--act) + 12px);
+  right: calc(18px + var(--nact, 3) * var(--act) + 12px);
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -871,11 +924,9 @@ html[data-layout='touch'] .lv-pill button {
   right: 12px;
   bottom: 12px;
 }
-/* Touch, landscape (kiosk): the frame is as big as the height left (--lvh, set by ShootView) allows */
-@media (min-width: 900px) and (orientation: landscape) {
-  html[data-layout='touch'] .lv-stage:not(:fullscreen) .lv-frame {
-    width: min(100%, calc(var(--lvh, 9999px) * var(--arn)));
-  }
+/* The frame is as big as the height left (--lvh, set by the Shoot view and the pop-out) allows */
+.lv-stage:not(:fullscreen) .lv-frame {
+  width: min(100%, calc(var(--lvh, 9999px) * var(--arn)));
 }
 html[data-layout='touch'] .lv-frame {
   --act: 48px;

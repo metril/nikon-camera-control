@@ -21,10 +21,20 @@ import OnScreenKeyboard from '@/components/shell/OnScreenKeyboard.vue'
 import KioskSleepOverlay from '@/components/shell/KioskSleepOverlay.vue'
 import { TABS, useTabs } from '@/components/shell/useTabs'
 import { useCameraStatus } from '@/components/shell/useCameraStatus'
+import LiveViewPopout from '@/views/LiveViewPopout.vue'
 import ShootView from '@/views/ShootView.vue'
 import TimelapseView from '@/views/TimelapseView.vue'
 import GalleryView from '@/views/GalleryView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+
+// ?popout=liveview: this window shows only the live view (opened from Shoot)
+const popout = (() => {
+  try {
+    return new URLSearchParams(location.search).get('popout') === 'liveview'
+  } catch {
+    return false
+  }
+})()
 
 const auth = useAuthStore()
 const events = useEventsStore()
@@ -89,7 +99,12 @@ const SHORTCUTS = [
 </script>
 
 <template>
-  <div class="app-frame flex flex-col bg-camera-bg" data-test="app-frame">
+  <div v-if="popout" data-test="popout-frame">
+    <LiveViewPopout />
+    <ApiKeyPrompt />
+    <ToastHost />
+  </div>
+  <div v-else class="app-frame flex flex-col bg-camera-bg" data-test="app-frame">
     <a href="#main" class="skip" data-test="skip" @click.prevent="focusMain"
       >Skip to main content</a
     >
