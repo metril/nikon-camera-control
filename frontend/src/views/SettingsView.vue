@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, provide, reactive } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, provide, reactive } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useToastsStore } from '@/stores/toasts'
 import { useStorageStore } from '@/stores/storage'
@@ -8,7 +8,7 @@ import { useCameraAdminStore } from '@/stores/cameraAdmin'
 import { useLayoutMode } from '@/composables/useLayoutMode'
 import { routeQuery } from '@/components/shell/useTabs'
 import { useKeyboardHints } from '@/composables/useKeyboardHints'
-import { useHotkeys } from '@/composables/useHotkeys'
+import { useHotkeys, useDocumentKeydown } from '@/composables/useHotkeys'
 import { captureTarget, sampleName } from '@/labels'
 import UiText from '@/components/ui/UiText.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
@@ -223,8 +223,7 @@ function onSaveKey(e) {
   e.preventDefault()
   if (isDirty.value && !saving.value) save()
 }
-onMounted(() => document.addEventListener('keydown', onSaveKey))
-onBeforeUnmount(() => document.removeEventListener('keydown', onSaveKey))
+useDocumentKeydown(onSaveKey)
 
 // Which section owns a config path (for unsaved-change dots and jumping to an error).
 function ownerOf(p) {

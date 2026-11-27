@@ -112,6 +112,15 @@ watch_input() {
 
 # Waits (up to ~60 s) for the token file, then prints its first line. Empty output = no token
 # (app without kiosk auth): the kiosk still starts, unpaired.
+# Trade the device token for a single-use 30 s pairing code, so the token itself never reaches
+# Chromium's argv, URL or history (nor any argv here: it goes to curl through stdin).
+pair_code() {
+  [ -n "$(read_token)" ] || return 0
+  { printf '{"token":"'; head -n 1 "$TOKEN_FILE" | tr -dc 'A-Za-z0-9_-'; printf '"}'; } |
+    curl -fsS --max-time 10 -H 'Content-Type: application/json' --data-binary @- \
+      "$APP/api/v1/auth/kiosk/code" 2>/dev/null |
+    sed -n 's/.*"code" *: *"\([A-Za-z0-9_-]*\)".*/\1/p'
+}
 read_token() {
   n=0
   until [ -s "$TOKEN_FILE" ] || [ "$n" -ge 30 ]; do
@@ -158,9 +167,9 @@ while true; do
   rm -f "$PROFILE"/Singleton*
   SCALE=$(resolve_scale "$(fetch_setting)")
   echo "$SCALE" > /tmp/kiosk-scale
-  TOKEN=$(read_token)
   START_URL="$APP/?layout=touch&kiosk=1"
-  [ -n "$TOKEN" ] && START_URL="$START_URL#pair=$TOKEN"
+  CODE=$(pair_code)
+  [ -n "$CODE" ] && START_URL="$START_URL#pair=$CODE"
   # Scale the compositor output before Chromium starts (it then renders natively at that scale).
   # Not --force-device-scale-factor: under Wayland it mis-sizes the window (part of the screen
   # stays black). Changing the output scale under a running Chromium breaks touch, hence the relaunch.

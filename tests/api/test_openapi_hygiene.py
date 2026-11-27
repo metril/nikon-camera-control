@@ -18,6 +18,7 @@ OPEN_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
     "/api/v1/auth/kiosk",
+    "/api/v1/auth/kiosk/code",
 }
 SNAKE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 

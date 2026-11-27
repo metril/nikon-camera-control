@@ -52,10 +52,20 @@ class PasswordDeleteIn(BaseModel):
     current: str = Field(max_length=1024, description="The current password")
 
 
-class KioskPairIn(BaseModel):
+class KioskCodeIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     token: str = Field(max_length=1024, description="The kiosk device token")
+
+
+class KioskCodeOut(BaseModel):
+    code: str = Field(description="Single-use pairing code, valid for 30 seconds")
+
+
+class KioskPairIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(max_length=256, description="A pairing code from the kiosk code endpoint")
 
 
 class AuthSessionOut(BaseModel):

@@ -416,6 +416,7 @@ class LoginLimiter:
         self._clock = clock
         self._by_ip: dict[str, deque[float]] = {}
         self._all: deque[float] = deque()
+        self._ok: dict[str, float] = {}  # ip -> last success (exempt from the total cap)
         self._lock = threading.Lock()
 
     def _prune(self, now: float) -> None:
@@ -428,6 +429,8 @@ class LoginLimiter:
                 q.popleft()
             if not q:
                 del self._by_ip[ip]
+        for ip in [i for i, t in self._ok.items() if t <= cut]:
+            del self._ok[ip]
 
     def attempt(self, ip: str) -> tuple[float, float]:
         """(retry_after_s, mark). Records the attempt up front (so a parallel burst cannot
@@ -439,7 +442,7 @@ class LoginLimiter:
             q = self._by_ip.get(ip)
             if q and len(q) >= self._per_ip:
                 wait = max(wait, q[-self._per_ip] + self._window - now)
-            if len(self._all) >= self._total:
+            if ip not in self._ok and len(self._all) >= self._total:
                 wait = max(wait, self._all[-self._total] + self._window - now)
             if wait > 0:
                 return wait, 0.0
@@ -448,8 +451,10 @@ class LoginLimiter:
             return 0.0, now
 
     def forgive(self, ip: str, mark: float) -> None:
-        """Remove one recorded attempt (it succeeded)."""
+        """Remove one recorded attempt (it succeeded); the IP is then exempt from the total cap
+        for one window, so a flood of failures from others cannot lock out a known-good client."""
         with self._lock:
+            self._ok[ip] = self._clock()
             with contextlib.suppress(ValueError):
                 self._all.remove(mark)
             q = self._by_ip.get(ip)
@@ -458,6 +463,41 @@ class LoginLimiter:
                     q.remove(mark)
                 if not q:
                     del self._by_ip[ip]
+
+
+class KioskCodes:
+    """Single-use pairing codes (30 s, in memory) traded for a kiosk session.
+
+    The kiosk exchanges its device token for a code, so the long-lived token never appears in
+    the browser's command line or URL history.
+    """
+
+    TTL_S = 30.0
+    MAX = 16
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._codes: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def _purge(self, now: float) -> None:
+        for c in [c for c, exp in self._codes.items() if exp <= now]:
+            del self._codes[c]
+
+    def issue(self) -> str:
+        code = secrets.token_urlsafe(24)
+        with self._lock:
+            now = self._clock()
+            self._purge(now)
+            while len(self._codes) >= self.MAX:
+                del self._codes[min(self._codes, key=lambda c: self._codes[c])]
+            self._codes[code] = now + self.TTL_S
+        return code
+
+    def redeem(self, code: str) -> bool:
+        with self._lock:
+            self._purge(self._clock())
+            return self._codes.pop(code, None) is not None
 
 
 @dataclass(frozen=True)
@@ -478,4 +518,6 @@ class AuthState:
         self.sessions = SessionStore(data_dir / "sessions.json")
         self.kiosk = KioskToken(kiosk_dir)
         self.limiter = LoginLimiter()
+        self.kiosk_limiter = LoginLimiter()  # kiosk pairing never shares the login budget
+        self.kiosk_codes = KioskCodes()
         self.hash_slots = asyncio.Semaphore(2)  # concurrent scrypt hashes

@@ -205,3 +205,19 @@ def test_limiter_per_ip_total_window_and_forgive() -> None:
     for i in range(30):
         assert lim.attempt(f"10.0.0.{i}")[0] == 0
     assert lim.attempt("10.9.9.9")[0] > 0  # global cap across many IPs
+
+
+def test_total_cap_spares_ips_with_a_recent_success() -> None:
+    from backend.core.auth import LoginLimiter
+
+    t = [0.0]
+    lim = LoginLimiter(per_ip=5, total=6, window_s=300, clock=lambda: t[0])
+    wait, mark = lim.attempt("good")
+    assert wait == 0
+    lim.forgive("good", mark)
+    for i in range(6):  # others exhaust the total budget
+        assert lim.attempt(f"bad{i}")[0] == 0
+    assert lim.attempt("stranger")[0] > 0  # total cap hit
+    assert lim.attempt("good")[0] == 0  # known-good client still gets through
+    t[0] = 301
+    assert lim.attempt("stranger")[0] == 0

@@ -2046,6 +2046,9 @@
           "media": {
             "$ref": "#/components/schemas/MediaConfig"
           },
+          "security": {
+            "$ref": "#/components/schemas/SecurityConfig"
+          },
           "timelapse": {
             "$ref": "#/components/schemas/TimelapseConfig"
           },
@@ -2057,6 +2060,7 @@
           "camera",
           "liveview",
           "kiosk",
+          "security",
           "timelapse",
           "video",
           "media",
@@ -2131,6 +2135,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MediaConfigPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "security": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecurityConfigPatch"
               },
               {
                 "type": "null"
@@ -3348,6 +3362,36 @@
         "title": "JobStatus",
         "type": "string"
       },
+      "KioskCodeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The kiosk device token",
+            "maxLength": 1024,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "KioskCodeIn",
+        "type": "object"
+      },
+      "KioskCodeOut": {
+        "properties": {
+          "code": {
+            "description": "Single-use pairing code, valid for 30 seconds",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "KioskCodeOut",
+        "type": "object"
+      },
       "KioskConfig": {
         "additionalProperties": false,
         "properties": {
@@ -3446,15 +3490,15 @@
       "KioskPairIn": {
         "additionalProperties": false,
         "properties": {
-          "token": {
-            "description": "The kiosk device token",
-            "maxLength": 1024,
-            "title": "Token",
+          "code": {
+            "description": "A pairing code from the kiosk code endpoint",
+            "maxLength": 256,
+            "title": "Code",
             "type": "string"
           }
         },
         "required": [
-          "token"
+          "code"
         ],
         "title": "KioskPairIn",
         "type": "object"
@@ -5564,6 +5608,46 @@
         "title": "RevokedOut",
         "type": "object"
       },
+      "SecurityConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "secure_cookie": {
+            "default": "auto",
+            "description": "Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app.",
+            "enum": [
+              "auto",
+              "always"
+            ],
+            "title": "Sign-in cookie security",
+            "type": "string"
+          }
+        },
+        "title": "Security",
+        "type": "object"
+      },
+      "SecurityConfigPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "secure_cookie": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "always"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app.",
+            "title": "Secure Cookie"
+          }
+        },
+        "title": "SecurityConfigPatch",
+        "type": "object"
+      },
       "SessionDetail": {
         "properties": {
           "config": {
@@ -7668,7 +7752,7 @@
   "paths": {
     "/api/v1/auth/kiosk": {
       "post": {
-        "description": "Open, rate-limited. Trades the kiosk device token for a kiosk session cookie.",
+        "description": "Open, rate-limited. Redeems a pairing code for a kiosk session cookie.",
         "operationId": "pair_kiosk",
         "requestBody": {
           "content": {
@@ -7823,6 +7907,78 @@
           }
         ],
         "summary": "Rotate Kiosk Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/kiosk/code": {
+      "post": {
+        "description": "Open, rate-limited. Trades the kiosk device token for a single-use code (30 s).",
+        "operationId": "get_kiosk_pairing_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KioskCodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KioskCodeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many failed attempts (see Retry-After)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Get Kiosk Pairing Code",
         "tags": [
           "auth"
         ]

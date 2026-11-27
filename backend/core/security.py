@@ -171,6 +171,14 @@ def set_session_cookie(response: Response, token: str, *, secure: bool) -> None:
     )
 
 
+def secure_cookie(request: Request) -> bool:
+    """Whether the session cookie is Secure: always when the web UI says so, else by scheme."""
+    store = getattr(request.app.state, "config_store", None)
+    if store is not None and store.config.security.secure_cookie == "always":
+        return True
+    return request.url.scheme == "https"
+
+
 def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
 
@@ -193,7 +201,7 @@ async def require_api_key(
         raise Unauthorized()
     request.state.auth = ctx
     if refresh and _cookie:
-        set_session_cookie(response, _cookie, secure=request.url.scheme == "https")
+        set_session_cookie(response, _cookie, secure=secure_cookie(request))
 
 
 def current_auth(request: Request) -> AuthContext:

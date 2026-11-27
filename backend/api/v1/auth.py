@@ -13,6 +13,8 @@ from backend.api.schemas.auth import (
     AuthSessionListOut,
     AuthSessionOut,
     AuthStatusOut,
+    KioskCodeIn,
+    KioskCodeOut,
     KioskPairIn,
     LoginIn,
     PasswordDeleteIn,
@@ -20,7 +22,7 @@ from backend.api.schemas.auth import (
     RevokedOut,
 )
 from backend.api.schemas.common import ErrorResponse, Ok
-from backend.core.auth import SESSION_COOKIE, AuthState, sha256_hex
+from backend.core.auth import SESSION_COOKIE, AuthState, LoginLimiter, sha256_hex
 from backend.core.errors import AppError, Forbidden, InvalidState, RateLimited, Unauthorized
 from backend.core.security import (
     _auth_state,
@@ -31,6 +33,7 @@ from backend.core.security import (
     current_auth,
     is_protected,
     require_api_key,
+    secure_cookie,
     set_session_cookie,
 )
 
@@ -75,9 +78,9 @@ def _status(request: Request, cookie: str | None) -> AuthStatusOut:
     )
 
 
-def _attempt(auth: AuthState, request: Request) -> float:
+def _attempt(auth: AuthState, request: Request, limiter: LoginLimiter | None = None) -> float:
     """Record an attempt up front; 429 when the limiter is exhausted."""
-    wait, mark = auth.limiter.attempt(_ip(request))
+    wait, mark = (limiter or auth.limiter).attempt(_ip(request))
     if wait > 0:
         raise RateLimited(wait)
     return mark
@@ -102,7 +105,7 @@ def _new_session(
     auth: AuthState, request: Request, response: Response, kind: Literal["browser", "kiosk"]
 ) -> str:
     token = auth.sessions.create(kind, request.headers.get("user-agent"))
-    set_session_cookie(response, token, secure=request.url.scheme == "https")
+    set_session_cookie(response, token, secure=secure_cookie(request))
     return token
 
 
@@ -253,16 +256,33 @@ async def revoke_auth_session(
 
 
 @router.post(
+    "/kiosk/code",
+    operation_id="get_kiosk_pairing_code",
+    response_model=KioskCodeOut,
+    responses=OPEN_RESPONSES,
+)
+async def get_kiosk_pairing_code(
+    body: KioskCodeIn, request: Request, auth: AuthDep
+) -> KioskCodeOut:
+    """Open, rate-limited. Trades the kiosk device token for a single-use code (30 s)."""
+    mark = _attempt(auth, request, auth.kiosk_limiter)
+    if not await asyncio.to_thread(auth.kiosk.verify, body.token):
+        raise Unauthorized("Invalid kiosk token")
+    auth.kiosk_limiter.forgive(_ip(request), mark)
+    return KioskCodeOut(code=auth.kiosk_codes.issue())
+
+
+@router.post(
     "/kiosk", operation_id="pair_kiosk", response_model=AuthStatusOut, responses=OPEN_RESPONSES
 )
 async def pair_kiosk(
     body: KioskPairIn, request: Request, response: Response, auth: AuthDep
 ) -> AuthStatusOut:
-    """Open, rate-limited. Trades the kiosk device token for a kiosk session cookie."""
-    mark = _attempt(auth, request)
-    if not await asyncio.to_thread(auth.kiosk.verify, body.token):
-        raise Unauthorized("Invalid kiosk token")
-    auth.limiter.forgive(_ip(request), mark)
+    """Open, rate-limited. Redeems a pairing code for a kiosk session cookie."""
+    mark = _attempt(auth, request, auth.kiosk_limiter)
+    if not auth.kiosk_codes.redeem(body.code):
+        raise Unauthorized("Invalid or expired pairing code")
+    auth.kiosk_limiter.forgive(_ip(request), mark)
     token = _new_session(auth, request, response, "kiosk")
     return _status(request, token)
 

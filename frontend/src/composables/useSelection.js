@@ -1,5 +1,5 @@
-import { computed, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
-import { isTypingTarget } from './useHotkeys'
+import { computed, ref, unref, watch } from 'vue'
+import { isTextTarget, useDocumentKeydown } from './useHotkeys'
 
 const LONG_PRESS_MS = 500
 const MOVE_TOLERANCE = 10
@@ -120,7 +120,7 @@ export function useSelection({ ids, onEnter } = {}) {
   }
 
   function onKeydown(e) {
-    if (!selecting.value || isTypingTarget(e.target)) return
+    if (!selecting.value || isTextTarget(e.target)) return
     if (document.querySelector('[aria-modal="true"]')) return
     if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'a') {
       e.preventDefault()
@@ -129,8 +129,7 @@ export function useSelection({ ids, onEnter } = {}) {
       clear()
     }
   }
-  onMounted(() => document.addEventListener('keydown', onKeydown))
-  onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+  useDocumentKeydown(onKeydown)
 
   // items that disappear (deleted, filtered out) leave the selection
   watch(
