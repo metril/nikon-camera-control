@@ -19,7 +19,12 @@ describe('settings deep links', () => {
         (m) => m[1],
       ),
     )
-    const declared = new Set([...text.matchAll(/data-section="([\w-]+)"/g)].map((m) => m[1]))
+    const declared = new Set(
+      [
+        ...text.matchAll(/data-section="([\w-]+)"/g),
+        ...text.matchAll(/\{ id: '([\w-]+)', label:/g),
+      ].map((m) => m[1]),
+    )
     // schema-driven sections are rendered with :data-section="s.key"
     declared.add('general')
     expect(linked.size).toBeGreaterThan(0)
