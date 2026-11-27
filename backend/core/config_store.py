@@ -154,6 +154,16 @@ class LiveViewConfig(_Section):
     )
 
 
+class KioskConfig(_Section):
+    model_config = ConfigDict(extra="forbid", frozen=True, title="Kiosk")
+
+    scale: Literal["auto", "1", "1.25", "1.5", "2"] = Field(
+        default="auto",
+        title="Display scale",
+        description="Size of the touchscreen kiosk's interface. Auto works it out from the screen.",
+    )
+
+
 class TimelapseConfig(_Section):
     model_config = ConfigDict(extra="forbid", frozen=True, title="Time-lapse")
 
@@ -317,6 +327,7 @@ class AppConfig(BaseModel):
 
     camera: CameraConfig = Field(default_factory=CameraConfig)
     liveview: LiveViewConfig = Field(default_factory=LiveViewConfig)
+    kiosk: KioskConfig = Field(default_factory=KioskConfig)
     timelapse: TimelapseConfig = Field(default_factory=TimelapseConfig)
     video: VideoConfig = Field(default_factory=VideoConfig)
     media: MediaConfig = Field(default_factory=MediaConfig)

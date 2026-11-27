@@ -25,6 +25,13 @@ const schema = {
         keep_card_copy: { type: 'boolean', title: 'Keep a copy' },
       },
     },
+    Kiosk: {
+      title: 'Kiosk',
+      type: 'object',
+      properties: {
+        scale: { enum: ['auto', '1', '1.25', '1.5', '2'], type: 'string', title: 'Display scale' },
+      },
+    },
     Video: {
       title: 'VideoConfig',
       type: 'object',
@@ -38,6 +45,7 @@ const schema = {
     camera: { $ref: '#/$defs/Camera' },
     video: { $ref: '#/$defs/Video' },
     cors_origins: { type: 'array', items: { type: 'string' }, title: 'Cors origins' },
+    kiosk: { $ref: '#/$defs/Kiosk' },
     timezone: { anyOf: [{ type: 'string', maxLength: 64 }, { type: 'null' }], title: 'Time zone' },
     demo_camera: { type: 'boolean' },
     api_key_set: { type: 'boolean', readOnly: true },
@@ -46,6 +54,7 @@ const schema = {
 const cfg = () => ({
   camera: { download_photos: true, filename_prefix: null, keep_card_copy: true },
   video: { crf: 23, codec: 'a' },
+  kiosk: { scale: 'auto' },
   cors_origins: [],
   timezone: null,
   demo_camera: false,
@@ -100,6 +109,15 @@ describe('SettingsView', () => {
     await w.find('[data-test="save"]').trigger('click')
     expect(config.patch).toHaveBeenCalledWith({ timezone: 'Europe/Paris' })
     expect(w.find('[data-field="timezone"]').text()).toContain('photo and session names')
+  })
+
+  it('saves the kiosk display scale from the Display section', async () => {
+    const { w, config } = await setup()
+    config.patch = vi.fn(async () => config.config)
+    expect(w.find('[data-section="display"]').text()).toContain('touchscreen kiosk only')
+    await w.find('[data-test="kiosk-scale"] button:nth-child(4)').trigger('click')
+    await w.find('[data-test="save"]').trigger('click')
+    expect(config.patch).toHaveBeenCalledWith({ kiosk: { scale: '1.5' } })
   })
 
   it('shows the prefix example and saves it', async () => {
