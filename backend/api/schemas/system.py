@@ -20,7 +20,8 @@ class HealthOut(BaseModel):
 class InfoOut(BaseModel):
     version: str
     backend: Literal["real", "demo"] = Field(description="Camera backend kind in use")
-    auth_enabled: bool
+    auth_enabled: bool = Field(description="True when a password or API key is set")
+    password_set: bool = Field(description="True when an app password is set")
     output_free_bytes: int | None = Field(description="Free disk space of the output dir")
     ffmpeg_available: bool
     libgphoto2_version: str | None = Field(

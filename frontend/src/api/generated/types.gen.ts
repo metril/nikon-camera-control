@@ -113,6 +113,84 @@ export type ApplyResult = {
 };
 
 /**
+ * AuthSessionListOut
+ */
+export type AuthSessionListOut = {
+    /**
+     * Sessions
+     */
+    sessions: Array<AuthSessionOut>;
+};
+
+/**
+ * AuthSessionOut
+ */
+export type AuthSessionOut = {
+    /**
+     * Created
+     */
+    created: string;
+    /**
+     * Current
+     *
+     * True for the session making this request
+     */
+    current: boolean;
+    /**
+     * Id
+     *
+     * Public handle; not a credential
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'browser' | 'kiosk';
+    /**
+     * Last Seen
+     */
+    last_seen: string;
+    /**
+     * User Agent
+     */
+    user_agent: string | null;
+};
+
+/**
+ * AuthStatusOut
+ */
+export type AuthStatusOut = {
+    /**
+     * Api Key Set
+     */
+    api_key_set: boolean;
+    /**
+     * Auth Required
+     *
+     * True when a password or API key is set
+     */
+    auth_required: boolean;
+    /**
+     * Authenticated
+     *
+     * Whether this request's credentials are accepted
+     */
+    authenticated: boolean;
+    /**
+     * Password Set
+     *
+     * True when an app password exists (or is locked)
+     */
+    password_set: boolean;
+    /**
+     * Session Kind
+     *
+     * Kind of the session cookie in use, if any
+     */
+    session_kind: 'browser' | 'kiosk' | null;
+};
+
+/**
  * AutofocusResult
  */
 export type AutofocusResult = {
@@ -1730,6 +1808,8 @@ export type ImportItemResult = {
 export type InfoOut = {
     /**
      * Auth Enabled
+     *
+     * True when a password or API key is set
      */
     auth_enabled: boolean;
     /**
@@ -1754,6 +1834,12 @@ export type InfoOut = {
      * Free disk space of the output dir
      */
     output_free_bytes: number | null;
+    /**
+     * Password Set
+     *
+     * True when an app password is set
+     */
+    password_set: boolean;
     /**
      * Started At
      *
@@ -1967,6 +2053,18 @@ export type KioskDisplayOut = {
      * The recorded display state.
      */
     on: boolean;
+};
+
+/**
+ * KioskPairIn
+ */
+export type KioskPairIn = {
+    /**
+     * Token
+     *
+     * The kiosk device token
+     */
+    token: string;
 };
 
 /**
@@ -2435,6 +2533,24 @@ export type LocationsOut = {
 };
 
 /**
+ * LoginIn
+ */
+export type LoginIn = {
+    /**
+     * Api Key
+     *
+     * The API key; accepted only while no password is set
+     */
+    api_key?: string | null;
+    /**
+     * Password
+     *
+     * The app password
+     */
+    password?: string | null;
+};
+
+/**
  * Media
  */
 export type MediaConfig = {
@@ -2639,6 +2755,36 @@ export type PageVideoEntry = {
      * Total
      */
     total: number;
+};
+
+/**
+ * PasswordDeleteIn
+ */
+export type PasswordDeleteIn = {
+    /**
+     * Current
+     *
+     * The current password
+     */
+    current: string;
+};
+
+/**
+ * PasswordSetIn
+ */
+export type PasswordSetIn = {
+    /**
+     * Current
+     *
+     * The current password; required only when a password is already set
+     */
+    current?: string | null;
+    /**
+     * New
+     *
+     * The new password
+     */
+    new: string;
 };
 
 /**
@@ -3121,6 +3267,18 @@ export type ResolvedStep = {
     settings: {
         [key: string]: string | number | number | boolean;
     };
+};
+
+/**
+ * RevokedOut
+ */
+export type RevokedOut = {
+    /**
+     * Revoked
+     *
+     * Number of sessions revoked
+     */
+    revoked: number;
 };
 
 /**
@@ -4303,6 +4461,405 @@ export type VideoEntry = {
      */
     size: number;
 };
+
+export type PairKioskData = {
+    body: KioskPairIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/kiosk';
+};
+
+export type PairKioskErrors = {
+    /**
+     * Invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Too many failed attempts (see Retry-After)
+     */
+    429: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+};
+
+export type PairKioskError = PairKioskErrors[keyof PairKioskErrors];
+
+export type PairKioskResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthStatusOut;
+};
+
+export type PairKioskResponse = PairKioskResponses[keyof PairKioskResponses];
+
+export type RotateKioskTokenData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/kiosk-token/rotate';
+};
+
+export type RotateKioskTokenErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RotateKioskTokenError = RotateKioskTokenErrors[keyof RotateKioskTokenErrors];
+
+export type RotateKioskTokenResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevokedOut;
+};
+
+export type RotateKioskTokenResponse = RotateKioskTokenResponses[keyof RotateKioskTokenResponses];
+
+export type LoginData = {
+    body: LoginIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/login';
+};
+
+export type LoginErrors = {
+    /**
+     * Invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Too many failed attempts (see Retry-After)
+     */
+    429: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+};
+
+export type LoginError = LoginErrors[keyof LoginErrors];
+
+export type LoginResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthStatusOut;
+};
+
+export type LoginResponse = LoginResponses[keyof LoginResponses];
+
+export type LogoutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/logout';
+};
+
+export type LogoutErrors = {
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+};
+
+export type LogoutError = LogoutErrors[keyof LogoutErrors];
+
+export type LogoutResponses = {
+    /**
+     * Successful Response
+     */
+    200: Ok;
+};
+
+export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+
+export type DeletePasswordData = {
+    body: PasswordDeleteIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/password';
+};
+
+export type DeletePasswordErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type DeletePasswordError = DeletePasswordErrors[keyof DeletePasswordErrors];
+
+export type DeletePasswordResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthStatusOut;
+};
+
+export type DeletePasswordResponse = DeletePasswordResponses[keyof DeletePasswordResponses];
+
+export type SetPasswordData = {
+    body: PasswordSetIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/password';
+};
+
+export type SetPasswordErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SetPasswordError = SetPasswordErrors[keyof SetPasswordErrors];
+
+export type SetPasswordResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthStatusOut;
+};
+
+export type SetPasswordResponse = SetPasswordResponses[keyof SetPasswordResponses];
+
+export type ListAuthSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions';
+};
+
+export type ListAuthSessionsErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListAuthSessionsError = ListAuthSessionsErrors[keyof ListAuthSessionsErrors];
+
+export type ListAuthSessionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthSessionListOut;
+};
+
+export type ListAuthSessionsResponse = ListAuthSessionsResponses[keyof ListAuthSessionsResponses];
+
+export type RevokeAllAuthSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions/revoke-all';
+};
+
+export type RevokeAllAuthSessionsErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RevokeAllAuthSessionsError = RevokeAllAuthSessionsErrors[keyof RevokeAllAuthSessionsErrors];
+
+export type RevokeAllAuthSessionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevokedOut;
+};
+
+export type RevokeAllAuthSessionsResponse = RevokeAllAuthSessionsResponses[keyof RevokeAllAuthSessionsResponses];
+
+export type RevokeAuthSessionData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sessions/{session_id}';
+};
+
+export type RevokeAuthSessionErrors = {
+    /**
+     * Missing or invalid API key
+     */
+    401: ErrorResponse;
+    /**
+     * Not found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict with current state
+     */
+    409: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+    /**
+     * Camera unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RevokeAuthSessionError = RevokeAuthSessionErrors[keyof RevokeAuthSessionErrors];
+
+export type RevokeAuthSessionResponses = {
+    /**
+     * Successful Response
+     */
+    200: Ok;
+};
+
+export type RevokeAuthSessionResponse = RevokeAuthSessionResponses[keyof RevokeAuthSessionResponses];
+
+export type GetAuthStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/status';
+};
+
+export type GetAuthStatusErrors = {
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+};
+
+export type GetAuthStatusError = GetAuthStatusErrors[keyof GetAuthStatusErrors];
+
+export type GetAuthStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthStatusOut;
+};
+
+export type GetAuthStatusResponse = GetAuthStatusResponses[keyof GetAuthStatusResponses];
 
 export type RunBackupData = {
     body?: never;

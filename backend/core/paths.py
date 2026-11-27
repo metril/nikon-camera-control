@@ -16,3 +16,4 @@ def _pick(name: str) -> Path:
 
 DATA_DIR: Path = _pick("data")
 CONFIG_FILE: Path = DATA_DIR / "config.json"
+KIOSK_AUTH_DIR: Path = _pick("kiosk-auth")  # the kiosk device token file lives here

@@ -33,6 +33,8 @@ class FakeWS:
         self.app = SimpleNamespace(state=SimpleNamespace(config_store=store))
         self.scope: dict[str, Any] = {"subprotocols": protos}
         self.query_params = query
+        self.cookies: dict[str, str] = {}
+        self.state = SimpleNamespace()
         self.closed: int | None = None
         self.accepted: str | None | bool = False
 

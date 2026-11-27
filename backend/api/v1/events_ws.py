@@ -10,7 +10,7 @@ from fastapi import APIRouter, WebSocket
 from backend.api.deps import ws_get_camera_service, ws_get_event_bus
 from backend.api.schemas.common import Event, EventType
 from backend.core.events import Subscription
-from backend.core.security import KeyWatch, ws_authorize, ws_subprotocol
+from backend.core.security import AuthWatch, ws_authorize, ws_subprotocol
 
 router = APIRouter(tags=["events"])
 
@@ -24,7 +24,7 @@ async def events_ws(websocket: WebSocket) -> None:
     Client may send ``{"type":"ping"}`` and gets ``{"type":"pong"}``."""
     if not await ws_authorize(websocket):
         return
-    watch = KeyWatch(websocket)
+    watch = AuthWatch(websocket)
     try:
         await websocket.accept(subprotocol=ws_subprotocol(websocket))
     except BaseException:
