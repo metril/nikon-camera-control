@@ -89,7 +89,7 @@ const SHORTCUTS = [
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-camera-bg">
+  <div class="app-frame flex flex-col bg-camera-bg" data-test="app-frame">
     <a href="#main" class="skip" data-test="skip" @click.prevent="focusMain"
       >Skip to main content</a
     >
@@ -200,10 +200,16 @@ const SHORTCUTS = [
   text-align: center;
 }
 html[data-layout='touch'] .warn-bar {
-  min-height: 44px;
+  min-height: 40px;
+}
+.warn-bar,
+.stripe {
+  flex: none;
 }
 .main {
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;

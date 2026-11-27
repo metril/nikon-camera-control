@@ -127,13 +127,13 @@ const LAYOUTS = [
 
 <style scoped>
 .top {
-  position: sticky;
-  top: env(safe-area-inset-top, 0px);
+  position: relative;
   z-index: 20;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 16px;
-  height: 56px;
+  height: 52px;
   background: theme('colors.camera.surface');
   border-bottom: 1px solid theme('colors.camera.subtle');
   padding-left: max(16px, env(safe-area-inset-left, 0px));
