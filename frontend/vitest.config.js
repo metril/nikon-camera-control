@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['src/**/*.test.js'],
+    exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: ['./src/test-setup.js'],
   },
 })
