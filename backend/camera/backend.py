@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 
 class ConfigType(StrEnum):
@@ -129,7 +129,7 @@ class StorageInfo:
     capacity_kb: int = 0
     free_kb: int = 0
     free_images: int | None = None  # None: the camera did not report it
-    access: str = ""  # "rw" | "ro" | ""
+    access: Literal["rw", "ro", "ro_delete", ""] = ""  # raw PTP access; "" = not reported
 
 
 @runtime_checkable

@@ -226,3 +226,12 @@ def test_timezone_validated(tmp_path: Path) -> None:
     with pytest.raises(ConfigInvalid):
         store.update({"timezone": "Mars/Olympus"})
     assert store.config.timezone == "America/New_York"
+
+
+def test_kiosk_scale_default_and_validation(tmp_path: Path) -> None:
+    s = ConfigStore(tmp_path / "c.json")
+    assert s.config.kiosk.scale == "auto"
+    assert s.update({"kiosk": {"scale": "1.25"}})[0].kiosk.scale == "1.25"
+    with pytest.raises(ConfigInvalid):
+        s.update({"kiosk": {"scale": "3"}})
+    assert s.config.kiosk.scale == "1.25"

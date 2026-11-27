@@ -919,6 +919,15 @@ async def test_card_check_caches_only_ok_storage(env: Env) -> None:
     assert await svc.card_problem() is None  # OK result stays cached
 
 
+@pytest.mark.parametrize(("access", "locked"), [("ro", True), ("ro_delete", False), ("rw", False)])
+async def test_card_problem_only_ro_is_locked(env: Env, access: str, locked: bool) -> None:
+    svc = await env.make()
+    await svc.set_setting("capturetarget", "Memory card")
+    env.backend.storage = [StorageInfo("SD", "/store", 100, 50, 10, access)]
+    problem = await svc.card_problem(fresh=True)
+    assert (type(problem).__name__ == "CardLocked") if locked else problem is None
+
+
 # review fixes ---------------------------------------------------------------------------
 async def test_preview_does_not_drain_events_while_recording_or_leased(
     env: Env, monkeypatch: pytest.MonkeyPatch

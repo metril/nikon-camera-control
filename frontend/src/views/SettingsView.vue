@@ -55,7 +55,7 @@ const loadError = ref('')
 const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
 // Shown in the Capture section instead of their own section.
 // Shown in Display.
-const DISPLAY_OWNED = ['timezone']
+const DISPLAY_OWNED = ['timezone', 'kiosk.scale']
 const CAPTURE_OWNED = ['camera.keep_card_copy', 'camera.download_photos', 'camera.filename_prefix']
 // Expert knobs live behind the Advanced disclosure.
 const ADVANCED = [
@@ -288,6 +288,18 @@ const setZone = (v) => {
   setPath(draft.value, 'timezone', v || null)
   delete errors.value.timezone
 }
+const kioskScale = computed(() => getPath(draft.value, 'kiosk.scale') || 'auto')
+const setKioskScale = (v) => {
+  setPath(draft.value, 'kiosk.scale', v)
+  delete errors.value['kiosk.scale']
+}
+const KIOSK_SCALES = [
+  { value: 'auto', label: 'Auto' },
+  { value: '1', label: '1×' },
+  { value: '1.25', label: '1.25×' },
+  { value: '1.5', label: '1.5×' },
+  { value: '2', label: '2×' },
+]
 const LAYOUTS = [
   { value: 'auto', label: 'Auto' },
   { value: 'desktop', label: 'Desktop' },
@@ -426,6 +438,21 @@ async function setLocation(id) {
                 Use this browser's time zone ({{ browserZone }})
               </UiButton>
             </template>
+          </SettingRow>
+          <SettingRow
+            title="Kiosk display scale"
+            description="Size of the interface on the touchscreen kiosk only. Auto works it out from the screen."
+            :dirty="isFieldDirty('kiosk.scale')"
+            :error="errors['kiosk.scale'] || ''"
+            data-field="kiosk-scale"
+          >
+            <UiSegmented
+              :model-value="kioskScale"
+              :options="KIOSK_SCALES"
+              aria-label="Kiosk display scale"
+              data-test="kiosk-scale"
+              @update:model-value="setKioskScale"
+            />
           </SettingRow>
           <SettingRow
             v-if="!isTouch"

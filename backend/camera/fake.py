@@ -21,7 +21,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from PIL import Image, ImageDraw
 
@@ -338,7 +338,7 @@ class _Faults:
     latency: dict[str, float] = field(default_factory=dict)
     unplugged: bool = False
     card_full: bool = False
-    card: str = "rw"  # "rw" | "ro" | "none"
+    card: Literal["rw", "ro", "none"] = "rw"
     calls: dict[str, int] = field(default_factory=dict)
 
 
@@ -549,7 +549,7 @@ class FakeCamera:
         with self._flock:
             self._faults.card_full = full
 
-    def card_state(self, state: str) -> None:
+    def card_state(self, state: Literal["rw", "ro", "none"]) -> None:
         """ "rw" (default), "ro" (write-protected) or "none" (no card). With the card as capture
         target, shots then fail with a bare "Unspecified error" like a real D500."""
         with self._flock:

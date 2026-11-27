@@ -353,6 +353,26 @@ def test_wait_for_event_mapping() -> None:
             assert out.file is not None and out.file.name == "a.nef"
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (gp.GP_STORAGEINFO_AC_READWRITE, "rw"),
+        (gp.GP_STORAGEINFO_AC_READONLY, "ro"),
+        (gp.GP_STORAGEINFO_AC_READONLY_WITH_DELETE, "ro_delete"),
+    ],
+)
+def test_storage_info_access_is_raw(raw: int, expected: str) -> None:
+    class Info:
+        fields = gp.GP_STORAGEINFO_ACCESS
+        access = raw
+
+    class Cam:
+        def get_storageinfo(self, ctx: Any) -> list[Any]:
+            return [Info()]
+
+    assert _backend(Cam()).storage_info()[0].access == expected
+
+
 def test_read_file_chunked(tmp_path: Path) -> None:
     data = bytes(range(256)) * 10
 

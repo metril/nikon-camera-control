@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from backend.core.config_store import (
     AppConfig,
     CameraConfig,
+    KioskConfig,
     LiveViewConfig,
     MediaConfig,
     TimelapseConfig,
@@ -21,6 +22,7 @@ class ConfigOut(BaseModel):
 
     camera: CameraConfig
     liveview: LiveViewConfig
+    kiosk: KioskConfig
     timelapse: TimelapseConfig
     video: VideoConfig
     media: MediaConfig

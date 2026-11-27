@@ -1191,6 +1191,7 @@ export type ConfigOut = {
      * Demo Camera
      */
     demo_camera: boolean;
+    kiosk: KioskConfig;
     liveview: LiveViewConfig;
     media: MediaConfig;
     timelapse: TimelapseConfig;
@@ -1214,6 +1215,7 @@ export type ConfigPatch = {
      * Use the simulated camera
      */
     demo_camera?: boolean | null;
+    kiosk?: KioskConfigPatch | null;
     liveview?: LiveViewConfigPatch | null;
     media?: MediaConfigPatch | null;
     storage?: StorageConfigPatch | null;
@@ -1900,6 +1902,30 @@ export type JobProgressEvent = {
  * JobStatus
  */
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/**
+ * Kiosk
+ */
+export type KioskConfig = {
+    /**
+     * Display scale
+     *
+     * Size of the touchscreen kiosk's interface. Auto works it out from the screen.
+     */
+    scale?: 'auto' | '1' | '1.25' | '1.5' | '2';
+};
+
+/**
+ * KioskConfigPatch
+ */
+export type KioskConfigPatch = {
+    /**
+     * Scale
+     *
+     * Size of the touchscreen kiosk's interface. Auto works it out from the screen.
+     */
+    scale?: 'auto' | '1' | '1.25' | '1.5' | '2' | null;
+};
 
 /**
  * LastFrame
@@ -3591,8 +3617,10 @@ export type StepsBracketing = {
 export type StorageCardOut = {
     /**
      * Access
+     *
+     * Raw PTP StorageInfo AccessCapability: 'rw' read-write, 'ro' read-only without deletion, 'ro_delete' read-only with object deletion, '' not reported
      */
-    access: string;
+    access: 'rw' | 'ro' | 'ro_delete' | '';
     /**
      * Base Dir
      */
@@ -6417,6 +6445,22 @@ export type GetJobResponses = {
 };
 
 export type GetJobResponse = GetJobResponses[keyof GetJobResponses];
+
+export type StreamKioskScaleData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/kiosk/scale';
+};
+
+export type StreamKioskScaleResponses = {
+    /**
+     * One `data: <scale>` line per value
+     */
+    200: Blob | File;
+};
+
+export type StreamKioskScaleResponse = StreamKioskScaleResponses[keyof StreamKioskScaleResponses];
 
 export type GetLiveviewData = {
     body?: never;

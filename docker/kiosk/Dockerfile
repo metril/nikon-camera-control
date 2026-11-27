@@ -4,7 +4,7 @@ FROM debian:trixie-slim
 ARG TARGETARCH
 RUN apt-get update \
  && pkgs="cage seatd chromium curl ca-certificates mesa-va-drivers libgl1-mesa-dri libegl1 \
-      fonts-noto-core libinput10 libudev1 libxkbcommon0 xkb-data wlr-randr util-linux" \
+      fonts-noto-core libinput10 libudev1 libxkbcommon0 xkb-data wlr-randr util-linux inotify-tools" \
  && if [ "$TARGETARCH" = "amd64" ]; then pkgs="$pkgs intel-media-va-driver"; fi \
  && apt-get install -y --no-install-recommends $pkgs \
  && rm -rf /var/lib/apt/lists/* \

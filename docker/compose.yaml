@@ -2,7 +2,7 @@
 # Everything is configured in the web UI (Settings); there is no environment configuration.
 services:
   nikon-camera-control:
-    image: ghcr.io/metril/nikon-camera-control:0.5.4
+    image: ghcr.io/metril/nikon-camera-control:0.5.5
     container_name: nikon-camera-control
     ports:
       - "8000:8000"
@@ -61,7 +61,7 @@ services:
   # Enable with:  docker compose --profile kiosk up -d
   kiosk:
     profiles: [kiosk]
-    image: ghcr.io/metril/nikon-camera-control-kiosk:0.5.4
+    image: ghcr.io/metril/nikon-camera-control-kiosk:0.5.5
     container_name: nikon-camera-control-kiosk
     restart: unless-stopped
     depends_on:
@@ -72,7 +72,10 @@ services:
     # needs no SYS_TTY_CONFIG/SYS_ADMIN.
     devices:
       - /dev/dri:/dev/dri
-      - /dev/input:/dev/input
+    # /dev/input is bind-mounted (not `devices:`, which copies only the nodes present at start):
+    # a re-plugged touchscreen gets a new node, and the cgroup rule lets the container use it.
+    device_cgroup_rules:
+      - "c 13:* rmw"
     # NUMERIC host gids (names would resolve inside the container). Find yours with:
     #   stat -c %g /dev/dri/card0 /dev/dri/renderD128 /dev/input/event0
     group_add:
@@ -80,7 +83,8 @@ services:
       - "992"  # render: /dev/dri/renderD128
       - "996"  # input : /dev/input/event*
     volumes:
-      - /run/udev:/run/udev:ro  # libinput device discovery and hotplug
+      - /dev/input:/dev/input
+      - /run/udev:/run/udev:ro  # libinput device discovery; the entrypoint watches it for input hotplug
       - kiosk-profile:/kiosk-profile  # Chromium profile: keeps the API key and prefs across restarts
     tmpfs:
       - /tmp

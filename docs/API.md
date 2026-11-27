@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.5.4
+# Nikon Camera Control API 0.5.5
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -138,6 +138,12 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/jobs` | `list_jobs` | List Jobs |
 | GET | `/api/v1/jobs/{job_id}` | `get_job` | Get Job |
 | DELETE | `/api/v1/jobs/{job_id}` | `cancel_job` | Cancel Job |
+
+### kiosk
+
+| Method | Path | operation_id | Summary |
+|---|---|---|---|
+| GET | `/api/v1/kiosk/scale` | `stream_kiosk_scale` | Stream Kiosk Scale |
 
 ### liveview
 
@@ -741,6 +747,7 @@ operation_id: `update_config`
 |---|---|---|---|---|---|
 | `camera` | CameraConfigPatch \| null | no |  |  |  |
 | `liveview` | LiveViewConfigPatch \| null | no |  |  |  |
+| `kiosk` | KioskConfigPatch \| null | no |  |  |  |
 | `timelapse` | TimelapseConfigPatch \| null | no |  |  |  |
 | `video` | VideoConfigPatch \| null | no |  |  |  |
 | `media` | MediaConfigPatch \| null | no |  |  |  |
@@ -1146,6 +1153,23 @@ Cancel a job (no-op for finished jobs) and return its final state.
 | 422 | Validation error | `application/json`: `ErrorResponse` |
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
+
+## kiosk
+
+### `GET /api/v1/kiosk/scale`
+
+operation_id: `stream_kiosk_scale`
+
+Open, read-only stream of the kiosk display scale (auto, 1, 1.25, 1.5 or 2).
+
+Sends the current value on connect and again whenever it changes. Not sensitive, and the
+kiosk holds no API key, so it is open like /health.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | One `data: <scale>` line per value | `text/event-stream`: `string(binary)` |
 
 ## liveview
 
@@ -2483,6 +2507,7 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | liveview | `quality` | enum("small", "medium", "large") | `"medium"` |  | Size of the frames the camera sends. |
 | liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Quality used when re-encoding streamed frames. |
 | liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Shrink frames wider than this, in pixels. Leave empty to turn off. |
+| kiosk | `scale` | enum("auto", "1", "1.25", "1.5", "2") | `"auto"` |  | Size of the touchscreen kiosk's interface. Auto works it out from the screen. |
 | timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | The shortest time allowed between frames. |
 | timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | A time-lapse stops after this long. |
 | timelapse | `failure_budget` | integer | `5` | `>=1`, `<=100` | Stop the time-lapse after this many failed frames in a row. |
