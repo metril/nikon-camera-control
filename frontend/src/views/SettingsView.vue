@@ -92,7 +92,9 @@ const shownSections = computed(() =>
         (p) => !CAPTURE_OWNED.includes(p) && !DISPLAY_OWNED.includes(p) && !ADVANCED.includes(p),
       ),
     )
-    .filter((s) => (s.fields.length || s.key === 'camera') && s.key !== 'storage'),
+    .filter(
+      (s) => (s.fields.length || s.key === 'camera') && s.key !== 'storage' && s.key !== 'security',
+    ),
 )
 // The remaining storage fields (backup interval, verification) render inside the Storage card.
 const storageSection = computed(() =>
@@ -103,6 +105,8 @@ const storageSection = computed(() =>
       )
     : null,
 )
+// The security fields (secure cookie) render inside the Security pane, above its own cards.
+const securitySection = computed(() => sections.value.find((s) => s.key === 'security') || null)
 const advancedGroups = computed(() =>
   sections.value
     .map((s) => withFields(s, (p) => ADVANCED.includes(p)))
@@ -768,6 +772,23 @@ async function setLocation(id) {
             :dirty="isFieldDirty('demo_camera')"
             @update:model-value="draft.demo_camera = $event"
           />
+
+          <SettingsSection
+            v-if="securitySection && show('security')"
+            :title="securitySection.title"
+            :subtitle="securitySection.description"
+            data-test="security-fields"
+          >
+            <SchemaField
+              v-for="f in securitySection.fields"
+              :key="securitySection.path(f)"
+              :field="f"
+              :model-value="value(securitySection, f)"
+              :dirty="isFieldDirty(securitySection.path(f))"
+              :error="errors[securitySection.path(f)] || ''"
+              @update:model-value="setValue(securitySection, f, $event)"
+            />
+          </SettingsSection>
 
           <component
             :is="current.component"
