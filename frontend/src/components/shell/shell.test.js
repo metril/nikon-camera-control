@@ -17,6 +17,8 @@ import JobsPanel from './JobsPanel.vue'
 import LoginScreen from './LoginScreen.vue'
 
 const login = vi.fn()
+const reloadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/api/reload', () => ({ reloadPage }))
 const getConfig = vi.fn()
 vi.mock('@/api', async (orig) => ({
   ...(await orig()),
@@ -371,6 +373,7 @@ describe('jobSummary', () => {
 describe('LoginScreen', () => {
   beforeEach(() => {
     login.mockReset()
+    reloadPage.mockReset()
     localStorage.clear()
   })
   const type = (value) => {
@@ -408,7 +411,7 @@ describe('LoginScreen', () => {
     await flushPromises()
     expect(login).toHaveBeenCalledWith({ password: 'hunter2' })
     expect(auth.required).toBe(false)
-    expect(config.fetch).toHaveBeenCalled()
+    expect(reloadPage).toHaveBeenCalledTimes(1) // full re-init: sockets and stores restart
     w.unmount()
   })
 
@@ -456,6 +459,7 @@ describe('LoginScreen', () => {
     submit()
     await flushPromises()
     expect(auth.required).toBe(true)
+    expect(reloadPage).not.toHaveBeenCalled()
     expect(document.body.querySelector('[data-test="error"]').textContent.trim()).toBe(
       'Too many failed attempts. Try again in 240 seconds.',
     )

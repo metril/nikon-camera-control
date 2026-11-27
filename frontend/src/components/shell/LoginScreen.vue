@@ -6,13 +6,12 @@
  */
 import { computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { useConfigStore } from '@/stores/config'
 import UiModal from '@/components/ui/UiModal.vue'
 import UiText from '@/components/ui/UiText.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import { reloadPage } from '@/api/reload'
 
 const auth = useAuthStore()
-const config = useConfigStore()
 const secret = ref('')
 const error = ref('')
 const loading = ref(false)
@@ -29,10 +28,10 @@ async function submit() {
   try {
     await auth.login(keyMode.value ? { api_key: value } : { password: value })
     secret.value = ''
-    // Data requested before signing in failed with 401: reload what the views read once.
-    config.fetch().catch(() => {})
-    config.fetchSchema().catch(() => {})
-    auth.fetchInfo().catch(() => {})
+    // Everything requested before signing in failed with 401 (event socket, stores, live view):
+    // a reload is the one clean re-initialisation; the session cookie is already set.
+    reloadPage()
+    return
   } catch (e) {
     error.value = e?.message || 'Could not sign in.'
   } finally {
