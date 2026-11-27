@@ -1296,6 +1296,7 @@ export type ConfigOut = {
     kiosk: KioskConfig;
     liveview: LiveViewConfig;
     media: MediaConfig;
+    security: SecurityConfig;
     timelapse: TimelapseConfig;
     video: VideoConfig;
 };
@@ -1320,6 +1321,7 @@ export type ConfigPatch = {
     kiosk?: KioskConfigPatch | null;
     liveview?: LiveViewConfigPatch | null;
     media?: MediaConfigPatch | null;
+    security?: SecurityConfigPatch | null;
     storage?: StorageConfigPatch | null;
     timelapse?: TimelapseConfigPatch | null;
     /**
@@ -2084,6 +2086,30 @@ export type JobProgressEvent = {
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 /**
+ * KioskCodeIn
+ */
+export type KioskCodeIn = {
+    /**
+     * Token
+     *
+     * The kiosk device token
+     */
+    token: string;
+};
+
+/**
+ * KioskCodeOut
+ */
+export type KioskCodeOut = {
+    /**
+     * Code
+     *
+     * Single-use pairing code, valid for 30 seconds
+     */
+    code: string;
+};
+
+/**
  * Kiosk
  */
 export type KioskConfig = {
@@ -2148,11 +2174,11 @@ export type KioskDisplayOut = {
  */
 export type KioskPairIn = {
     /**
-     * Token
+     * Code
      *
-     * The kiosk device token
+     * A pairing code from the kiosk code endpoint
      */
-    token: string;
+    code: string;
 };
 
 /**
@@ -3373,6 +3399,30 @@ export type RevokedOut = {
      * Number of sessions revoked
      */
     revoked: number;
+};
+
+/**
+ * Security
+ */
+export type SecurityConfig = {
+    /**
+     * Sign-in cookie security
+     *
+     * Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app.
+     */
+    secure_cookie?: 'auto' | 'always';
+};
+
+/**
+ * SecurityConfigPatch
+ */
+export type SecurityConfigPatch = {
+    /**
+     * Secure Cookie
+     *
+     * Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app.
+     */
+    secure_cookie?: 'auto' | 'always' | null;
 };
 
 /**
@@ -4661,6 +4711,43 @@ export type RotateKioskTokenResponses = {
 };
 
 export type RotateKioskTokenResponse = RotateKioskTokenResponses[keyof RotateKioskTokenResponses];
+
+export type GetKioskPairingCodeData = {
+    body: KioskCodeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/kiosk/code';
+};
+
+export type GetKioskPairingCodeErrors = {
+    /**
+     * Invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * Validation error
+     */
+    422: ErrorResponse;
+    /**
+     * Too many failed attempts (see Retry-After)
+     */
+    429: ErrorResponse;
+    /**
+     * Internal error
+     */
+    500: ErrorResponse;
+};
+
+export type GetKioskPairingCodeError = GetKioskPairingCodeErrors[keyof GetKioskPairingCodeErrors];
+
+export type GetKioskPairingCodeResponses = {
+    /**
+     * Successful Response
+     */
+    200: KioskCodeOut;
+};
+
+export type GetKioskPairingCodeResponse = GetKioskPairingCodeResponses[keyof GetKioskPairingCodeResponses];
 
 export type LoginData = {
     body: LoginIn;

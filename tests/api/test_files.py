@@ -271,3 +271,46 @@ async def test_zip_stream_worker_stops_when_client_goes_away(tmp_path: Path) -> 
             return
         await asyncio.sleep(0.05)
     raise AssertionError("zip worker thread kept running")
+
+
+async def test_zip_stream_abort_wakes_blocked_consumer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A client that leaves while the consumer thread waits in q.get must not leak it."""
+    seen: dict = {}
+
+    def silent_worker(items, q, cancel):  # produces nothing, so q.get blocks
+        seen["q"] = q
+        cancel.wait(10)
+
+    monkeypatch.setattr(files_mod, "_zip_worker", silent_worker)
+    gen = files_mod.FileService.stream_zip([])
+    task = asyncio.ensure_future(anext(gen))
+    await asyncio.sleep(0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    for _ in range(100):  # _END was posted and then consumed by the blocked get
+        if seen["q"].empty():
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("consumer thread was never woken")
+
+
+async def test_zip_ticket_refused_after_target_change(tmp_path: Path) -> None:
+    a, b = tmp_path / "a", tmp_path / "b"
+    for d in (a, b):
+        _jpg(d / "x.jpg")
+        _jpg(d / "y.jpg")
+
+    from backend.core.storage_root import FixedRoot
+
+    store = FixedRoot(a)
+    svc = files_mod.FileService(store)
+    ticket = svc.create_zip_ticket(["x.jpg", "y.jpg"])
+    store._root = b  # target switched to another location with the same file names
+    with pytest.raises(files_mod.FileNotFoundError_):
+        svc.redeem_zip_ticket(ticket)
+    store._root = a
+    ticket = svc.create_zip_ticket(["x.jpg", "y.jpg"])
+    assert len(svc.redeem_zip_ticket(ticket).items) == 2

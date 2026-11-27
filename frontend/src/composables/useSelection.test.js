@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent, h, nextTick, ref } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 import { useSelection } from './useSelection'
 
 let w
@@ -77,6 +77,47 @@ describe('useSelection', () => {
     press('a', { ctrlKey: true })
     expect(sel.count.value).toBe(5)
     expect(sel.allSelected.value).toBe(true)
+  })
+
+  it('Ctrl+A and Esc still work with a button (a tapped tile) focused', () => {
+    const { sel } = setup()
+    sel.toggle('a')
+    const btn = document.createElement('button')
+    document.body.append(btn)
+    const fire = (init) =>
+      btn.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+    fire({ key: 'a', ctrlKey: true })
+    expect(sel.count.value).toBe(5)
+    fire({ key: 'Escape' })
+    expect(sel.selecting.value).toBe(false)
+    btn.remove()
+  })
+
+  it('ignores keys while its KeepAlive view is hidden', async () => {
+    const items = ref(['a', 'b', 'c'])
+    const show = ref(true)
+    let sel
+    const View = defineComponent({
+      setup() {
+        sel = useSelection({ ids: () => items.value })
+        return () => h('div')
+      },
+    })
+    w = mount(
+      defineComponent({
+        setup: () => () => h(KeepAlive, null, show.value ? [h(View)] : [h('span')]),
+      }),
+      { attachTo: document.body },
+    )
+    sel.toggle('a')
+    show.value = false
+    await nextTick()
+    press('a', { ctrlKey: true })
+    expect(sel.count.value).toBe(1)
+    show.value = true
+    await nextTick()
+    press('a', { ctrlKey: true })
+    expect(sel.count.value).toBe(3)
   })
 
   it('Esc clears the selection', () => {

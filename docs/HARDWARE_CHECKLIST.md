@@ -260,6 +260,8 @@ State restored: P, ISO 2500, NEF+Fine*, capture target camera memory, long-expos
 ## Kiosk pairing (device token)
 
 - [ ] With an app password set, `docker compose --profile kiosk up -d`: the touchscreen opens the app without a sign-in screen, and the address fragment `#pair=` is gone after load.
+- [ ] The token is not exposed: on the host, `ps aux | grep -i chromium` shows `#pair=<code>` only (a short code, dead after one use or 30 s), never the contents of `kiosk-token`; the kiosk's browser history holds no token either.
+- [ ] A second launch (rotate the token, or `docker restart` the kiosk) pairs again with a fresh code; reusing an old `#pair=` code in a browser gives 401.
 - [ ] `docker exec nikon-camera-control-kiosk cat /kiosk-auth/kiosk-token` prints one line; the file is read-only there (`touch /kiosk-auth/x` fails).
 - [ ] Settings > Security > rotate the kiosk token: within a few seconds the kiosk browser relaunches and is signed in again; the old session is gone from the session list.
 - [ ] A normal browser on another device still shows the sign-in screen, and `docker logs nikon-camera-control-kiosk` shows `kiosk: token changed` after a rotation.

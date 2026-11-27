@@ -40,6 +40,15 @@ async def _fresh(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
         yield c
 
 
+async def _pair(c: httpx.AsyncClient, token: str) -> httpx.Response:
+    """Kiosk flow: token -> single-use code -> session. Returns the pairing response (or the
+    code response when that already failed)."""
+    r = await c.post(f"{A}/kiosk/code", json={"token": token})
+    if r.status_code != 200:
+        return r
+    return await c.post(f"{A}/kiosk", json={"code": r.json()["code"]})
+
+
 @pytest.fixture
 async def other(app: FastAPI, client: httpx.AsyncClient) -> AsyncIterator[httpx.AsyncClient]:
     """A second browser (own cookie jar) on the same app."""
@@ -257,7 +266,7 @@ async def test_revoke_all_keeps_current_and_kiosk(
     await other.post(f"{A}/login", json={"password": PW})
     token = app.state.auth.kiosk.read()
     async for kiosk in _fresh(app):
-        assert (await kiosk.post(f"{A}/kiosk", json={"token": token})).status_code == 200
+        assert (await _pair(kiosk, token)).status_code == 200
         r = await client.post(f"{A}/sessions/revoke-all")
         assert r.json() == {"revoked": 1}
         assert (await other.get(PROTECTED)).status_code == 401
@@ -285,7 +294,8 @@ async def test_login_rate_limited_per_ip(
     assert r.status_code == 429
     assert r.json()["error"]["code"] == "RATE_LIMITED"
     assert 1 <= int(r.headers["retry-after"]) <= 301
-    assert (await other.post(f"{A}/kiosk", json={"token": "x"})).status_code == 429  # shared budget
+    # kiosk pairing has its own budget: a login lockout does not block it
+    assert (await other.post(f"{A}/kiosk/code", json={"token": "x"})).status_code == 401
 
 
 async def test_successful_logins_do_not_consume_the_budget(
@@ -320,8 +330,8 @@ async def test_kiosk_pairing_and_rotation(
 ) -> None:
     await _set_pw(client)
     token = app.state.auth.kiosk.read()
-    assert (await other.post(f"{A}/kiosk", json={"token": token + "x"})).status_code == 401
-    r = await other.post(f"{A}/kiosk", json={"token": token})
+    assert (await other.post(f"{A}/kiosk/code", json={"token": token + "x"})).status_code == 401
+    r = await _pair(other, token)
     assert r.status_code == 200 and r.json()["session_kind"] == "kiosk"
     assert (await other.get(PROTECTED)).status_code == 200
     assert (await other.post("/api/v1/kiosk/display", json={"on": True})).status_code == 200
@@ -333,8 +343,8 @@ async def test_kiosk_pairing_and_rotation(
     assert (await other.get(PROTECTED)).status_code == 401
     new = app.state.auth.kiosk.read()
     assert new != token
-    assert (await other.post(f"{A}/kiosk", json={"token": token})).status_code == 401
-    assert (await other.post(f"{A}/kiosk", json={"token": new})).status_code == 200
+    assert (await _pair(other, token)).status_code == 401
+    assert (await _pair(other, new)).status_code == 200
     assert (await client.get(PROTECTED)).status_code == 200  # browsers are unaffected
 
 
@@ -342,15 +352,15 @@ async def test_kiosk_pairing_fails_closed_without_token_file(
     app: FastAPI, client: httpx.AsyncClient
 ) -> None:
     app.state.auth.kiosk.path.unlink()
-    assert (await client.post(f"{A}/kiosk", json={"token": ""})).status_code == 401
-    assert (await client.post(f"{A}/kiosk", json={"token": "x" * 40})).status_code == 401
+    assert (await client.post(f"{A}/kiosk/code", json={"token": ""})).status_code == 401
+    assert (await client.post(f"{A}/kiosk", json={"code": "x" * 40})).status_code == 401
 
 
 async def test_kiosk_session_not_valid_after_password_set_to_other_browser_revocation(
     app: FastAPI, client: httpx.AsyncClient, other: httpx.AsyncClient
 ) -> None:
     """Changing the password signs out browsers but keeps the trusted kiosk."""
-    await other.post(f"{A}/kiosk", json={"token": app.state.auth.kiosk.read()})
+    await _pair(other, app.state.auth.kiosk.read())
     await _set_pw(client)
     assert (await other.get(PROTECTED)).status_code == 200
     assert (await other.get(f"{A}/status")).json()["session_kind"] == "kiosk"
@@ -459,3 +469,44 @@ async def test_no_secret_in_logs(
     await client.post(f"{A}/kiosk", json={"token": app.state.auth.kiosk.read()})
     text = caplog.text
     assert PW not in text and token not in text and app.state.auth.kiosk.read() not in text
+
+
+async def test_kiosk_code_is_single_use_and_expires(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    other: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _set_pw(client)
+    token = app.state.auth.kiosk.read()
+    code = (await other.post(f"{A}/kiosk/code", json={"token": token})).json()["code"]
+    assert (await other.post(f"{A}/kiosk", json={"code": code})).status_code == 200
+    assert (await other.post(f"{A}/kiosk", json={"code": code})).status_code == 401  # used
+    assert (await other.post(f"{A}/kiosk", json={"token": token})).status_code == 422  # raw token
+    code = (await other.post(f"{A}/kiosk/code", json={"token": token})).json()["code"]
+    real = app.state.auth.kiosk_codes._clock
+    monkeypatch.setattr(app.state.auth.kiosk_codes, "_clock", lambda: real() + 31)
+    assert (await other.post(f"{A}/kiosk", json={"code": code})).status_code == 401
+
+
+async def test_kiosk_pairing_has_its_own_limiter(
+    app: FastAPI, client: httpx.AsyncClient, other: httpx.AsyncClient
+) -> None:
+    await _set_pw(client)
+    for _ in range(5):
+        assert (await other.post(f"{A}/kiosk/code", json={"token": "bad"})).status_code == 401
+    assert (await other.post(f"{A}/kiosk/code", json={"token": "bad"})).status_code == 429
+    assert (await other.post(f"{A}/kiosk", json={"code": "x"})).status_code == 429
+    # the login budget is untouched
+    assert (await other.post(f"{A}/login", json={"password": PW})).status_code == 200
+
+
+async def test_secure_cookie_always_setting(
+    app: FastAPI, client: httpx.AsyncClient, other: httpx.AsyncClient
+) -> None:
+    await _set_pw(client)
+    r = await other.post(f"{A}/login", json={"password": PW})
+    assert "secure" not in r.headers["set-cookie"].lower()  # auto + http
+    app.state.config_store.update({"security": {"secure_cookie": "always"}})
+    r = await other.post(f"{A}/login", json={"password": PW})
+    assert "secure" in r.headers["set-cookie"].lower()

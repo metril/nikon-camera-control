@@ -70,6 +70,7 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | GET | `/api/v1/auth/sessions` | `list_auth_sessions` | List Auth Sessions |
 | POST | `/api/v1/auth/sessions/revoke-all` | `revoke_all_auth_sessions` | Revoke All Auth Sessions |
 | DELETE | `/api/v1/auth/sessions/{session_id}` | `revoke_auth_session` | Revoke Auth Session |
+| POST | `/api/v1/auth/kiosk/code` | `get_kiosk_pairing_code` | Get Kiosk Pairing Code |
 | POST | `/api/v1/auth/kiosk` | `pair_kiosk` | Pair Kiosk |
 | POST | `/api/v1/auth/kiosk-token/rotate` | `rotate_kiosk_token` | Rotate Kiosk Token |
 
@@ -429,17 +430,39 @@ operation_id: `revoke_auth_session`
 | 500 | Internal error | `application/json`: `ErrorResponse` |
 | 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
+### `POST /api/v1/auth/kiosk/code`
+
+operation_id: `get_kiosk_pairing_code`
+
+Open, rate-limited. Trades the kiosk device token for a single-use code (30 s).
+
+**Request body** (`application/json`): `KioskCodeIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `token` | string | yes |  | `maxLength=1024` | The kiosk device token |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `KioskCodeOut` |
+| 401 | Invalid credentials | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 429 | Too many failed attempts (see Retry-After) | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+
 ### `POST /api/v1/auth/kiosk`
 
 operation_id: `pair_kiosk`
 
-Open, rate-limited. Trades the kiosk device token for a kiosk session cookie.
+Open, rate-limited. Redeems a pairing code for a kiosk session cookie.
 
 **Request body** (`application/json`): `KioskPairIn`
 
 | Field | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| `token` | string | yes |  | `maxLength=1024` | The kiosk device token |
+| `code` | string | yes |  | `maxLength=256` | A pairing code from the kiosk code endpoint |
 
 **Responses**
 
@@ -997,6 +1020,7 @@ operation_id: `update_config`
 | `camera` | CameraConfigPatch \| null | no |  |  |  |
 | `liveview` | LiveViewConfigPatch \| null | no |  |  |  |
 | `kiosk` | KioskConfigPatch \| null | no |  |  |  |
+| `security` | SecurityConfigPatch \| null | no |  |  |  |
 | `timelapse` | TimelapseConfigPatch \| null | no |  |  |  |
 | `video` | VideoConfigPatch \| null | no |  |  |  |
 | `media` | MediaConfigPatch \| null | no |  |  |  |
@@ -2871,6 +2895,7 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Shrink frames wider than this, in pixels. Leave empty to turn off. |
 | kiosk | `scale` | enum("auto", "1", "1.25", "1.5", "2") | `"auto"` |  | Size of the touchscreen kiosk's interface. Auto works it out from the screen. |
 | kiosk | `sleep_after_min` | integer | `5` | `>=0`, `<=1440` | Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on. |
+| security | `secure_cookie` | enum("auto", "always") | `"auto"` |  | Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app. |
 | timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | The shortest time allowed between frames. |
 | timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | A time-lapse stops after this long. |
 | timelapse | `failure_budget` | integer | `5` | `>=1`, `<=100` | Stop the time-lapse after this many failed frames in a row. |

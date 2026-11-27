@@ -237,7 +237,7 @@ class ZipPlan:
 class FileService:
     def __init__(self, store: Path | StorageRoot, thumb_size: Any = None) -> None:
         self._store = as_root(store)
-        self._tickets: dict[str, tuple[float, list[str]]] = {}
+        self._tickets: dict[str, tuple[float, list[str], Path]] = {}
         self._tickets_lock = threading.Lock()
         self.index = FileIndex(self._store)
         self.thumbnails = ThumbnailService(self._store.cache, thumb_size or (lambda: DEFAULT_SIZE))
@@ -310,7 +310,7 @@ class FileService:
 
     # zip downloads -----------------------------------------------------------
     def _purge_tickets(self, now: float) -> None:
-        for t in [t for t, (exp, _) in self._tickets.items() if exp <= now]:
+        for t in [t for t, (exp, _, _r) in self._tickets.items() if exp <= now]:
             del self._tickets[t]
 
     def create_zip_ticket(self, paths: _Paths) -> str:
@@ -326,7 +326,7 @@ class FileService:
             self._purge_tickets(now)
             if len(self._tickets) >= _ZIP_MAX_TICKETS:
                 del self._tickets[min(self._tickets, key=lambda t: self._tickets[t][0])]
-            self._tickets[ticket] = (now + ZIP_TICKET_TTL_S, unique)
+            self._tickets[ticket] = (now + ZIP_TICKET_TTL_S, unique, self.root)
         return ticket
 
     def redeem_zip_ticket(self, ticket: str) -> ZipPlan:
@@ -335,6 +335,8 @@ class FileService:
             self._purge_tickets(time.monotonic())
             entry = self._tickets.pop(ticket, None)
         if entry is None:
+            raise FileNotFoundError_("Download link expired or already used")
+        if entry[2] != self.root:  # the storage target changed since the ticket was issued
             raise FileNotFoundError_("Download link expired or already used")
         items: _ZipItems = []
         for rel in entry[1]:
@@ -366,3 +368,5 @@ class FileService:
                 yield item
         finally:
             cancel.set()
+            with contextlib.suppress(queue.Full):
+                q.put_nowait(_END)  # wake a consumer thread still blocked in q.get
