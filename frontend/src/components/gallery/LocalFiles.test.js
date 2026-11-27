@@ -153,9 +153,12 @@ describe('LocalFiles', () => {
 
   it('bulk delete aggregates failures into a single toast', async () => {
     const { files, toasts } = setup()
-    vi.spyOn(files, 'remove').mockImplementation(async (p) => {
-      if (p !== 'a/two.jpg') throw new Error('locked')
-      files.items = files.items.filter((f) => f.path !== p)
+    vi.spyOn(files, 'removeMany').mockImplementation(async (paths) => {
+      files.items = files.items.filter((f) => f.path === 'a/two.jpg')
+      return {
+        deleted: ['a/two.jpg'].filter((p) => paths.includes(p)),
+        failed: ['a/one.jpg', 'a/three.jpg'].map((path) => ({ path, error: 'locked' })),
+      }
     })
     await flushPromises()
     await btn('Select').trigger('click')
@@ -163,7 +166,7 @@ describe('LocalFiles', () => {
     await btn('Delete').trigger('click')
     await btn('Delete 3 items').trigger('click')
     await flushPromises()
-    expect(files.remove).toHaveBeenCalledTimes(3)
+    expect(files.removeMany).toHaveBeenCalledTimes(1)
     expect(toasts.error).toHaveBeenCalledTimes(1)
     expect(toasts.error.mock.calls[0][0]).toMatch(/2 of 3/)
     expect(toasts.error.mock.calls[0][0]).toMatch(/locked/)
@@ -188,16 +191,17 @@ describe('LocalFiles', () => {
       [...document.body.querySelectorAll('button')].find(
         (b) => b.textContent.includes('Delete') && b.closest('[data-testid=lightbox]'),
       )
-    vi.spyOn(files, 'remove').mockRejectedValueOnce(new Error('nope'))
+    vi.spyOn(files, 'removeMany').mockRejectedValueOnce(new Error('nope'))
     del().click()
     await flushPromises()
     del().click()
     await flushPromises()
     expect(toasts.error).toHaveBeenCalledTimes(1)
-    expect(toasts.error.mock.calls[0][0]).toMatch(/nope/)
+    expect(toasts.error.mock.calls[0][0].message).toMatch(/nope/)
 
-    files.remove.mockImplementationOnce(async (p) => {
+    files.removeMany.mockImplementationOnce(async ([p]) => {
       files.items = files.items.filter((f) => f.path !== p)
+      return { deleted: [p], failed: [] }
     })
     del().click()
     await flushPromises()
@@ -241,7 +245,7 @@ describe('LocalFiles', () => {
 
   it('select mode: tiles toggle, Select all and Clear, delete asks inline first', async () => {
     const { files } = setup()
-    vi.spyOn(files, 'remove').mockResolvedValue()
+    vi.spyOn(files, 'removeMany').mockResolvedValue({ deleted: [], failed: [] })
     await flushPromises()
     await btn('Select').trigger('click')
     await wrapper.find('button[aria-label="Select one.jpg"]').trigger('click')
@@ -250,12 +254,65 @@ describe('LocalFiles', () => {
     expect(wrapper.find('[data-testid=select-bar]').text()).toContain('3 selected')
     expect(btn('Clear')).toBeTruthy()
     await btn('Delete').trigger('click')
-    expect(files.remove).not.toHaveBeenCalled()
+    expect(files.removeMany).not.toHaveBeenCalled()
     expect(btn('Delete 3 items')).toBeTruthy()
     await btn('Keep').trigger('click')
     expect(btn('Delete 3 items')).toBeUndefined()
     await btn('Clear').trigger('click')
-    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('0 selected')
+    expect(wrapper.find('[data-testid=select-bar]').exists()).toBe(false)
+  })
+
+  it('selecting: Shift-click selects a range and the check toggles one tile', async () => {
+    setup()
+    await flushPromises()
+    await wrapper.find('button[aria-label="Open one.jpg"]').trigger('click', { ctrlKey: true })
+    await wrapper.find('button[aria-label="Select three.jpg"]').trigger('click', { shiftKey: true })
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('3 selected')
+    await wrapper.find('button[aria-label="Toggle two.jpg"]').trigger('click')
+    expect(wrapper.find('[data-testid=select-bar]').text()).toContain('2 selected')
+  })
+
+  it('desktop: Download as ZIP sends the selected paths; Copy to… offloads them keeping the source', async () => {
+    const { files, pinia } = setup()
+    const st = useStorageStore(pinia)
+    st.locations = [
+      { id: 'loc', name: 'usb1', label: 'Data', mounted: true },
+      { id: 'two', name: 'usb2', label: 'Backup', mounted: true },
+    ]
+    vi.spyOn(files, 'downloadZip').mockResolvedValue()
+    vi.spyOn(st, 'offload').mockResolvedValue({})
+    await flushPromises()
+    await btn('Select').trigger('click')
+    await btn('Select all').trigger('click')
+    await btn('Download as ZIP').trigger('click')
+    expect(files.downloadZip).toHaveBeenCalledWith(['a/one.jpg', 'a/two.jpg', 'a/three.jpg'])
+    await btn('Copy to…').trigger('click')
+    const confirm = document.body.querySelector('[data-testid=copy-confirm]')
+    expect(confirm.disabled).toBe(false) // the only other storage is preselected
+    confirm.click()
+    await flushPromises()
+    expect(st.offload).toHaveBeenCalledWith({
+      from_id: 'loc',
+      to_id: 'two',
+      scope: { kind: 'files', paths: ['a/one.jpg', 'a/two.jpg', 'a/three.jpg'] },
+      keep_source: true,
+    })
+  })
+
+  it('the name filter narrows the tiles on the page', async () => {
+    setup()
+    await flushPromises()
+    await wrapper.find('input[aria-label="Filter by name"]').setValue('tw')
+    expect(wrapper.findAll('[data-testid=grid] li')).toHaveLength(1)
+  })
+
+  it('the thumbnail size slider is remembered', async () => {
+    localStorage.removeItem('nikon-gallery-cols')
+    setup()
+    await flushPromises()
+    await wrapper.find('input[aria-label="Thumbnail size"]').setValue('4')
+    await wrapper.vm.$nextTick()
+    expect(localStorage.getItem('nikon-gallery-cols')).toBe('4')
   })
 
   it('long-press with touch starts selecting; a mouse press does not', async () => {

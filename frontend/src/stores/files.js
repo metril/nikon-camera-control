@@ -57,6 +57,32 @@ export const useFilesStore = defineStore('files', () => {
     total.value = Math.max(0, total.value - 1)
   }
 
+  /** Delete many files in one request. Returns `{ deleted: [path], failed: [{ path, error }] }`. */
+  async function removeMany(paths) {
+    const out = await guard(lastError, () => api.deleteFiles({ body: { paths } }))
+    const gone = new Set(out.deleted)
+    if (gone.size) {
+      items.value = items.value.filter((f) => !gone.has(f.path))
+      total.value = Math.max(0, total.value - gone.size)
+    }
+    return out
+  }
+
+  /**
+   * Download many files: one file goes straight through download(); several become a ZIP whose
+   * single-use ticket URL needs no further credentials, so a plain link works with or without a key.
+   */
+  async function downloadZip(paths) {
+    if (paths.length === 1) return download(paths[0])
+    const { url } = await guard(lastError, () => api.createZipDownload({ body: { paths } }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'photos.zip'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
   /**
    * Resolve a thumbnail to something usable as <img src>: `{ url, release }`. Without an API
    * key this is a plain URL; with one it is fetched as a blob (headers) and cached as a
@@ -110,6 +136,8 @@ export const useFilesStore = defineStore('files', () => {
     loadCounts,
     reload,
     remove,
+    removeMany,
+    downloadZip,
     acquireThumbnail,
     download,
   }

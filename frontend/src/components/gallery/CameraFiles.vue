@@ -10,6 +10,10 @@ import UiAlert from '@/components/ui/UiAlert.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
+import UiCheck from '@/components/ui/UiCheck.vue'
+import SelectionBar from './SelectionBar.vue'
+import { useSelection } from '@/composables/useSelection'
+import { useLayoutMode } from '@/composables/useLayoutMode'
 import NoTargetNotice from '@/components/shell/NoTargetNotice.vue'
 import CameraThumb from './CameraThumb.vue'
 import Lightbox from './Lightbox.vue'
@@ -34,6 +38,7 @@ const cf = useCameraFilesStore()
 const jobs = useJobsStore()
 const storage = useStorageStore()
 const toasts = useToastsStore()
+const { isTouch } = useLayoutMode()
 
 // 'flat': every file under DCIM in one list. 'folders': browse the card folder by folder.
 const view = ref('flat')
@@ -139,6 +144,73 @@ watch(
 )
 
 const fileKey = (f) => `${f.folder}/${f.name}`
+
+// Selection: save several card files to storage, or delete them, in one go.
+const sel = useSelection({ ids: () => cf.items.map(fileKey) })
+const selecting = computed(() => sel.selecting.value)
+const bulkBusy = ref(false)
+const selectedRefs = () =>
+  cf.items
+    .filter((f) => sel.isSelected(fileKey(f)))
+    .map((f) => ({ folder: f.folder, name: f.name }))
+const pressers = new Map()
+watch(
+  () => cf.items,
+  () => pressers.clear(),
+)
+function press(f) {
+  const k = fileKey(f)
+  let h = pressers.get(k)
+  if (!h) {
+    const lp = sel.longPress(k)
+    h = { ...lp, onPointerdown: (e) => e.pointerType !== 'mouse' && lp.onPointerdown(e) }
+    pressers.set(k, h)
+  }
+  return h
+}
+function openOrSelect(f, i, e) {
+  if (!sel.click(fileKey(f), e)) openViewer(i)
+}
+async function saveSelected() {
+  const files = selectedRefs()
+  bulkBusy.value = true
+  try {
+    const j = await cf.downloadAll({ files, only_new: false, delete_after: false })
+    jobs.upsert(j)
+    jobId.value = j.id
+    toasts.success(`Saving ${files.length} ${files.length === 1 ? 'file' : 'files'} to storage`)
+    sel.clear()
+  } catch (e) {
+    toasts.error(e)
+  } finally {
+    bulkBusy.value = false
+  }
+}
+async function deleteSelected() {
+  const files = selectedRefs()
+  bulkBusy.value = true
+  try {
+    const out = await cf.removeMany(files)
+    if (out.failed.length) {
+      const head = out.failed
+        .slice(0, 3)
+        .map((f) => `${f.name}: ${f.error || 'failed'}`)
+        .join('; ')
+      const more = out.failed.length > 3 ? ` (+${out.failed.length - 3} more)` : ''
+      toasts.error(`Could not delete ${out.failed.length} of ${files.length} files: ${head}${more}`)
+    } else if (out.deleted.length) {
+      toasts.success(
+        out.deleted.length === 1
+          ? 'Deleted 1 file from the card'
+          : `Deleted ${out.deleted.length} files from the card`,
+      )
+    }
+  } catch (e) {
+    toasts.error(e)
+  } finally {
+    bulkBusy.value = false
+  }
+}
 async function downloadOne(f) {
   busyFile.value = fileKey(f)
   try {
@@ -299,9 +371,25 @@ onUnmounted(() => {
     </template>
   </UiEmpty>
 
-  <div v-else class="space-y-3">
+  <div v-else class="flex min-h-0 flex-1 flex-col gap-3">
     <!-- One toolbar row (wraps when narrow): view, sort, then the card-wide download -->
-    <div class="flex flex-wrap items-center gap-2">
+    <SelectionBar
+      v-if="selecting && isTouch"
+      :count="sel.count.value"
+      :all-selected="sel.allSelected.value"
+      :busy="bulkBusy"
+      :zip="false"
+      copy-label="Save to storage"
+      :copy-disabled="leased || noStorage"
+      :copy-title="noStorage ? 'Choose a storage first' : leaseReason"
+      :delete-disabled="leased"
+      :delete-title="leaseReason"
+      @toggle-all="sel.allSelected.value ? sel.clear() : sel.selectAll()"
+      @copy="saveSelected"
+      @delete="deleteSelected"
+      @done="sel.clear()"
+    />
+    <div v-else class="flex shrink-0 flex-wrap items-center gap-2">
       <UiSegmented
         size="sm"
         :model-value="view"
@@ -318,6 +406,14 @@ onUnmounted(() => {
         />
       </div>
       <span class="flex-1" />
+      <UiButton
+        size="sm"
+        :disabled="!cf.items.length"
+        data-testid="select"
+        @click="sel.start(null)"
+      >
+        Select
+      </UiButton>
       <UiButton
         size="sm"
         variant="ghost"
@@ -343,9 +439,26 @@ onUnmounted(() => {
       </UiButton>
     </div>
 
+    <SelectionBar
+      v-if="selecting && !isTouch"
+      :count="sel.count.value"
+      :all-selected="sel.allSelected.value"
+      :busy="bulkBusy"
+      :zip="false"
+      copy-label="Save to storage"
+      :copy-disabled="leased || noStorage"
+      :copy-title="noStorage ? 'Choose a storage first' : leaseReason"
+      :delete-disabled="leased"
+      :delete-title="leaseReason"
+      @toggle-all="sel.allSelected.value ? sel.clear() : sel.selectAll()"
+      @copy="saveSelected"
+      @delete="deleteSelected"
+      @done="sel.clear()"
+    />
+
     <p
       v-if="cards.length"
-      class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-camera-muted"
+      class="flex shrink-0 flex-wrap gap-x-4 gap-y-1 text-sm text-camera-muted"
       data-testid="storage"
     >
       <span v-for="c in cards" :key="c.base_dir || c.label">
@@ -356,7 +469,7 @@ onUnmounted(() => {
 
     <div
       v-if="optionsOpen || leased || noStorage || running || job?.status === 'failed' || result"
-      class="space-y-2 rounded-card border border-camera-border bg-camera-surface p-3"
+      class="shrink-0 space-y-2 rounded-card border border-camera-border bg-camera-surface p-3"
     >
       <div v-if="optionsOpen" class="space-y-3" data-testid="download-options-panel">
         <div class="flex flex-wrap gap-x-6 gap-y-1">
@@ -396,7 +509,7 @@ onUnmounted(() => {
     </div>
 
     <template v-if="view === 'folders'">
-      <nav aria-label="Card folder" class="flex flex-wrap items-center gap-1 text-sm">
+      <nav aria-label="Card folder" class="flex shrink-0 flex-wrap items-center gap-1 text-sm">
         <button
           type="button"
           class="crumb"
@@ -417,7 +530,11 @@ onUnmounted(() => {
           </button>
         </template>
       </nav>
-      <div v-if="subfolders.length" class="flex flex-wrap gap-2" data-testid="card-folders">
+      <div
+        v-if="subfolders.length"
+        class="scroll-panel flex max-h-[96px] shrink-0 flex-wrap gap-2"
+        data-testid="card-folders"
+      >
         <button
           v-for="f in subfolders"
           :key="f.path"
@@ -448,7 +565,14 @@ onUnmounted(() => {
       <template #actions><UiButton @click="load()">Retry</UiButton></template>
     </UiEmpty>
     <UiEmpty v-else-if="!cf.items.length" title="No files here" />
-    <div v-else class="text-sm" role="list" data-testid="card-files">
+    <div
+      v-else
+      class="scroll-panel min-h-0 flex-1 rounded-card border border-camera-subtle bg-camera-surface px-3 text-sm"
+      role="list"
+      tabindex="0"
+      aria-label="Card files"
+      data-testid="card-files"
+    >
       <div class="file-row eyebrow max-[640px]:!hidden" aria-hidden="true">
         <span />
         <span>Name</span>
@@ -464,16 +588,32 @@ onUnmounted(() => {
         class="file-row border-t border-camera-subtle"
         data-testid="card-file"
       >
-        <button type="button" class="thumb" :aria-label="`View ${f.name}`" @click="openViewer(i)">
-          <CameraThumb :folder="f.folder" :name="f.name" :supported="f.type !== 'video'" />
-        </button>
+        <span class="relative block h-10 w-14">
+          <button
+            type="button"
+            class="thumb"
+            :aria-label="selecting ? `Select ${f.name}` : `View ${f.name}`"
+            :aria-pressed="selecting ? sel.isSelected(fileKey(f)) : undefined"
+            v-bind="press(f)"
+            @click="openOrSelect(f, i, $event)"
+          >
+            <CameraThumb :folder="f.folder" :name="f.name" :supported="f.type !== 'video'" />
+          </button>
+          <UiCheck
+            v-if="selecting"
+            :model-value="sel.isSelected(fileKey(f))"
+            :label="`Toggle ${f.name}`"
+            class="absolute left-0.5 top-0.5"
+            @click="sel.toggle(fileKey(f), { shift: $event.shiftKey })"
+          />
+        </span>
         <span class="flex min-w-0 items-center gap-2">
           <button
             type="button"
             class="open truncate font-mono text-[13px]"
             :title="f.folder + '/' + f.name"
             data-testid="card-file-open"
-            @click="openViewer(i)"
+            @click="openOrSelect(f, i, $event)"
           >
             {{ f.name }}
           </button>
@@ -536,7 +676,7 @@ onUnmounted(() => {
       </template>
     </Lightbox>
 
-    <div v-if="cf.total > cf.query.limit" class="flex items-center justify-center gap-3">
+    <div v-if="cf.total > cf.query.limit" class="flex shrink-0 items-center justify-center gap-3">
       <UiButton size="sm" :disabled="cf.query.page <= 1" @click="load({ page: cf.query.page - 1 })">
         Previous
       </UiButton>
