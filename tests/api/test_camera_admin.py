@@ -44,6 +44,18 @@ async def test_datetime_sync_host(
     assert (await connected_client.get(f"{C}/datetime")).json()["offset_s"] == 0
 
 
+async def test_datetime_sync_leaves_live_view_first(
+    app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
+) -> None:
+    inject_clock(app)
+    fake_camera.capture_preview()  # live view on
+    assert fake_camera.viewfinder_on
+    r = await connected_client.put(f"{C}/datetime", json={"mode": "host"})
+    assert r.status_code == 200
+    assert not fake_camera.viewfinder_on
+    assert fake_camera.get_config("datetime").value == int(NOW)
+
+
 async def test_datetime_explicit(
     app: FastAPI, connected_client: httpx.AsyncClient, fake_camera: FakeCamera
 ) -> None:
@@ -178,3 +190,15 @@ async def test_datetime_sync_uses_app_zone(
         assert fake_camera.get_config("datetime").value == int(NOW) + 14 * 3600
     finally:
         clock.set_zone(None)
+
+
+async def test_datetime_sync_host_with_browser_offset(
+    app: FastAPI, connected_client: httpx.AsyncClient
+) -> None:
+    """The exact body the web UI sends when no app time zone is set."""
+    inject_clock(app)
+    for off in (0, -300, 330, 840, -720):
+        r = await connected_client.put(
+            f"{C}/datetime", json={"mode": "host", "utc_offset_minutes": off}
+        )
+        assert r.status_code == 200, (off, r.text)

@@ -136,6 +136,10 @@ class CameraAdminService:
 
         def write(b: CameraBackend) -> CameraDateTimeOut:
             w = _clock_widget(b)
+            # D500 (verified on hardware): the clock write is refused ("Bad parameters" /
+            # 0x200f Access Denied) while live view is on, so leave live view first. The
+            # backend forgets the viewfinder flag, so the next preview frame re-enables it.
+            b.end_preview()
             instant = fixed if fixed is not None else self._clock()
             b.set_config(w.name, self._raw_epoch_for(instant, off))
             return self._out(float(b.get_config(w.name).value or 0), self._clock())
