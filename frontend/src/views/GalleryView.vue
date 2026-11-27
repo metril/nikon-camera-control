@@ -96,7 +96,7 @@ if (openPath.value) pick('storage')
 </script>
 
 <template>
-  <section class="space-y-4">
+  <section class="flex h-full min-h-0 flex-col gap-3">
     <SourceCards :model-value="active" :sources="sources" @update:model-value="pick" />
     <LocalFiles v-if="active === 'storage'" :open-path="openPath" />
     <CameraFiles v-else />

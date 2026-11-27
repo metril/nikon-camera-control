@@ -118,7 +118,7 @@ async function remove(v) {
 
 <template>
   <NoTargetNotice v-if="noStorage" data-testid="no-target" />
-  <div v-else class="space-y-4">
+  <div v-else class="flex min-h-0 flex-col gap-3">
     <div v-if="firstLoad" class="space-y-2" aria-busy="true">
       <div v-for="n in 4" :key="n" class="h-12 animate-pulse rounded-inner bg-camera-raised" />
     </div>
@@ -130,7 +130,13 @@ async function remove(v) {
       title="No rendered videos"
       hint="Render a video from a time-lapse session in the Time-lapse tab."
     />
-    <div v-else class="text-sm" role="list">
+    <div
+      v-else
+      class="scroll-panel min-h-0 flex-1 rounded-card border border-camera-subtle bg-camera-surface px-3 text-sm"
+      role="list"
+      tabindex="0"
+      aria-label="Videos"
+    >
       <div class="video-row eyebrow max-[640px]:!hidden" aria-hidden="true">
         <span>Session</span>
         <span>File</span>
