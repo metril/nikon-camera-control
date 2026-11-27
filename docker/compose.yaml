@@ -56,6 +56,8 @@ services:
       # Config only (config.json, api_key.json, presets). No captures are stored on the host:
       # they go to USB drives or SMB shares mounted from the web UI.
       - ./data:/app/data
+      # Kiosk device token (written by the app, read-only in the kiosk container).
+      - kiosk-auth:/app/kiosk-auth
 
   # Touchscreen kiosk on the host's HDMI output (no desktop needed on the host).
   # Enable with:  docker compose --profile kiosk up -d
@@ -85,9 +87,11 @@ services:
     volumes:
       - /dev/input:/dev/input
       - /run/udev:/run/udev:ro  # libinput device discovery; the entrypoint watches it for input hotplug
-      - kiosk-profile:/kiosk-profile  # Chromium profile: keeps the API key and prefs across restarts
+      - kiosk-profile:/kiosk-profile  # Chromium profile: keeps the kiosk session and prefs across restarts
+      - kiosk-auth:/kiosk-auth:ro  # device token the kiosk pairs with automatically (no sign-in on the touchscreen)
     tmpfs:
       - /tmp
 
 volumes:
   kiosk-profile:
+  kiosk-auth:
