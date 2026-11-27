@@ -71,7 +71,7 @@ jobs:
 
   # Playwright layout tests against the demo camera, split across shards.
   layout:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright 1.56 has no chromium build for ubuntu 26.04
     strategy:
       fail-fast: false
       matrix:
