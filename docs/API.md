@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.5.6
+# Nikon Camera Control API 0.6.0
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
