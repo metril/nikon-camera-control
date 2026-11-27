@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isTypingTarget } from './useHotkeys'
+import { isTypingTarget, oskOpen } from './useHotkeys'
 
 describe('isTypingTarget', () => {
   it('ignores form controls, buttons and contenteditable', () => {
@@ -23,5 +23,14 @@ describe('isTypingTarget', () => {
     const b = document.createElement('button')
     b.innerHTML = '<span id="s">x</span>'
     expect(isTypingTarget(b.firstElementChild)).toBe(true)
+  })
+})
+
+describe('oskOpen', () => {
+  it('follows the data-osk-open flag the on-screen keyboard sets', () => {
+    expect(oskOpen()).toBe(false)
+    document.documentElement.dataset.oskOpen = ''
+    expect(oskOpen()).toBe(true)
+    delete document.documentElement.dataset.oskOpen
   })
 })

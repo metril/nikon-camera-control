@@ -21,6 +21,8 @@
 html[data-layout='touch'] {
   --ctl: 52px;
   --ctl-sm: 44px;
+  --tap-gap: 8px; /* space between tappable things */
+  --fs-min: 13px; /* smallest text on touch */
 }
 
 body {
@@ -183,4 +185,15 @@ input[type='range']:focus::-webkit-slider-thumb {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* nothing under 13px on touch */
+html[data-layout='touch'] .text-xs,
+html[data-layout='touch'] .eyebrow {
+  font-size: var(--fs-min);
+}
+
+/* room for the on-screen keyboard so the page can scroll a field above it */
+html[data-osk-open] body {
+  padding-bottom: var(--osk-h, 0px);
 }

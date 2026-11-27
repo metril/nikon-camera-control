@@ -16,7 +16,7 @@ const thumbs = ref({}) // path -> src
 const releases = new Map() // path -> release
 const pending = new Set() // paths being fetched
 const root = ref(null)
-const shown = ref(typeof IntersectionObserver !== 'function') // false while display:none (touch landscape): no fetches
+const shown = ref(typeof IntersectionObserver !== 'function') // false while not displayed: no fetches
 let gone = false
 let io = null
 onMounted(() => {
@@ -143,7 +143,8 @@ const newest = (i) =>
 html[data-layout='touch'] .thumb {
   width: 150px;
 }
-/* Desktop, 1200px and wider: a 2-column grid that fills the side column under the shutter. */
+/* Desktop 1200px and wider, and touch landscape: a 2-column grid that fills the side column under
+   the shutter. It is the only part of the column that scrolls. */
 @media (min-width: 1200px) {
   html[data-layout='desktop'] .filmrow {
     display: grid;
@@ -154,6 +155,19 @@ html[data-layout='touch'] .thumb {
     align-content: start;
   }
   html[data-layout='desktop'] .thumb {
+    width: auto;
+  }
+}
+@media (min-width: 900px) and (orientation: landscape) {
+  html[data-layout='touch'] .filmrow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: 100%;
+    align-content: start;
+  }
+  html[data-layout='touch'] .thumb {
     width: auto;
   }
 }

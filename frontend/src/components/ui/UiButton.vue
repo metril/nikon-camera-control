@@ -71,8 +71,8 @@ const cls = computed(() => [
   cursor: pointer;
 }
 html[data-layout='touch'] .shutter {
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
 }
 .shutter-core {
   display: block;

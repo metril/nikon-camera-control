@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
@@ -259,6 +260,23 @@ describe('LiveViewPanel', () => {
     w.unmount()
   })
 
+  it('autofocus that cannot lock warns with the camera reason verbatim', async () => {
+    const { pinia } = setup()
+    const focus = useFocusStore()
+    vi.spyOn(focus, 'autofocus').mockResolvedValue({ focused: false, reason: 'Out of Focus' })
+    const toasts = useToastsStore()
+    const warn = vi.spyOn(toasts, 'warn')
+    const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
+    const s = await started(w)
+    status(s)
+    s.handlers.onFrame(new ArrayBuffer(4))
+    await nextTick()
+    await w.find('[data-testid="lv-autofocus"]').trigger('click')
+    await flushPromises()
+    expect(warn).toHaveBeenCalledWith('Autofocus could not lock (camera: “Out of Focus”)')
+    w.unmount()
+  })
+
   it('a focus step error toasts the camera message', async () => {
     const { pinia } = setup()
     const focus = useFocusStore()
@@ -442,9 +460,14 @@ describe('LiveViewPanel', () => {
 })
 
 describe('LiveViewPanel touch layout', () => {
-  it('keeps only Stop and Fullscreen on the image; tools, focus and snapshot sit outside it', async () => {
+  async function mountTouch(landscape) {
     const { resetLayoutMode } = await import('@/composables/useLayoutMode')
     localStorage.setItem('layout', 'touch')
+    vi.stubGlobal('matchMedia', (q) => ({
+      matches: landscape && q.includes('orientation: landscape'),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
     resetLayoutMode()
     const { pinia } = setup()
     const w = mount(LiveViewPanel, { global: { plugins: [pinia] } })
@@ -452,17 +475,43 @@ describe('LiveViewPanel touch layout', () => {
     status(s)
     s.handlers.onFrame(new ArrayBuffer(4))
     await nextTick()
-    const frame = w.find('.lv-frame')
-    expect(frame.find('[data-testid="lv-stop"]').exists()).toBe(true)
-    expect(frame.find('[data-testid="lv-fullscreen"]').exists()).toBe(true)
-    for (const id of ['lv-toolbar', 'lv-focus', 'lv-snapshot'])
-      expect(frame.find(`[data-testid="${id}"]`).exists()).toBe(false)
-    const ctl = w.find('.lv-controls')
-    for (const id of ['lv-toolbar', 'lv-focus', 'lv-snapshot'])
-      expect(ctl.find(`[data-testid="${id}"]`).exists()).toBe(true)
-    expect(ctl.find('[data-testid="lv-more"]').exists()).toBe(true)
-    w.unmount()
+    return w
+  }
+  afterEach(async () => {
+    vi.unstubAllGlobals()
     localStorage.removeItem('layout')
-    resetLayoutMode()
+    ;(await import('@/composables/useLayoutMode')).resetLayoutMode()
+  })
+
+  it('landscape: tools, focus, snapshot, fullscreen and stop are all on the image; no More', async () => {
+    const w = await mountTouch(true)
+    const frame = w.find('.lv-frame')
+    for (const id of ['lv-toolbar', 'lv-focus', 'lv-snapshot', 'lv-fullscreen', 'lv-stop'])
+      expect(frame.find(`[data-testid="${id}"]`).exists()).toBe(true)
+    expect(w.find('.lv-controls').exists()).toBe(false)
+    expect(frame.findAll('[data-testid="lv-toolbar"] button')).toHaveLength(6)
+    expect(frame.find('[data-testid="lv-more"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('portrait: two tools inline and the rest under More', async () => {
+    const w = await mountTouch(false)
+    const frame = w.find('.lv-frame')
+    expect(frame.find('[data-testid="lv-more"]').exists()).toBe(true)
+    expect(frame.find('[data-testid="lv-focus"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('the focus mode button says what a tap does', async () => {
+    const w = await mountTouch(true)
+    expect(w.find('[data-testid="lv-focus-sub"]').text()).toBe('Tap runs autofocus')
+    w.unmount()
+  })
+
+  it('touch: the histogram is lifted above the focus pill in frames up to 720px', () => {
+    const src = readFileSync('src/components/shoot/LiveViewPanel.vue', 'utf8')
+    expect(src).toMatch(
+      /@container lv \(max-width: 720px\) \{\s*html\[data-layout='touch'\] \.lv-histwrap \{\s*bottom: calc\(50px \+ 56px \+ 8px\);/,
+    )
   })
 })

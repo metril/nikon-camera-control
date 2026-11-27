@@ -160,6 +160,7 @@ const num = (key, v) => (form.value[key] = v ?? NaN)
           unit="fps"
           :min="1"
           :max="120"
+          :decimals="2"
           @update:model-value="(v) => num('fps', v)"
         />
         <p class="text-xs text-camera-muted tabular-nums" data-test="render-length">

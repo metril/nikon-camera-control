@@ -135,4 +135,15 @@ describe('UiModal', () => {
       vi.stubGlobal('MutationObserver', Real)
     }
   })
+
+  it('keeps its content above the on-screen keyboard (--osk-h)', () => {
+    w = mountModal()
+    const overlay = document.body.querySelector('[role="dialog"]').parentElement
+    expect(overlay.className).toContain('--osk-h')
+    w.unmount()
+    w = mountModal({ variant: 'side' })
+    expect(document.body.querySelector('[role="dialog"]').parentElement.className).toContain(
+      '--osk-h',
+    )
+  })
 })

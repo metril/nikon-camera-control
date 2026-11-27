@@ -1,6 +1,6 @@
 <script setup>
 /** Side column: capture mode, shutter, that mode's settings, and the last capture. */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { useStorageStore } from '@/stores/storage'
 import { useToastsStore } from '@/stores/toasts'
@@ -24,28 +24,9 @@ const shoot = useShootStore()
 const config = useConfigStore()
 const storage = useStorageStore()
 const toasts = useToastsStore()
-// When the column scrolls on its own (touch landscape), fade its bottom edge while more is below
-const root = ref(null)
-const moreBelow = ref(false)
-function measure() {
-  const el = root.value
-  moreBelow.value = !!el && el.scrollTop + el.clientHeight < el.scrollHeight - 2
-}
-let ro = null
 onMounted(() => {
   if (!config.config) config.fetch().catch(() => {})
-  measure()
-  if (typeof ResizeObserver !== 'undefined' && root.value) {
-    ro = new ResizeObserver(measure)
-    ro.observe(root.value)
-    if (root.value.firstElementChild) ro.observe(root.value.firstElementChild)
-  }
 })
-onBeforeUnmount(() => ro?.disconnect())
-watch(
-  () => shoot.mode,
-  () => nextTick(measure),
-)
 const triggerOnly = computed(() => !shoot.downloads && shoot.mode === 'single')
 const whereName = computed(() => storage.target?.name || storage.target?.label || 'your storage')
 const STORAGE_LINK = '#/settings?section=storage'
@@ -81,7 +62,7 @@ const recordingOpen = ref(false)
 </script>
 
 <template>
-  <div ref="root" class="side" :class="{ fade: moreBelow }" @scroll.passive="measure">
+  <div class="side">
     <div class="sidecard" :class="{ has: !!settingsView }">
       <UiSegmented
         v-model="shoot.mode"
@@ -329,14 +310,12 @@ html[data-layout='touch'] .msettings {
     padding-top: 16px;
   }
 }
-.side.fade {
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
-  mask-image: linear-gradient(#000 calc(100% - 40px), transparent);
-}
 html[data-layout='touch'] .kbdonly {
   display: none;
 }
-html[data-layout='touch'] .lastinfo {
-  display: none;
+html[data-layout='touch'] .chip,
+html[data-layout='touch'] .reason,
+html[data-layout='touch'] .modes-note {
+  font-size: var(--fs-min);
 }
 </style>

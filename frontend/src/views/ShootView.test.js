@@ -164,4 +164,24 @@ describe('ShootView', () => {
     await wrapper.find('[data-test="no-target"] a').trigger('click')
     expect(wrapper.emitted('open-settings')).toEqual([['storage']])
   })
+
+  it('shows the recent captures and the last capture on touch, like desktop', async () => {
+    const { resetLayoutMode, useLayoutMode } = await import('@/composables/useLayoutMode')
+    localStorage.setItem('layout', 'touch')
+    resetLayoutMode()
+    try {
+      expect(useLayoutMode().isTouch.value).toBe(true)
+      setup()
+      const capture = useCaptureStore()
+      capture.lastCapture = {
+        files: [{ name: 'DSC_0001.NEF', path: 'a/DSC_0001.NEF', kind: 'raw' }],
+      }
+      await flushPromises()
+      expect(wrapper.find('[data-testid="recent-captures"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="last-capture"]').exists()).toBe(true)
+    } finally {
+      localStorage.removeItem('layout')
+      resetLayoutMode()
+    }
+  })
 })

@@ -1,5 +1,6 @@
 <script setup>
 import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { oskOpen } from '@/composables/useHotkeys'
 import { useCameraStore } from '@/stores/camera'
 import { useSettingsStore } from '@/stores/settings'
 import { useShootStore } from '@/stores/shoot'
@@ -29,7 +30,7 @@ const strip = ref(null)
 const JUMP = { a: 'aperture', s: 'shutter', i: 'iso', e: 'comp' }
 function onKeydown(e) {
   if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
-  if (document.querySelector('[aria-modal="true"]')) return
+  if (document.querySelector('[aria-modal="true"]') || oskOpen()) return
   const t = e.target
   if (t?.closest?.('input, select, textarea, [contenteditable=""], [contenteditable="true"]'))
     return
@@ -170,31 +171,30 @@ onBeforeUnmount(unlisten)
 }
 
 /* Touch, portrait: stacked, exposure values as tiles */
-html[data-layout='touch'] .shoot {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    'lv'
-    'side'
-    'strip'
-    'film';
-  gap: 12px;
-}
-html[data-layout='touch'] .strip-area {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  background: none;
-  border: 0;
-  overflow: visible;
-}
-html[data-layout='touch'] .strip-area :deep(.cell) {
-  border: 1px solid theme('colors.camera.subtle');
-  border-radius: theme('borderRadius.card');
-  background: theme('colors.camera.surface');
-  min-height: 76px;
-}
-html[data-layout='touch'] .strip-area :deep(.cell .v) {
-  font-size: 22px;
+@media (max-width: 899px), (orientation: portrait) {
+  html[data-layout='touch'] .shoot {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'lv'
+      'side'
+      'strip'
+      'film';
+    gap: 12px;
+  }
+  html[data-layout='touch'] .strip-area {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    background: none;
+    border: 0;
+    overflow: visible;
+  }
+  html[data-layout='touch'] .strip-area :deep(.cell) {
+    border: 1px solid theme('colors.camera.subtle');
+    border-radius: theme('borderRadius.card');
+    background: theme('colors.camera.surface');
+    min-height: 76px;
+  }
 }
 @media (max-width: 560px) {
   html[data-layout='touch'] .strip-area {
@@ -202,71 +202,27 @@ html[data-layout='touch'] .strip-area :deep(.cell .v) {
   }
 }
 
-/* Touch, landscape (kiosk screens): exposure strip over the live view, controls in the side column,
-   no scrolling. --lvh is the height left for the live view (LiveViewPanel sizes the frame from it). */
+/* Touch, landscape (kiosk screens): the desktop structure. Strip on top, live view left, the side
+   column (340px) right with the recent captures filling what is left of it; nothing scrolls except
+   that grid. --lvh is the height left for the live view (LiveViewPanel sizes the frame from it):
+   100dvh - header 60 - stripe 3 - banner - top pad 16 - strip - gap 16 - bottom pad 24 - border 4. */
 @media (min-width: 900px) and (orientation: landscape) {
   html[data-layout='touch'] .shoot {
-    --stripH: 60px;
+    --stripH: 66px;
     --lvh: calc(
-      100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 16px - 24px - var(--stripH) - 16px -
-        4px
+      100dvh - 60px - 3px - var(--banner, 0px) - 16px - var(--stripH) - 16px - 24px - 4px
     );
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas:
-      'strip side'
-      'lv side';
-    align-items: start;
+      'strip strip'
+      'lv side'
+      'lv film';
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
-  /* no room for the recent captures here: they live in the Gallery */
   html[data-layout='touch'] .film-area {
-    display: none;
-  }
-  /* one row of cells (no filler cells); wraps to more rows only when the values would not fit */
-  html[data-layout='touch'] .strip-area {
-    display: flex;
-    flex-wrap: wrap;
-    min-height: var(--stripH);
-    background: theme('colors.camera.surface');
-    border: 1px solid theme('colors.camera.subtle');
-    border-radius: theme('borderRadius.card');
-    overflow: hidden;
-  }
-  html[data-layout='touch'] .strip-area :deep(.cell) {
-    flex: 1 1 84px;
-    border: 0;
-    border-radius: 0;
-    background: none;
-    box-shadow: 1px 0 0 0 theme('colors.camera.subtle');
+    align-self: stretch;
+    align-content: start;
     min-height: 0;
-    padding: 4px 7px;
-    align-content: center;
-  }
-  html[data-layout='touch'] .strip-area :deep(.cell .v) {
-    font-size: 18px;
-    overflow: visible;
-    text-overflow: clip;
-  }
-  html[data-layout='touch'] .strip-area :deep(.cell .k) {
-    font-size: 11px;
-    letter-spacing: 0.04em;
-  }
-  html[data-layout='touch'] .strip-area :deep(.cell .auto) {
-    display: none;
-  }
-  html[data-layout='touch'] .side-area {
-    position: sticky;
-    top: 76px;
-    max-height: calc(100dvh - 60px - 3px - var(--banner, 0px) - var(--nav) - 40px);
-    overflow-y: auto;
-    /* overflow-y makes this a scroll container on both axes; room for the ghost buttons' -10px bleed */
-    padding-inline: 10px;
-    margin-inline: -10px;
-  }
-}
-/* Strip too narrow for one row of 7 cells: two rows */
-@media (min-width: 900px) and (max-width: 979px) and (orientation: landscape) {
-  html[data-layout='touch'] .shoot {
-    --stripH: 108px;
   }
 }
 </style>

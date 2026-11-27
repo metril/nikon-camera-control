@@ -136,6 +136,7 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
             unit="s"
             :min="minInterval"
             :step="0.5"
+            :decimals="3"
             :disabled="locked"
             @update:model-value="(v) => setNum('intervalS', v)"
           />
@@ -180,6 +181,7 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
             unit="min"
             :min="0.1"
             :step="1"
+            :decimals="2"
             :disabled="locked"
             @update:model-value="(v) => setNum('durationMin', v)"
           />
@@ -198,6 +200,7 @@ const setNum = (key, v) => (draft[key] = v ?? NaN)
             unit="fps"
             :min="1"
             :max="120"
+            :decimals="2"
             :disabled="locked"
             @update:model-value="(v) => setNum('fps', v)"
           />

@@ -38,6 +38,7 @@ export {
   ListChecks,
   Maximize,
   Minimize,
+  Minus,
   Monitor,
   Network,
   Pause,

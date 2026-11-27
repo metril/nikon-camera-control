@@ -109,7 +109,11 @@ onBeforeUnmount(() => {
     <div
       v-if="open"
       class="fixed inset-0 z-50 flex bg-black/70"
-      :class="variant === 'side' ? 'justify-end' : 'items-center justify-center p-4'"
+      :class="
+        variant === 'side'
+          ? 'justify-end pb-[var(--osk-h,0px)]'
+          : 'items-center justify-center p-4 pb-[calc(1rem+var(--osk-h,0px))]'
+      "
       @mousedown.self="closable && emit('close')"
     >
       <div

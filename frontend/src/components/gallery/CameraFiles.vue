@@ -635,4 +635,7 @@ onUnmounted(() => {
     justify-content: flex-start;
   }
 }
+html[data-layout='touch'] .file-row > :nth-child(n + 3) {
+  font-size: var(--fs-min);
+}
 </style>

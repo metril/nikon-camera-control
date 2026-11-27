@@ -303,18 +303,23 @@ const LAYOUTS = [
     display: none;
   }
 }
-/* Touch: the tabs move to the bottom bar */
+/* Touch: the section tabs stay in the header (the bottom bar is retired), 48px tall to tap.
+   The shortcuts button stays hidden: there is no hardware keyboard. */
 html[data-layout='touch'] .top {
   height: 60px;
 }
 html[data-layout='touch'] .keys,
-html[data-layout='touch'] .tabs,
 html[data-layout='touch'] .shots,
 html[data-layout='touch'] .lbl {
   display: none;
 }
-html[data-layout='touch'] .name {
-  display: inline;
+html[data-layout='touch'] .tabs a {
+  min-height: 48px;
+  padding: 0 14px;
+}
+html[data-layout='touch'] .tabs a[aria-current='page']::after {
+  left: 14px;
+  right: 14px;
 }
 /* Touch targets: each layout button is the full control height (icon only; no label) */
 html[data-layout='touch'] .seg {
@@ -325,9 +330,39 @@ html[data-layout='touch'] .seg button {
   min-width: var(--ctl-sm);
   padding: 0;
 }
-@media (max-width: 560px) {
-  html[data-layout='touch'] .name {
-    display: none;
+/* Narrow touch screens: the tabs get their own full-width row under the bar */
+@media (max-width: 700px) {
+  html[data-layout='touch'] .top {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 0 12px;
+    padding-top: 8px;
   }
+  html[data-layout='touch'] .status {
+    padding-bottom: 8px;
+  }
+  html[data-layout='touch'] .tabs {
+    order: 3;
+    flex: 1 0 100%;
+    height: 48px;
+    margin: 0 -8px;
+    border-top: 1px solid theme('colors.camera.subtle');
+  }
+  html[data-layout='touch'] .tabs a {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 0 8px;
+  }
+  html[data-layout='touch'] .tabs a[aria-current='page']::after {
+    left: 8px;
+    right: 8px;
+  }
+  html[data-layout='touch'] .batt {
+    display: inline-flex;
+  }
+}
+html[data-layout='touch'] .count {
+  font-size: var(--fs-min);
+  line-height: 16px;
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup>
 /** Top-left pill of live view tools (icon + label); scrolls horizontally when narrow.
- * `compact` (touch, outside the image): two tools inline, the rest under a More button. */
+ * `compact` (touch portrait / narrow): two tools inline, the rest under a More button. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { useLiveViewStore } from '@/stores/liveview'
@@ -74,7 +74,7 @@ onBeforeUnmount(() => ro?.disconnect())
         :data-testid="`lv-tool-${t.key}`"
         :aria-pressed="t.pressed ?? lv.tools[t.key]"
         :title="t.title || t.label"
-        :aria-label="t.aria"
+        :aria-label="t.aria || t.label"
         @click="run(t)"
       >
         <UiIcon :name="t.icon" :size="16" />
@@ -107,6 +107,7 @@ onBeforeUnmount(() => ro?.disconnect())
         :data-testid="`lv-tool-${t.key}`"
         :aria-pressed="t.pressed ?? lv.tools[t.key]"
         :title="t.title || t.label"
+        :aria-label="t.aria || t.label"
         @click="run(t)"
       >
         <UiIcon :name="t.icon" :size="16" />
@@ -198,5 +199,23 @@ button[aria-pressed='true'] {
 html[data-layout='touch'] button {
   height: 44px;
   padding: 0 14px;
+}
+html[data-layout='touch'] .lv-toolbar,
+html[data-layout='touch'] .lv-morepop {
+  gap: 4px;
+}
+/* Touch: icon-only once the frame is too narrow for the labels (the labels stay as accessible names) */
+@container lv (max-width: 840px) {
+  html[data-layout='touch'] .lv-toolbar:not(.wrap) button span {
+    display: none;
+  }
+  html[data-layout='touch'] .lv-toolbar:not(.wrap) button {
+    padding: 0;
+    width: 44px;
+    justify-content: center;
+  }
+}
+html[data-layout='touch'] button {
+  font-size: var(--fs-min);
 }
 </style>

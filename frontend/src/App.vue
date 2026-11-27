@@ -9,7 +9,6 @@ import { computed, provide, readonly, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useEventsStore } from '@/stores/events'
 import { useHotkeys } from '@/composables'
-import { useLayoutMode } from '@/composables/useLayoutMode'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -18,6 +17,7 @@ import AppHeader from '@/components/shell/AppHeader.vue'
 import ApiKeyPrompt from '@/components/shell/ApiKeyPrompt.vue'
 import JobsPanel from '@/components/shell/JobsPanel.vue'
 import ToastHost from '@/components/shell/ToastHost.vue'
+import OnScreenKeyboard from '@/components/shell/OnScreenKeyboard.vue'
 import { TABS, useTabs } from '@/components/shell/useTabs'
 import { useCameraStatus } from '@/components/shell/useCameraStatus'
 import ShootView from '@/views/ShootView.vue'
@@ -27,7 +27,6 @@ import SettingsView from '@/views/SettingsView.vue'
 
 const auth = useAuthStore()
 const events = useEventsStore()
-const { isTouch } = useLayoutMode()
 const { stripe } = useCameraStatus()
 
 const VIEWS = {
@@ -139,22 +138,10 @@ const SHORTCUTS = [
       </KeepAlive>
     </main>
 
-    <nav v-if="isTouch" class="bottomnav" aria-label="Sections" data-test="bottomnav">
-      <a
-        v-for="t in TABS"
-        :key="t.id"
-        :href="`#/${t.id}`"
-        :aria-current="activeTab === t.id ? 'page' : undefined"
-        @click.prevent="select(t.id)"
-      >
-        <UiIcon :name="t.icon" :size="22" />
-        <span>{{ t.label }}</span>
-      </a>
-    </nav>
-
     <JobsPanel :open="jobsOpen" @close="jobsOpen = false" />
     <ApiKeyPrompt />
     <ToastHost />
+    <OnScreenKeyboard />
 
     <UiModal :open="helpOpen" title="Keyboard shortcuts" @close="helpOpen = false">
       <dl class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-sm">
@@ -168,15 +155,6 @@ const SHORTCUTS = [
     </UiModal>
   </div>
 </template>
-
-<style>
-:root {
-  --nav: 0px;
-}
-html[data-layout='touch'] {
-  --nav: 69px;
-}
-</style>
 
 <style scoped>
 .stripe {
@@ -227,7 +205,7 @@ html[data-layout='touch'] .warn-bar {
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(24px + var(--nav))
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 24px
     max(16px, env(safe-area-inset-left, 0px));
 }
 kbd {
@@ -243,35 +221,7 @@ kbd {
     Menlo,
     monospace;
 }
-.bottomnav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  background: theme('colors.camera.surface');
-  border-top: 1px solid theme('colors.camera.subtle');
-  padding: 6px max(8px, env(safe-area-inset-left, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
-    max(8px, env(safe-area-inset-right, 0px));
-}
-.bottomnav a {
-  display: grid;
-  justify-items: center;
-  gap: 3px;
-  min-height: 56px;
-  padding: 6px 0;
-  border-radius: theme('borderRadius.inner');
-  color: theme('colors.camera.muted');
-  font-size: 12px;
-  font-weight: 500;
-  text-decoration: none;
-}
-.bottomnav a:active {
-  background: theme('colors.camera.raised');
-}
-.bottomnav a[aria-current='page'] {
-  color: theme('colors.camera.accent');
+html[data-layout='touch'] kbd {
+  font-size: var(--fs-min);
 }
 </style>

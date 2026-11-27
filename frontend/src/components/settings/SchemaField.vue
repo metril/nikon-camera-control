@@ -60,6 +60,7 @@ const readable = computed(() => {
       :min="field.min"
       :max="field.max"
       :step="field.step"
+      :decimals="field.kind === 'number' ? 6 : 0"
       :unit="field.unit"
       @update:model-value="emit('update:modelValue', $event)"
     />

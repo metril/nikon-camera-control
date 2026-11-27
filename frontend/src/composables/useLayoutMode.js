@@ -1,4 +1,4 @@
-import { computed, effectScope, ref, watchEffect } from 'vue'
+import { computed, effectScope, getCurrentInstance, onBeforeUnmount, ref, watchEffect } from 'vue'
 
 const KEY = 'layout'
 const PREFS = ['auto', 'desktop', 'touch']
@@ -61,6 +61,24 @@ function setPref(v) {
   } catch {
     /* storage unavailable: the preference lasts for this session */
   }
+}
+
+/** Wide landscape screens (the kiosk): the touch layout then uses the desktop structure. */
+export const TOUCH_LANDSCAPE = '(min-width: 900px) and (orientation: landscape)'
+/** Reactive match of TOUCH_LANDSCAPE (false where media queries are unavailable). */
+export function useTouchLandscape() {
+  const on = ref(false)
+  let mq = null
+  const set = (e) => (on.value = e.matches)
+  try {
+    mq = window.matchMedia?.(TOUCH_LANDSCAPE) || null
+    if (mq) on.value = mq.matches
+    mq?.addEventListener?.('change', set)
+  } catch {
+    /* no media queries: portrait behaviour */
+  }
+  if (getCurrentInstance()) onBeforeUnmount(() => mq?.removeEventListener?.('change', set))
+  return on
 }
 
 /** Test hook: forget shared state so each test starts clean. */

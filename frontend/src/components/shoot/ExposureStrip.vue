@@ -117,7 +117,8 @@ const cells = computed(() => {
       editable: on.value && editable,
       hint,
       tone,
-      explain: !!hint && on.value && !!s && key !== 'meter' && key !== 'shots',
+      // every cell with a hint can be tapped to read it (touch has no hover tooltips)
+      explain: !!hint && on.value && (!!s || key === 'meter' || key === 'shots'),
     }
   })
 })
@@ -145,11 +146,22 @@ const pickerOptions = computed(() => {
   const s = settingFor(k)
   return choicesOf(k).map((c) => optionFor(k, c, s?.value))
 })
+const openCell = computed(() => cells.value.find((x) => x.key === open.value))
+// meter and shots have no values to pick: the hint is the whole content
+const infoOnly = computed(() => open.value === 'meter' || open.value === 'shots')
 const pickerLocked = computed(() => {
-  const c = cells.value.find((x) => x.key === open.value)
-  if (!c || c.editable || open.value === 'preset') return ''
+  const c = openCell.value
+  if (!c || c.editable || open.value === 'preset' || infoOnly.value) return ''
   return c.auto ? `Set by mode ${letter.value}` : c.hint
 })
+const pickerEmpty = computed(() => {
+  if (open.value === 'preset') return 'No presets yet.'
+  if (infoOnly.value) return openCell.value?.hint || ''
+  return 'The camera lists no other values.'
+})
+const steppable = computed(
+  () => !!openCell.value?.editable && open.value !== 'preset' && !!choicesOf(open.value).length,
+)
 
 function openPicker(c) {
   if (open.value === c.key) return (open.value = null)
@@ -282,7 +294,9 @@ watch(open, async (k, was) => {
       :anchor="anchorEl"
       :locked-reason="pickerLocked"
       :two-line="open === 'mode' || open === 'preset'"
-      :empty-text="open === 'preset' ? 'No presets yet.' : 'The camera lists no other values.'"
+      :empty-text="pickerEmpty"
+      :steppable="steppable"
+      @step="(dir) => step(open, dir)"
       @select="onSelect"
       @close="open = null"
     >
@@ -412,5 +426,13 @@ watch(open, async (k, was) => {
   .cell .auto {
     display: none;
   }
+}
+html[data-layout='touch'] .cell .auto {
+  display: inline-flex;
+  font-size: var(--fs-min, 13px);
+}
+html[data-layout='touch'] .cell .k,
+html[data-layout='touch'] .cell .auto {
+  font-size: var(--fs-min);
 }
 </style>

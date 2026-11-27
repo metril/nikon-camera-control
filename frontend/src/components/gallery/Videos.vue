@@ -226,4 +226,7 @@ async function remove(v) {
     grid-column: 1 / -1;
   }
 }
+html[data-layout='touch'] .video-row {
+  font-size: var(--fs-min);
+}
 </style>
