@@ -3097,6 +3097,14 @@
             ],
             "title": "Display scale",
             "type": "string"
+          },
+          "sleep_after_min": {
+            "default": 5,
+            "description": "Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.",
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Kiosk screen sleep",
+            "type": "integer"
           }
         },
         "title": "Kiosk",
@@ -3123,9 +3131,50 @@
             ],
             "description": "Size of the touchscreen kiosk's interface. Auto works it out from the screen.",
             "title": "Scale"
+          },
+          "sleep_after_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.",
+            "title": "Sleep After Min"
           }
         },
         "title": "KioskConfigPatch",
+        "type": "object"
+      },
+      "KioskDisplayIn": {
+        "additionalProperties": false,
+        "properties": {
+          "on": {
+            "description": "True to wake the kiosk screen, false to let it sleep.",
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "KioskDisplayIn",
+        "type": "object"
+      },
+      "KioskDisplayOut": {
+        "properties": {
+          "on": {
+            "description": "The recorded display state.",
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "KioskDisplayOut",
         "type": "object"
       },
       "LastFrame": {
@@ -7182,7 +7231,7 @@
   },
   "info": {
     "title": "Nikon Camera Control",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -11557,6 +11606,124 @@
         "summary": "Get Job",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/v1/kiosk/display": {
+      "get": {
+        "description": "Open, read-only stream of whether the kiosk screen should be on or off.\n\nSends the current state on connect and on every change, and `on` whenever the sleep\nsetting is set to 0 (never). Open like the scale stream.",
+        "operationId": "stream_kiosk_display",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "One `data: on` or `data: off` line per state"
+          }
+        },
+        "summary": "Stream Kiosk Display",
+        "tags": [
+          "kiosk"
+        ]
+      },
+      "post": {
+        "description": "Record the kiosk screen state (the kiosk page sends off when idle, on at a touch).",
+        "operationId": "set_kiosk_display",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KioskDisplayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KioskDisplayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Camera unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Set Kiosk Display",
+        "tags": [
+          "kiosk"
         ]
       }
     },

@@ -25,6 +25,11 @@ html[data-layout='touch'] {
   --fs-min: 13px; /* smallest text on touch */
 }
 
+/* Reserve the scrollbar's width so pages that scroll and pages that don't line up */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

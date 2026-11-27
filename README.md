@@ -32,7 +32,7 @@ mkdir -p data && sudo chown 1000:1000 data
 docker compose -f compose.yaml up -d   # pulls ghcr.io/metril/nikon-camera-control (amd64 and arm64)
 ```
 
-**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.6.0`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` is kept.
+**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.6.1`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` is kept.
 
 Open http://localhost:8000 and press Connect. Replugging or power-cycling the camera does not require a container restart (the compose file bind-mounts `/dev/bus/usb`, so the new device node is visible).
 
@@ -120,6 +120,7 @@ docker compose -f docker/compose.yaml --profile kiosk up -d
 - The container starts as root only to run `seatd`, then cage and Chromium run as an unprivileged user. Not privileged, no added capabilities; Chromium runs with `--no-sandbox` because the container is the sandbox.
 - `/dev/input` is bind-mounted with a device cgroup rule, and the entrypoint watches `/run/udev/data` (inotify), so a touchscreen that is unplugged and replugged works again within seconds (the compositor restarts). udev events don't reach the container, so libinput can't see hotplug itself.
 - Display scale: Settings > Display > "Kiosk display scale" (Auto, 1x, 1.25x, 1.5x, 2x). Auto derives it from the screen's EDID physical size and resolution (about 96 PPI = 1x, clamped to 1-2x, 1x if unknown). A change relaunches the kiosk browser. The kiosk reads it from the open `GET /api/v1/kiosk/scale` event stream.
+- Screen sleep: Settings > Display > "Kiosk screen sleep" (minutes without a touch, default 5, 0 keeps the screen on). The kiosk page (URL has `kiosk=1`, other browsers never sleep) then covers itself with a black overlay and posts `POST /api/v1/kiosk/display {"on": false}`; the next touch is swallowed, wakes it and posts `on`. The state is also on the open `GET /api/v1/kiosk/display` event stream (`data: on` / `data: off`). The kiosk container follows that stream and switches the panel off/on (DPMS) with `wlopm`; its cage is Debian's 0.2.0 rebuilt with a small patch (`docker/kiosk/cage-output-power.patch`) adding wlr-output-power-management. Whether a given panel turns its backlight off on HDMI DPMS depends on the monitor.
 - Rotate the screen: run `docker exec nikon-camera-control-kiosk wlr-randr --output HDMI-A-1 --transform 90` (env `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR=/tmp/xdg` may be needed, run as user `kiosk`), or add cage's `-r` flag in `docker/kiosk/entrypoint.sh`.
 - Check GPU acceleration: open `chrome://gpu` on the kiosk (or `docker logs nikon-camera-control-kiosk`) and look for hardware acceleration and VA-API.
 

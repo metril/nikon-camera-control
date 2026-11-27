@@ -1,0 +1,106 @@
+diff -ruN a/cage.c b/cage.c
+--- a/cage.c
++++ b/cage.c
+@@ -29,6 +29,7 @@
+ #include <wlr/types/wlr_idle_notify_v1.h>
+ #include <wlr/types/wlr_output_layout.h>
+ #include <wlr/types/wlr_output_management_v1.h>
++#include <wlr/types/wlr_output_power_management_v1.h>
+ #include <wlr/types/wlr_presentation_time.h>
+ #include <wlr/types/wlr_primary_selection_v1.h>
+ #include <wlr/types/wlr_relative_pointer_v1.h>
+@@ -497,6 +498,15 @@
+ 	server.output_manager_test.notify = handle_output_manager_test;
+ 	wl_signal_add(&server.output_manager_v1->events.test, &server.output_manager_test);
+ 
++	server.output_power_manager_v1 = wlr_output_power_manager_v1_create(server.wl_display);
++	if (!server.output_power_manager_v1) {
++		wlr_log(WLR_ERROR, "Unable to create the output power manager");
++		ret = 1;
++		goto end;
++	}
++	server.output_power_set_mode.notify = handle_output_power_set_mode;
++	wl_signal_add(&server.output_power_manager_v1->events.set_mode, &server.output_power_set_mode);
++
+ 	if (!wlr_gamma_control_manager_v1_create(server.wl_display)) {
+ 		wlr_log(WLR_ERROR, "Unable to create the gamma control manager");
+ 		ret = 1;
+diff -ruN a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -51,6 +51,7 @@
+ 
+ server_protocols = [
+   [wl_protocol_dir, 'stable/xdg-shell/xdg-shell.xml'],
++  [meson.project_source_root(), 'wlr-output-power-management-unstable-v1.xml'],
+ ]
+ 
+ server_protos_headers = []
+diff -ruN a/output.c b/output.c
+--- a/output.c
++++ b/output.c
+@@ -28,6 +28,7 @@
+ #include <wlr/types/wlr_output.h>
+ #include <wlr/types/wlr_output_layout.h>
+ #include <wlr/types/wlr_output_management_v1.h>
++#include <wlr/types/wlr_output_power_management_v1.h>
+ #include <wlr/types/wlr_scene.h>
+ #include <wlr/types/wlr_xdg_shell.h>
+ #include <wlr/util/log.h>
+@@ -398,3 +399,26 @@
+ 
+ 	wlr_output_configuration_v1_destroy(config);
+ }
++
++/* DPMS: zwlr_output_power_management_v1. Only toggles "enabled"; the output stays in the
++ * layout and scene, so input mapping and view positions are untouched. */
++void
++handle_output_power_set_mode(struct wl_listener *listener, void *data)
++{
++	struct wlr_output_power_v1_set_mode_event *event = data;
++	struct wlr_output *wlr_output = event->output;
++	bool enable = event->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON;
++
++	if (wlr_output->enabled == enable) {
++		return;
++	}
++
++	struct wlr_output_state state = {0};
++	wlr_output_state_set_enabled(&state, enable);
++	if (!wlr_output_commit_state(wlr_output, &state)) {
++		wlr_log(WLR_ERROR, "Failed to set power mode of output %s", wlr_output->name);
++	} else if (enable) {
++		wlr_output_schedule_frame(wlr_output);
++	}
++	wlr_output_state_finish(&state);
++}
+diff -ruN a/output.h b/output.h
+--- a/output.h
++++ b/output.h
+@@ -26,4 +26,6 @@
+ void handle_new_output(struct wl_listener *listener, void *data);
+ void output_set_window_title(struct cg_output *output, const char *title);
+ 
++void handle_output_power_set_mode(struct wl_listener *listener, void *data);
++
+ #endif
+diff -ruN a/server.h b/server.h
+--- a/server.h
++++ b/server.h
+@@ -7,6 +7,7 @@
+ #include <wlr/types/wlr_idle_inhibit_v1.h>
+ #include <wlr/types/wlr_idle_notify_v1.h>
+ #include <wlr/types/wlr_output_layout.h>
++#include <wlr/types/wlr_output_power_management_v1.h>
+ #include <wlr/types/wlr_relative_pointer_v1.h>
+ #include <wlr/types/wlr_xdg_decoration_v1.h>
+ #if CAGE_HAS_XWAYLAND
+@@ -56,6 +57,8 @@
+ 	struct wlr_output_manager_v1 *output_manager_v1;
+ 	struct wl_listener output_manager_apply;
+ 	struct wl_listener output_manager_test;
++	struct wlr_output_power_manager_v1 *output_power_manager_v1;
++	struct wl_listener output_power_set_mode;
+ 
+ 	struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
+ 

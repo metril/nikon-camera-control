@@ -30,6 +30,12 @@ const schema = {
       type: 'object',
       properties: {
         scale: { enum: ['auto', '1', '1.25', '1.5', '2'], type: 'string', title: 'Display scale' },
+        sleep_after_min: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 1440,
+          title: 'Kiosk screen sleep',
+        },
       },
     },
     Video: {
@@ -54,7 +60,7 @@ const schema = {
 const cfg = () => ({
   camera: { download_photos: true, filename_prefix: null, keep_card_copy: true },
   video: { crf: 23, codec: 'a' },
-  kiosk: { scale: 'auto' },
+  kiosk: { scale: 'auto', sleep_after_min: 5 },
   cors_origins: [],
   timezone: null,
   demo_camera: false,
@@ -118,6 +124,18 @@ describe('SettingsView', () => {
     await w.find('[data-test="kiosk-scale"] button:nth-child(4)').trigger('click')
     await w.find('[data-test="save"]').trigger('click')
     expect(config.patch).toHaveBeenCalledWith({ kiosk: { scale: '1.5' } })
+  })
+
+  it('saves the kiosk screen sleep minutes from the Display section', async () => {
+    const { w, config } = await setup()
+    config.patch = vi.fn(async () => config.config)
+    const row = w.find('[data-field="kiosk-sleep"]')
+    expect(row.text()).toContain('0 keeps it on')
+    expect(row.find('input').element.value).toBe('5')
+    await row.find('input').setValue('12')
+    await row.find('input').trigger('change')
+    await w.find('[data-test="save"]').trigger('click')
+    expect(config.patch).toHaveBeenCalledWith({ kiosk: { sleep_after_min: 12 } })
   })
 
   it('shows the prefix example and saves it', async () => {

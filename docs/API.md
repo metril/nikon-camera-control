@@ -1,4 +1,4 @@
-# Nikon Camera Control API 0.6.0
+# Nikon Camera Control API 0.6.1
 
 > Generated file. Do not edit. Regenerate with `make api` (`.venv/bin/python -m scripts.gen_api`); CI fails if it is stale.
 > Source of truth: route declarations and pydantic schemas. Machine-readable spec: `openapi.json`.
@@ -144,6 +144,8 @@ Every non-2xx response has the body `{"error": {"code", "message", "details", "r
 | Method | Path | operation_id | Summary |
 |---|---|---|---|
 | GET | `/api/v1/kiosk/scale` | `stream_kiosk_scale` | Stream Kiosk Scale |
+| GET | `/api/v1/kiosk/display` | `stream_kiosk_display` | Stream Kiosk Display |
+| POST | `/api/v1/kiosk/display` | `set_kiosk_display` | Set Kiosk Display |
 
 ### liveview
 
@@ -1170,6 +1172,45 @@ kiosk holds no API key, so it is open like /health.
 | Status | Description | Body |
 |---|---|---|
 | 200 | One `data: <scale>` line per value | `text/event-stream`: `string(binary)` |
+
+### `GET /api/v1/kiosk/display`
+
+operation_id: `stream_kiosk_display`
+
+Open, read-only stream of whether the kiosk screen should be on or off.
+
+Sends the current state on connect and on every change, and `on` whenever the sleep
+setting is set to 0 (never). Open like the scale stream.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | One `data: on` or `data: off` line per state | `text/event-stream`: `string(binary)` |
+
+### `POST /api/v1/kiosk/display`
+
+operation_id: `set_kiosk_display`
+
+Record the kiosk screen state (the kiosk page sends off when idle, on at a touch).
+
+**Request body** (`application/json`): `KioskDisplayIn`
+
+| Field | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `on` | boolean | yes |  |  | True to wake the kiosk screen, false to let it sleep. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | Successful Response | `application/json`: `KioskDisplayOut` |
+| 401 | Missing or invalid API key | `application/json`: `ErrorResponse` |
+| 404 | Not found | `application/json`: `ErrorResponse` |
+| 409 | Conflict with current state | `application/json`: `ErrorResponse` |
+| 422 | Validation error | `application/json`: `ErrorResponse` |
+| 500 | Internal error | `application/json`: `ErrorResponse` |
+| 503 | Camera unavailable | `application/json`: `ErrorResponse` |
 
 ## liveview
 
@@ -2508,6 +2549,7 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | liveview | `jpeg_quality` | integer | `75` | `>=10`, `<=100` | Quality used when re-encoding streamed frames. |
 | liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Shrink frames wider than this, in pixels. Leave empty to turn off. |
 | kiosk | `scale` | enum("auto", "1", "1.25", "1.5", "2") | `"auto"` |  | Size of the touchscreen kiosk's interface. Auto works it out from the screen. |
+| kiosk | `sleep_after_min` | integer | `5` | `>=0`, `<=1440` | Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on. |
 | timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | The shortest time allowed between frames. |
 | timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | A time-lapse stops after this long. |
 | timelapse | `failure_budget` | integer | `5` | `>=1`, `<=100` | Stop the time-lapse after this many failed frames in a row. |

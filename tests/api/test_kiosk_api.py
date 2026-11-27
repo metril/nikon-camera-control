@@ -16,8 +16,9 @@ URL = "/api/v1/kiosk/scale"
 class Stream:
     """Drive the ASGI app directly: httpx buffers whole bodies, so it can't read an open stream."""
 
-    def __init__(self, app: FastAPI) -> None:
+    def __init__(self, app: FastAPI, url: str = URL) -> None:
         self.app = app
+        self.url = url
         self.chunks: asyncio.Queue[str] = asyncio.Queue()
         self.disconnect = asyncio.Event()
         self.headers: dict[str, str] = {}
@@ -27,7 +28,7 @@ class Stream:
     async def start(self) -> None:
         scope = {
             "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
-            "path": URL, "raw_path": URL.encode(), "query_string": b"", "headers": [],
+            "path": self.url, "raw_path": self.url.encode(), "query_string": b"", "headers": [],
             "server": ("t", 80), "client": ("c", 1), "scheme": "http", "root_path": "",
         }  # fmt: skip
 
@@ -99,3 +100,83 @@ async def test_idle_stream_sends_ping(
     s.disconnect.set()
     assert s.task is not None
     await asyncio.wait_for(s.task, 20)
+
+
+DISPLAY = "/api/v1/kiosk/display"
+
+
+async def test_default_sleep_is_five_minutes(config_store: ConfigStore) -> None:
+    assert config_store.config.kiosk.sleep_after_min == 5
+
+
+async def test_invalid_sleep_rejected(client: httpx.AsyncClient) -> None:
+    for bad in (-1, 1441, "never", 1.5):
+        r = await client.patch("/api/v1/config", json={"kiosk": {"sleep_after_min": bad}})
+        assert r.status_code in (400, 422), bad
+    for ok in (0, 1, 1440):
+        r = await client.patch("/api/v1/config", json={"kiosk": {"sleep_after_min": ok}})
+        assert r.status_code == 200, ok
+
+
+async def test_display_stream_open_without_key_sends_state_and_pushes(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    key = (await client.post("/api/v1/config/api-key")).json()["api_key"]  # auth on
+    h = {"X-API-Key": key}
+    s = Stream(app, DISPLAY)  # the stream stays open without a key
+    await s.start()
+    assert await s.next_data() == "on"
+    assert s.status == 200 and s.headers["content-type"].startswith("text/event-stream")
+    r = await client.post(DISPLAY, json={"on": False}, headers=h)
+    assert r.status_code == 200 and r.json() == {"on": False}
+    assert await s.next_data() == "off"
+    await client.post(DISPLAY, json={"on": True}, headers=h)
+    assert await s.next_data() == "on"
+    s.disconnect.set()
+    assert s.task is not None
+    await asyncio.wait_for(s.task, 20)
+    late = Stream(app, DISPLAY)  # a new connection gets the current state
+    await client.post(DISPLAY, json={"on": False}, headers=h)
+    await late.start()
+    assert await late.next_data() == "off"
+    late.disconnect.set()
+    assert late.task is not None
+    await asyncio.wait_for(late.task, 20)
+
+
+async def test_display_post_requires_key_when_set(client: httpx.AsyncClient) -> None:
+    key = (await client.post("/api/v1/config/api-key")).json()["api_key"]
+    assert (await client.post(DISPLAY, json={"on": False})).status_code == 401
+    ok = await client.post(DISPLAY, json={"on": False}, headers={"X-API-Key": key})
+    assert ok.status_code == 200
+
+
+async def test_sleep_setting_off_pushes_on(
+    app: FastAPI, client: httpx.AsyncClient, config_store: ConfigStore
+) -> None:
+    s = Stream(app, DISPLAY)
+    await s.start()
+    assert await s.next_data() == "on"
+    await client.post(DISPLAY, json={"on": False})
+    assert await s.next_data() == "off"
+    config_store.update({"kiosk": {"sleep_after_min": 10}})  # not 0: no event
+    config_store.update({"kiosk": {"sleep_after_min": 0}})
+    assert await s.next_data() == "on"
+    s.disconnect.set()
+    assert s.task is not None
+    await asyncio.wait_for(s.task, 20)
+
+
+async def test_display_stream_pings_and_unsubscribes(
+    app: FastAPI, config_store: ConfigStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(kiosk, "PING_INTERVAL_S", 0.05)
+    before = len(config_store._subscribers)
+    s = Stream(app, DISPLAY)
+    await s.start()
+    assert await s.next_data() == "on"
+    assert await asyncio.wait_for(s.chunks.get(), 5) == ": ping\n\n"
+    s.disconnect.set()
+    assert s.task is not None
+    await asyncio.wait_for(s.task, 20)
+    assert len(config_store._subscribers) == before
