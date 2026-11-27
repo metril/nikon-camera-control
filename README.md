@@ -32,7 +32,7 @@ mkdir -p data && sudo chown 1000:1000 data
 docker compose -f compose.yaml up -d   # pulls ghcr.io/metril/nikon-camera-control (amd64 and arm64)
 ```
 
-**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.6.1`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` is kept.
+**Version:** `docker/compose.yaml` pins a release tag (`image: ghcr.io/metril/nikon-camera-control:0.7.0`). Edit the tag to pick another version (`0.2` follows the latest patch of a minor, `latest` the newest release). **Upgrade:** change the tag, then `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d`. Your `data/` is kept.
 
 Open http://localhost:8000 and press Connect. Replugging or power-cycling the camera does not require a container restart (the compose file bind-mounts `/dev/bus/usb`, so the new device node is visible).
 

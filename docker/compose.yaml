@@ -2,7 +2,7 @@
 # Everything is configured in the web UI (Settings); there is no environment configuration.
 services:
   nikon-camera-control:
-    image: ghcr.io/metril/nikon-camera-control:0.6.1
+    image: ghcr.io/metril/nikon-camera-control:0.7.0
     container_name: nikon-camera-control
     ports:
       - "8000:8000"
@@ -63,7 +63,7 @@ services:
   # Enable with:  docker compose --profile kiosk up -d
   kiosk:
     profiles: [kiosk]
-    image: ghcr.io/metril/nikon-camera-control-kiosk:0.6.1
+    image: ghcr.io/metril/nikon-camera-control-kiosk:0.7.0
     container_name: nikon-camera-control-kiosk
     restart: unless-stopped
     depends_on:
