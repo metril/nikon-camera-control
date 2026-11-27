@@ -52,42 +52,7 @@ async function expectFits(page) {
 // test.fail() so CI stays green; remove an entry once its view is reworked (a passing
 // test.fail() case fails the run, which prompts exactly that).
 // Key: `${project}: ${title}`.
-const KNOWN_FAILING = new Set([
-  'touch: timelapse fits the viewport',
-  'touch: settings fits the viewport',
-  'touch: settings section Display fits the viewport',
-  'touch: settings section Capture fits the viewport',
-  'touch: settings section Storage fits the viewport',
-  'touch: settings section Camera fits the viewport',
-  'touch: settings section Live view fits the viewport',
-  'touch: settings section Time-lapse fits the viewport',
-  'touch: settings section Video fits the viewport',
-  'touch: settings section Media fits the viewport',
-  'touch: settings section Advanced fits the viewport',
-  'touch: settings section Demo camera fits the viewport',
-  'touch: settings section API key fits the viewport',
-  'touch: settings section About fits the viewport',
-  'touch: timelapse tab Timing fits the viewport',
-  'touch: timelapse tab Bracket fits the viewport',
-  'touch: timelapse tab Run fits the viewport',
-  'touch: timelapse tab Sessions fits the viewport',
-  'touch: gallery selection mode fits the viewport',
-  'desktop: timelapse fits the viewport',
-  'desktop: settings fits the viewport',
-  'desktop: settings section Display fits the viewport',
-  'desktop: settings section Capture fits the viewport',
-  'desktop: settings section Storage fits the viewport',
-  'desktop: settings section Camera fits the viewport',
-  'desktop: settings section Live view fits the viewport',
-  'desktop: settings section Time-lapse fits the viewport',
-  'desktop: settings section Video fits the viewport',
-  'desktop: settings section Media fits the viewport',
-  'desktop: settings section Advanced fits the viewport',
-  'desktop: settings section Demo camera fits the viewport',
-  'desktop: settings section API key fits the viewport',
-  'desktop: settings section About fits the viewport',
-  'desktop: gallery selection mode fits the viewport',
-])
+const KNOWN_FAILING = new Set([])
 
 let touch = false
 test.beforeEach(({ hasTouch }, info) => {
@@ -132,6 +97,34 @@ for (const t of TIMELAPSE_TABS) {
 
 test('gallery selection mode fits the viewport', async ({ page }) => {
   await open(page, 'gallery', touch)
-  await control(page, /^select/i).click()
+  // The e2e server pins a fixed target (seeded files) that /locations doesn't list, so present
+  // it as the chosen drive: the Saved view needs a target, as on a real install.
+  await page.route('**/api/v1/locations', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    body.locations = [
+      ...body.locations,
+      {
+        id: 'fixed',
+        kind: 'usb',
+        name: 'Seeded',
+        auto_mount: false,
+        configured: true,
+        present: true,
+        mounted: true,
+        supported: true,
+        has_password: false,
+        is_target: true,
+        is_backup: false,
+        size: 64e9,
+        free: 32e9,
+      },
+    ]
+    body.target_id = 'fixed'
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.reload()
+  await page.getByRole('radio', { name: /seeded/i }).click()
+  await control(page, /^select$/i).click({ timeout: 15000 })
   await expectFits(page)
 })
