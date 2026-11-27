@@ -67,7 +67,7 @@ const cfg = () => ({
   api_key_set: false,
 })
 
-async function setup({ target = null } = {}) {
+async function setup({ target = null, attach = false } = {}) {
   const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
   const config = useConfigStore()
   config.fetch = vi.fn(async () => (config.config = cfg()))
@@ -88,23 +88,37 @@ async function setup({ target = null } = {}) {
         auth_enabled: false,
       }),
   )
-  const w = mount(SettingsView, { global: { plugins: [pinia] } })
+  const w = mount(SettingsView, {
+    attachTo: attach ? document.body : undefined,
+    global: { plugins: [pinia] },
+  })
   await flushPromises()
   return { w, config, auth, admin }
+}
+
+const open = async (w, id) => {
+  await w.find(`[data-chip="${id}"]`).trigger('click')
+  await flushPromises()
 }
 
 describe('SettingsView', () => {
   beforeEach(() => localStorage.clear())
 
-  it('renders fields from the schema and About info', async () => {
+  it('shows one section at a time and renders schema fields, About and the key status', async () => {
     const { w } = await setup()
-    expect(w.find('[data-field="crf"]').exists()).toBe(true)
+    expect(w.find('[data-section="display"]').exists()).toBe(true)
+    expect(w.find('[data-section="video"]').exists()).toBe(false)
+    await open(w, 'video')
+    expect(w.find('[data-section="display"]').exists()).toBe(false)
     expect(w.find('[data-field="codec"]').exists()).toBe(true)
+    await open(w, 'general')
     expect(w.find('[data-field="cors_origins"]').exists()).toBe(true)
+    await open(w, 'about')
     expect(w.find('[data-test="version"]').text()).toBe('1.2.3')
     expect(w.find('[data-test="backend"]').text()).toBe('Demo camera')
     expect(w.find('[data-test="ffmpeg"]').text()).toBe('Available')
     expect(w.find('[data-test="libgphoto2"]').text()).toBe('2.5.31')
+    await open(w, 'api-key')
     expect(w.find('[data-test="key-status"]').text()).toBe('Not set')
   })
 
@@ -140,6 +154,7 @@ describe('SettingsView', () => {
 
   it('shows the prefix example and saves it', async () => {
     const { w, config } = await setup()
+    await open(w, 'capture')
     config.patch = vi.fn(async () => config.config)
     await w.find('[data-test="filename-prefix"] input').setValue('my wedding!')
     expect(w.find('[data-test="prefix-example"]').text()).toContain('my-wedding-')
@@ -149,6 +164,7 @@ describe('SettingsView', () => {
 
   it('turning downloads off locks the target, dims the copy rows and drops the example', async () => {
     const { w } = await setup()
+    await open(w, 'capture')
     await w.find('[data-test="download-photos"]').trigger('click')
     expect(w.find('[data-test="target-locked"]').text()).toContain('Locked to memory card')
     expect(w.find('[data-test="camera-target"] select').attributes('disabled')).toBeDefined()
@@ -162,6 +178,7 @@ describe('SettingsView', () => {
     const { w, admin } = await setup({
       target: { value: 'Internal RAM', choices: ['Internal RAM', 'Memory card'] },
     })
+    await open(w, 'capture')
     admin.setTarget = vi.fn(async (v) => (admin.target = { ...admin.target, value: v }))
     await w.find('[data-test="download-photos"]').trigger('click')
     await flushPromises()
@@ -171,6 +188,7 @@ describe('SettingsView', () => {
 
   it('follows a server-side config change without showing unsaved changes', async () => {
     const { w, config } = await setup()
+    await open(w, 'advanced')
     config.config = { ...cfg(), video: { crf: 18, codec: 'b' } }
     await flushPromises()
     expect(w.find('[data-test="savebar"]').exists()).toBe(false)
@@ -179,6 +197,7 @@ describe('SettingsView', () => {
 
   it('keeps unsaved edits when the server config changes', async () => {
     const { w, config } = await setup()
+    await open(w, 'advanced')
     await w.find('[data-field="crf"] input').setValue('30')
     config.config = { ...cfg(), video: { crf: 23, codec: 'b' } }
     await flushPromises()
@@ -189,6 +208,7 @@ describe('SettingsView', () => {
     const { w, config } = await setup()
     config.patch = vi.fn(async () => (config.config = { ...cfg(), video: { crf: 20, codec: 'a' } }))
     expect(w.find('[data-test="savebar"]').exists()).toBe(false)
+    await open(w, 'advanced')
     const input = w.find('[data-field="crf"] input')
     await input.setValue('20')
     expect(w.find('[data-field="crf"]').attributes('data-dirty')).toBeDefined()
@@ -210,9 +230,13 @@ describe('SettingsView', () => {
         details: { errors: [{ loc: ['body', 'video', 'crf'], msg: 'must be <= 51' }] },
       })
     })
+    await open(w, 'advanced')
     await w.find('[data-field="crf"] input').setValue('20')
+    await open(w, 'display')
     await w.find('[data-test="save"]').trigger('click')
     await flushPromises()
+    // the view jumps to the section that holds the invalid field
+    expect(w.find('[data-section="advanced"]').exists()).toBe(true)
     expect(w.find('[data-field="crf"] [data-test="field-error"]').text()).toBe('must be <= 51')
   })
 
@@ -225,6 +249,7 @@ describe('SettingsView', () => {
     await w.vm.$nextTick()
     expect(w.find('[data-test="restart"]').text()).toContain('Video › Crf')
     expect(w.find('[data-test="restart"]').text()).not.toContain('video.crf')
+    await open(w, 'video')
     await w.find('[data-field="codec"] select').setValue('b')
     await w.find('[data-test="save"]').trigger('click')
     await flushPromises()
@@ -261,14 +286,17 @@ describe('SettingsView', () => {
     await w.find('[data-test="layout"] button:last-child').trigger('click')
     expect(localStorage.getItem('layout')).toBe('touch')
     expect(document.documentElement.dataset.layout).toBe('touch')
+    await open(w, 'capture')
     expect(w.find('[data-section="capture"]').text()).toContain('Camera saves to')
     expect(w.find('[data-test="target-reason"]').text()).toContain('Connect the camera')
+    await open(w, 'camera')
     expect(w.find('[data-field="camera-clock"]').exists()).toBe(true)
   })
 
   it('shows a generated key once and requires confirmation', async () => {
     const { w, config } = await setup()
     config.createApiKey = vi.fn(async () => 'secret-key-123')
+    await open(w, 'api-key')
     await w.find('[data-test="generate"]').trigger('click')
     await flushPromises()
     const body = document.body
@@ -279,45 +307,83 @@ describe('SettingsView', () => {
     w.unmount()
   })
 
-  it('puts expert fields (CRF) in a closed Advanced disclosure that opens for unsaved edits', async () => {
+  it('puts expert fields (CRF) in the Advanced section, one tab per group, and flags unsaved edits', async () => {
     const { w } = await setup()
-    const adv = w.find('[data-test="advanced"]')
-    expect(adv.attributes('open')).toBeUndefined()
-    expect(adv.find('[data-field="crf"]').exists()).toBe(true)
-    expect(w.find('[data-section="video"] [data-field="crf"]').exists()).toBe(false)
-    expect(w.find('[data-section="video"] [data-field="codec"]').exists()).toBe(true)
-    await adv.find('[data-field="crf"] input').setValue('30')
-    expect(w.find('[data-test="advanced"]').attributes('open')).toBeDefined()
+    expect(w.find('[data-field="crf"]').exists()).toBe(false)
+    await open(w, 'advanced')
+    expect(w.find('[data-test="adv-tabs"] [data-tab="video"]').exists()).toBe(true)
+    await w.find('[data-field="crf"] input').setValue('30')
+    expect(w.find('[data-chip="advanced"] [data-test="nav-dot"]').exists()).toBe(true)
+    expect(w.find('[data-tab="video"] [aria-label="Unsaved change"]').exists()).toBe(true)
+    await open(w, 'display')
+    await open(w, 'advanced')
+    expect(w.find('[data-field="crf"] input').element.value).toBe('30')
   })
 
-  it('lists the sections as chips and scrolls to the chosen one', async () => {
+  it('lists the sections from data and opens the chosen one', async () => {
     const { w } = await setup()
-    const scroll = vi.fn()
-    Element.prototype.scrollIntoView = scroll
     const chips = w
-      .findAll('[data-test="section-index"] button')
+      .findAll('[data-test="section-index"] [data-chip]')
       .map((b) => b.attributes('data-chip'))
     expect(chips).toEqual(
       expect.arrayContaining(['display', 'capture', 'storage', 'api-key', 'about']),
     )
-    await w.find('[data-chip="storage"]').trigger('click')
-    // the section scrolls into view, and the chip row keeps the chosen chip visible
-    expect(scroll.mock.contexts.map((el) => el.dataset.section || el.dataset.chip)).toEqual([
-      'storage',
-      'storage',
-    ])
-    expect(scroll.mock.contexts[1].dataset.chip).toBe('storage')
+    await open(w, 'storage')
+    expect(w.find('[data-chip="storage"]').attributes('aria-current')).toBe('true')
+    expect(w.find('[data-section="storage"]').exists()).toBe(true)
+    expect(w.find('[data-section="display"]').exists()).toBe(false)
   })
 
   it('follows a #/settings?section= deep link', async () => {
     const { w } = await setup()
-    const scroll = vi.fn()
-    Element.prototype.scrollIntoView = scroll
     routeQuery.value = { section: 'api-key' }
     await flushPromises()
-    expect(scroll.mock.contexts[0].dataset.section).toBe('api-key')
+    expect(w.find('[data-section="api-key"]').exists()).toBe(true)
+    expect(w.find('[data-section="display"]').exists()).toBe(false)
     routeQuery.value = {}
     w.unmount()
+  })
+
+  it('searches rows across sections, with KIOSK tags, and clears with Escape', async () => {
+    useLayoutMode().setPref('desktop')
+    const { w } = await setup()
+    expect(w.find('[data-test="row-tag"]').text()).toBe('KIOSK')
+    const input = w.find('[data-test="search"]')
+    await input.setValue('quality')
+    const shown = w.findAll('[data-field]').filter((r) => r.element.style.display !== 'none')
+    expect(shown.map((r) => r.attributes('data-field'))).toEqual(['crf'])
+    await input.setValue('kiosk')
+    expect(
+      w
+        .findAll('[data-field]')
+        .filter((r) => r.element.style.display !== 'none')
+        .map((r) => r.attributes('data-field')),
+    ).toEqual(['kiosk-scale', 'kiosk-sleep'])
+    await input.setValue('zzzz')
+    expect(w.find('[data-test="no-results"]').exists()).toBe(true)
+    await input.trigger('keydown', { key: 'Escape' })
+    expect(w.find('[data-test="no-results"]').exists()).toBe(false)
+    expect(w.find('[data-section="display"]').exists()).toBe(true)
+    useLayoutMode().setPref('auto')
+    w.unmount()
+  })
+
+  it('"/" focuses the search and Ctrl+S saves (desktop only)', async () => {
+    useLayoutMode().setPref('desktop')
+    const { w: m, config } = await setup({ attach: true })
+    config.patch = vi.fn(async () => config.config)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '/' }))
+    expect(document.activeElement).toBe(m.find('[data-test="search"]').element)
+    await m.find('[data-test="hints"]').trigger('click')
+    await m.find('[data-test="kiosk-sleep"] input').setValue('9')
+    await m.find('[data-test="kiosk-sleep"] input').trigger('change')
+    const ev = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true })
+    document.dispatchEvent(ev)
+    await flushPromises()
+    expect(ev.defaultPrevented).toBe(true)
+    expect(config.patch).toHaveBeenCalledWith({ kiosk: { sleep_after_min: 9 } })
+    m.unmount()
+    useLayoutMode().setPref('auto')
   })
 
   it('hides the keyboard hints setting in the touch layout', async () => {
@@ -332,6 +398,7 @@ describe('SettingsView', () => {
 
   it('renames the photo copy target to Download to storage', async () => {
     const { w } = await setup()
+    await open(w, 'capture')
     expect(w.find('[data-section="capture"]').text()).toContain('Download to storage')
   })
 })

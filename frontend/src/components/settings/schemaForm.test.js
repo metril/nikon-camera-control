@@ -7,6 +7,7 @@ import {
   describeField,
   pathTitles,
   titleForPath,
+  tagsFor,
 } from './schemaForm'
 
 const schema = {
@@ -55,6 +56,10 @@ describe('schemaForm', () => {
     expect(paths).toEqual(['video.crf', 'cors_origins'])
     expect(buildPatch(paths, draft)).toEqual({ video: { crf: 20 }, cors_origins: ['x'] })
     expect(dirtyPaths(sections, saved, saved)).toEqual([])
+  })
+  it('tags kiosk rows', () => {
+    expect(tagsFor('kiosk.scale')).toEqual(['KIOSK'])
+    expect(tagsFor('video.crf')).toEqual([])
   })
   it('maps 422 details to field paths', () => {
     expect(
