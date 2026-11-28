@@ -171,6 +171,15 @@ class KioskConfig(_Section):
             "Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on."
         ),
     )
+    sleep_mode: Literal["black", "dim", "off"] = Field(
+        default="dim",
+        title="Kiosk sleep mode",
+        description=(
+            "How the kiosk screen sleeps. Black covers it with black only. Dim also sets the "
+            "monitor's brightness to 0 over DDC. Off powers the panel off (DPMS), which may also "
+            "cut power to a touchscreen wired through the monitor's USB hub."
+        ),
+    )
 
 
 class SecurityConfig(_Section):

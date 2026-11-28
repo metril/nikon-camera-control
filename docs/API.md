@@ -1524,14 +1524,15 @@ operation_id: `stream_kiosk_display`
 
 Open, read-only stream of whether the kiosk screen should be on or off.
 
-Sends the current state on connect and on every change, and `on` whenever the sleep
-setting is set to 0 (never). Open like the scale stream.
+Sends the current state on connect and on every change (`on`, or `off <mode>` with the
+sleep mode: black, dim or off), `off <mode>` again if the mode changes while asleep, and
+`on` whenever the sleep setting is set to 0 (never). Open like the scale stream.
 
 **Responses**
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | One `data: on` or `data: off` line per state | `text/event-stream`: `string(binary)` |
+| 200 | One `data: on` or `data: off <black\|dim\|off>` line per state | `text/event-stream`: `string(binary)` |
 
 ### `POST /api/v1/kiosk/display`
 
@@ -2895,6 +2896,7 @@ Edited through the web UI / `/config` endpoints. Never through the environment.
 | liveview | `max_width` | integer \| null | `null` | `>=64`, `<=8192` | Shrink frames wider than this, in pixels. Leave empty to turn off. |
 | kiosk | `scale` | enum("auto", "1", "1.25", "1.5", "2") | `"auto"` |  | Size of the touchscreen kiosk's interface. Auto works it out from the screen. |
 | kiosk | `sleep_after_min` | integer | `5` | `>=0`, `<=1440` | Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on. |
+| kiosk | `sleep_mode` | enum("black", "dim", "off") | `"dim"` |  | How the kiosk screen sleeps. Black covers it with black only. Dim also sets the monitor's brightness to 0 over DDC. Off powers the panel off (DPMS), which may also cut power to a touchscreen wired through the monitor's USB hub. |
 | security | `secure_cookie` | enum("auto", "always") | `"auto"` |  | Auto marks the sign-in cookie Secure only when the request arrived over HTTPS. Choose Always when a reverse proxy terminates HTTPS in front of this app. |
 | timelapse | `min_interval_s` | number | `1.0` | `>=0.1`, `<=3600.0` | The shortest time allowed between frames. |
 | timelapse | `max_duration_s` | integer | `86400` | `>=60`, `<=2592000` | A time-lapse stops after this long. |

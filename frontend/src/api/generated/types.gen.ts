@@ -2125,6 +2125,12 @@ export type KioskConfig = {
      * Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.
      */
     sleep_after_min?: number;
+    /**
+     * Kiosk sleep mode
+     *
+     * How the kiosk screen sleeps. Black covers it with black only. Dim also sets the monitor's brightness to 0 over DDC. Off powers the panel off (DPMS), which may also cut power to a touchscreen wired through the monitor's USB hub.
+     */
+    sleep_mode?: 'black' | 'dim' | 'off';
 };
 
 /**
@@ -2143,6 +2149,12 @@ export type KioskConfigPatch = {
      * Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.
      */
     sleep_after_min?: number | null;
+    /**
+     * Sleep Mode
+     *
+     * How the kiosk screen sleeps. Black covers it with black only. Dim also sets the monitor's brightness to 0 over DDC. Off powers the panel off (DPMS), which may also cut power to a touchscreen wired through the monitor's USB hub.
+     */
+    sleep_mode?: 'black' | 'dim' | 'off' | null;
 };
 
 /**
@@ -7444,7 +7456,7 @@ export type StreamKioskDisplayData = {
 
 export type StreamKioskDisplayResponses = {
     /**
-     * One `data: on` or `data: off` line per state
+     * One `data: on` or `data: off <black|dim|off>` line per state
      */
     200: Blob | File;
 };

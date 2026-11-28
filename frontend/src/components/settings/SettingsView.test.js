@@ -36,6 +36,7 @@ const schema = {
           maximum: 1440,
           title: 'Kiosk screen sleep',
         },
+        sleep_mode: { enum: ['black', 'dim', 'off'], type: 'string', title: 'Kiosk sleep mode' },
       },
     },
     Video: {
@@ -60,7 +61,7 @@ const schema = {
 const cfg = () => ({
   camera: { download_photos: true, filename_prefix: null, keep_card_copy: true },
   video: { crf: 23, codec: 'a' },
-  kiosk: { scale: 'auto', sleep_after_min: 5 },
+  kiosk: { scale: 'auto', sleep_after_min: 5, sleep_mode: 'dim' },
   cors_origins: [],
   timezone: null,
   demo_camera: false,
@@ -151,6 +152,19 @@ describe('SettingsView', () => {
     await row.find('input').trigger('change')
     await w.find('[data-test="save"]').trigger('click')
     expect(config.patch).toHaveBeenCalledWith({ kiosk: { sleep_after_min: 12 } })
+  })
+
+  it('saves the kiosk sleep mode', async () => {
+    const { w, config } = await setup()
+    config.patch = vi.fn(async () => config.config)
+    const row = w.find('[data-field="kiosk-sleep-mode"]')
+    expect(row.text()).toContain('USB hub')
+    await row
+      .findAll('button')
+      .find((b) => b.text() === 'Off')
+      .trigger('click')
+    await w.find('[data-test="save"]').trigger('click')
+    expect(config.patch).toHaveBeenCalledWith({ kiosk: { sleep_mode: 'off' } })
   })
 
   it('shows the prefix example and saves it', async () => {
@@ -359,7 +373,7 @@ describe('SettingsView', () => {
         .findAll('[data-field]')
         .filter((r) => r.element.style.display !== 'none')
         .map((r) => r.attributes('data-field')),
-    ).toEqual(['kiosk-scale', 'kiosk-sleep'])
+    ).toEqual(['kiosk-scale', 'kiosk-sleep', 'kiosk-sleep-mode'])
     await input.setValue('zzzz')
     expect(w.find('[data-test="no-results"]').exists()).toBe(true)
     await input.trigger('keydown', { key: 'Escape' })

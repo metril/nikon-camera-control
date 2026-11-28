@@ -58,7 +58,7 @@ const loadError = ref('')
 const STORAGE_OWNED = ['locations', 'target_id', 'backup_ids']
 // Shown in the Capture section instead of their own section.
 // Shown in Display.
-const DISPLAY_OWNED = ['timezone', 'kiosk.scale', 'kiosk.sleep_after_min']
+const DISPLAY_OWNED = ['timezone', 'kiosk.scale', 'kiosk.sleep_after_min', 'kiosk.sleep_mode']
 const CAPTURE_OWNED = ['camera.keep_card_copy', 'camera.download_photos', 'camera.filename_prefix']
 // Expert knobs live behind the Advanced disclosure.
 const ADVANCED = [
@@ -333,6 +333,16 @@ const setKioskSleep = (v) => {
   setPath(draft.value, 'kiosk.sleep_after_min', v == null ? 0 : Math.round(v))
   delete errors.value['kiosk.sleep_after_min']
 }
+const kioskSleepMode = computed(() => getPath(draft.value, 'kiosk.sleep_mode') || 'dim')
+const setKioskSleepMode = (v) => {
+  setPath(draft.value, 'kiosk.sleep_mode', v)
+  delete errors.value['kiosk.sleep_mode']
+}
+const KIOSK_SLEEP_MODES = [
+  { value: 'black', label: 'Black' },
+  { value: 'dim', label: 'Dim' },
+  { value: 'off', label: 'Off' },
+]
 const KIOSK_SCALES = [
   { value: 'auto', label: 'Auto' },
   { value: '1', label: '1×' },
@@ -545,6 +555,22 @@ async function setLocation(id) {
                 unit="min"
                 data-test="kiosk-sleep"
                 @update:model-value="setKioskSleep"
+              />
+            </SettingRow>
+            <SettingRow
+              title="Kiosk sleep mode"
+              description="Black covers the screen only. Dim also sets the monitor brightness to 0 (DDC). Off powers the panel off, which may also cut power to a touchscreen wired through the monitor's USB hub."
+              :tags="tagsFor('kiosk.sleep_mode')"
+              :dirty="isFieldDirty('kiosk.sleep_mode')"
+              :error="errors['kiosk.sleep_mode'] || ''"
+              data-field="kiosk-sleep-mode"
+            >
+              <UiSegmented
+                :model-value="kioskSleepMode"
+                :options="KIOSK_SLEEP_MODES"
+                aria-label="Kiosk sleep mode"
+                data-test="kiosk-sleep-mode"
+                @update:model-value="setKioskSleepMode"
               />
             </SettingRow>
             <SettingRow

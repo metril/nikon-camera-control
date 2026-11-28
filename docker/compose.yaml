@@ -78,6 +78,7 @@ services:
     # a re-plugged touchscreen gets a new node, and the cgroup rule lets the container use it.
     device_cgroup_rules:
       - "c 13:* rmw"
+      - "c 89:* rmw"  # /dev/i2c-*: ddcutil sets the monitor brightness (sleep mode "dim"); the entrypoint creates the nodes (host needs i2c_dev loaded)
     # NUMERIC host gids (names would resolve inside the container). Find yours with:
     #   stat -c %g /dev/dri/card0 /dev/dri/renderD128 /dev/input/event0
     group_add:

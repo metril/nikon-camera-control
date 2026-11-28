@@ -26,7 +26,7 @@ ARG TARGETARCH
 # "cage" is installed only to pull its runtime libs (wlroots 0.18, ...); its binary is replaced below.
 RUN apt-get update \
  && pkgs="cage wlopm seatd chromium curl ca-certificates mesa-va-drivers libgl1-mesa-dri libegl1 \
-      fonts-noto-core libinput10 libudev1 libxkbcommon0 xkb-data wlr-randr util-linux inotify-tools" \
+      fonts-noto-core libinput10 libudev1 libxkbcommon0 xkb-data wlr-randr util-linux inotify-tools ddcutil" \
  && if [ "$TARGETARCH" = "amd64" ]; then pkgs="$pkgs intel-media-va-driver"; fi \
  && apt-get install -y --no-install-recommends $pkgs \
  && rm -rf /var/lib/apt/lists/* \

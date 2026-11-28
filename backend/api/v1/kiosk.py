@@ -48,18 +48,29 @@ class DisplayState:
 
     def __init__(self) -> None:
         self.on = True
+        self.mode = "dim"
         self._queues: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue[str]]] = set()
 
-    @staticmethod
-    def text(on: bool) -> str:
-        return "on" if on else "off"
+    def text(self) -> str:
+        """`on`, or `off <mode>` (black, dim or off: how the panel should sleep)."""
+        return "on" if self.on else f"off {self.mode}"
 
     def set(self, on: bool) -> None:
         if on == self.on:
             return
         self.on = on
+        self._push()
+
+    def set_mode(self, mode: str) -> None:
+        if mode == self.mode:
+            return
+        self.mode = mode
+        if not self.on:
+            self._push()
+
+    def _push(self) -> None:
         for loop, q in list(self._queues):
-            loop.call_soon_threadsafe(q.put_nowait, self.text(on))
+            loop.call_soon_threadsafe(q.put_nowait, self.text())
 
     def subscribe(self) -> tuple[asyncio.Queue[str], Callable[[], None]]:
         entry = (asyncio.get_running_loop(), asyncio.Queue[str]())
@@ -109,20 +120,23 @@ async def stream_kiosk_scale(request: Request, store: ConfigStoreDep) -> Streami
     responses={
         200: {
             "content": {"text/event-stream": {"schema": {"type": "string", "format": "binary"}}},
-            "description": "One `data: on` or `data: off` line per state",
+            "description": "One `data: on` or `data: off <black|dim|off>` line per state",
         }
     },
 )
 async def stream_kiosk_display(request: Request, store: ConfigStoreDep) -> StreamingResponse:
     """Open, read-only stream of whether the kiosk screen should be on or off.
 
-    Sends the current state on connect and on every change, and `on` whenever the sleep
-    setting is set to 0 (never). Open like the scale stream.
+    Sends the current state on connect and on every change (`on`, or `off <mode>` with the
+    sleep mode: black, dim or off), `off <mode>` again if the mode changes while asleep, and
+    `on` whenever the sleep setting is set to 0 (never). Open like the scale stream.
     """
     state = _display(request)
+    state.mode = store.config.kiosk.sleep_mode
     queue, unsubscribe_queue = state.subscribe()
 
     def on_change(new: AppConfig, old: AppConfig) -> None:
+        state.set_mode(new.kiosk.sleep_mode)
         if new.kiosk.sleep_after_min != old.kiosk.sleep_after_min and not new.kiosk.sleep_after_min:
             state.set(True)
 
@@ -132,7 +146,7 @@ async def stream_kiosk_display(request: Request, store: ConfigStoreDep) -> Strea
         unsubscribe_queue()
         unsubscribe_cfg()
 
-    return _sse(request, state.text(state.on), queue, unsubscribe)
+    return _sse(request, state.text(), queue, unsubscribe)
 
 
 @router.post(

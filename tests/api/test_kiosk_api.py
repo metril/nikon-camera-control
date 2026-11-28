@@ -129,7 +129,7 @@ async def test_display_stream_open_without_key_sends_state_and_pushes(
     assert s.status == 200 and s.headers["content-type"].startswith("text/event-stream")
     r = await client.post(DISPLAY, json={"on": False}, headers=h)
     assert r.status_code == 200 and r.json() == {"on": False}
-    assert await s.next_data() == "off"
+    assert await s.next_data() == "off dim"
     await client.post(DISPLAY, json={"on": True}, headers=h)
     assert await s.next_data() == "on"
     s.disconnect.set()
@@ -138,7 +138,7 @@ async def test_display_stream_open_without_key_sends_state_and_pushes(
     late = Stream(app, DISPLAY)  # a new connection gets the current state
     await client.post(DISPLAY, json={"on": False}, headers=h)
     await late.start()
-    assert await late.next_data() == "off"
+    assert await late.next_data() == "off dim"
     late.disconnect.set()
     assert late.task is not None
     await asyncio.wait_for(late.task, 20)
@@ -158,7 +158,7 @@ async def test_sleep_setting_off_pushes_on(
     await s.start()
     assert await s.next_data() == "on"
     await client.post(DISPLAY, json={"on": False})
-    assert await s.next_data() == "off"
+    assert await s.next_data() == "off dim"
     config_store.update({"kiosk": {"sleep_after_min": 10}})  # not 0: no event
     config_store.update({"kiosk": {"sleep_after_min": 0}})
     assert await s.next_data() == "on"
@@ -180,3 +180,34 @@ async def test_display_stream_pings_and_unsubscribes(
     assert s.task is not None
     await asyncio.wait_for(s.task, 20)
     assert len(config_store._subscribers) == before
+
+
+async def test_default_sleep_mode_and_validation(
+    config_store: ConfigStore, client: httpx.AsyncClient
+) -> None:
+    assert config_store.config.kiosk.sleep_mode == "dim"
+    assert (
+        await client.patch("/api/v1/config", json={"kiosk": {"sleep_mode": "x"}})
+    ).status_code in (400, 422)
+    for ok in ("black", "dim", "off"):
+        r = await client.patch("/api/v1/config", json={"kiosk": {"sleep_mode": ok}})
+        assert r.status_code == 200, ok
+
+
+async def test_display_stream_carries_mode_and_reemits_when_changed_asleep(
+    app: FastAPI, client: httpx.AsyncClient, config_store: ConfigStore
+) -> None:
+    config_store.update({"kiosk": {"sleep_mode": "black"}})
+    s = Stream(app, DISPLAY)
+    await s.start()
+    assert await s.next_data() == "on"
+    config_store.update({"kiosk": {"sleep_mode": "dim"}})  # awake: no event
+    await client.post(DISPLAY, json={"on": False})
+    assert await s.next_data() == "off dim"
+    config_store.update({"kiosk": {"sleep_mode": "off"}})
+    assert await s.next_data() == "off off"
+    config_store.update({"kiosk": {"sleep_after_min": 0}})
+    assert await s.next_data() == "on"
+    s.disconnect.set()
+    assert s.task is not None
+    await asyncio.wait_for(s.task, 20)

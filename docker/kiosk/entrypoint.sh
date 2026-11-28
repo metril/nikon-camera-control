@@ -79,17 +79,60 @@ display_power() {
   setpriv --reuid kiosk --regid seat --keep-groups env XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-0 \
     wlopm "--$1" '*' >/dev/null 2>&1 || true
 }
-# Follows the app's display state ("data: on" / "data: off"), same stream format as the scale one.
-# A 404 (app without the endpoint) yields no data: back off 30 s instead of 2 s.
+# Brightness (VCP 0x10) saved while dimmed: on the persistent volume, so a container restart
+# while asleep still restores it. /tmp is tmpfs.
+BRIGHT_FILE=/kiosk-profile/ddc-brightness
+# Last DPMS state (on|off); a relaunched cage applies it instead of always lighting the panel.
+DPMS_FILE=/tmp/kiosk-dpms
+# ddcutil needs the i2c nodes; the compose cgroup rule allows c 89:* but creates none.
+for n in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  [ -e "/dev/i2c-$n" ] || mknod "/dev/i2c-$n" c 89 "$n" 2>/dev/null || true
+done
+# Dim: remember the current brightness (only if not already dimmed), then set it to 0.
+# No DDC (or a failing monitor) just leaves the black overlay. Failures are ignored.
+dim_on() {
+  if [ ! -s "$BRIGHT_FILE" ]; then
+    cur=$(ddcutil --nousb getvcp 10 --brief 2>/dev/null | awk '$1 == "VCP" && $3 == "C" {print $4; exit}')
+    case "$cur" in ''|*[!0-9]*|0) cur= ;; esac
+    [ -n "$cur" ] && echo "$cur" > "$BRIGHT_FILE"
+  fi
+  ddcutil --nousb setvcp 10 0 >/dev/null 2>&1 || true
+}
+dim_off() {
+  [ -s "$BRIGHT_FILE" ] || return 0
+  ddcutil --nousb setvcp 10 "$(cat "$BRIGHT_FILE")" >/dev/null 2>&1 && rm -f "$BRIGHT_FILE"
+  return 0
+}
+# Applies the whole wanted state (idempotent), so a mode switch while asleep undoes the old action.
+# $1 on|off, $2 black|dim|off. Serialized by a lock; the stream loop calls it one event at a time.
+apply_display() {
+  dpms=on dim=0
+  if [ "$1" = off ]; then
+    case "$2" in off) dpms=off ;; dim) dim=1 ;; esac
+  fi
+  (
+    flock 9
+    echo "$dpms" > "$DPMS_FILE"
+    display_power "$dpms"
+    if [ "$dim" = 1 ]; then dim_on; else dim_off; fi
+  ) 9>/tmp/kiosk-display.lock
+}
+# Follows the app's display state ("data: on" / "data: off <black|dim|off>"), same stream format as
+# the scale one. A 404 (app without the endpoint) yields no data: back off 30 s instead of 2 s.
 watch_display() {
   while true; do
     until curl -fsS -o /dev/null "$APP/api/v1/health"; do sleep 2; done
     rm -f /tmp/kiosk-display-seen
     curl -fsSN --speed-limit 1 --speed-time 45 "$APP/api/v1/kiosk/display" 2>/dev/null | while IFS= read -r line; do
       case "$line" in
-        "data: on"|"data: off")
+        "data: on"|"data: off"|"data: off "*)
           touch /tmp/kiosk-display-seen
-          echo "kiosk: display ${line#data: }"; display_power "${line#data: }" ;;
+          echo "kiosk: display ${line#data: }"
+          # shellcheck disable=SC2086
+          set -- ${line#data: }
+          mode=${2:-black}
+          case "$mode" in black|dim|off) ;; *) mode=black ;; esac
+          apply_display "$1" "$mode" ;;
       esac
     done
     if [ -e /tmp/kiosk-display-seen ]; then sleep 2; else sleep 30; fi
@@ -177,7 +220,7 @@ while true; do
     XDG_RUNTIME_DIR=/tmp/xdg HOME=/kiosk-profile LIBSEAT_BACKEND=seatd WLR_NO_HARDWARE_CURSORS=1 \
     KIOSK_SCALE="$SCALE" PROFILE="$PROFILE" START_URL="$START_URL" \
     cage -s -- sh -c '
-      wlopm --on "*" >/dev/null 2>&1
+      if [ "$(cat /tmp/kiosk-dpms 2>/dev/null)" = off ]; then wlopm --off "*"; else wlopm --on "*"; fi >/dev/null 2>&1
       for o in $(wlr-randr | awk "/^[^ ]/ {print \$1}"); do wlr-randr --output "$o" --scale "$KIOSK_SCALE"; done
       exec chromium --kiosk --no-sandbox --ozone-platform=wayland \
         --enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL --touch-events=enabled \

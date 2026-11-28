@@ -903,8 +903,9 @@ export const getJob = <ThrowOnError extends boolean = false>(options: Options<Ge
  *
  * Open, read-only stream of whether the kiosk screen should be on or off.
  *
- * Sends the current state on connect and on every change, and `on` whenever the sleep
- * setting is set to 0 (never). Open like the scale stream.
+ * Sends the current state on connect and on every change (`on`, or `off <mode>` with the
+ * sleep mode: black, dim or off), `off <mode>` again if the mode changes while asleep, and
+ * `on` whenever the sleep setting is set to 0 (never). Open like the scale stream.
  */
 export const streamKioskDisplay = <ThrowOnError extends boolean = false>(options?: Options<StreamKioskDisplayData, ThrowOnError, StreamKioskDisplayResponse>): Promise<ServerSentEventsResult<StreamKioskDisplayResponses>> => (options?.client ?? client).sse.get<StreamKioskDisplayResponses, unknown, ThrowOnError>({ url: '/api/v1/kiosk/display', ...options });
 

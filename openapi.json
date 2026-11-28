@@ -3415,6 +3415,17 @@
             "minimum": 0.0,
             "title": "Kiosk screen sleep",
             "type": "integer"
+          },
+          "sleep_mode": {
+            "default": "dim",
+            "description": "How the kiosk screen sleeps. Black covers it with black only. Dim also sets the monitor's brightness to 0 over DDC. Off powers the panel off (DPMS), which may also cut power to a touchscreen wired through the monitor's USB hub.",
+            "enum": [
+              "black",
+              "dim",
+              "off"
+            ],
+            "title": "Kiosk sleep mode",
+            "type": "string"
           }
         },
         "title": "Kiosk",
@@ -3453,6 +3464,23 @@
             ],
             "description": "Turns the kiosk screen off after this many minutes without a touch. 0 keeps it on.",
             "title": "Sleep After Min"
+          },
+          "sleep_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "black",
+                  "dim",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the kiosk screen sleeps. Black covers it with black only. Dim also sets the monitor's brightness to 0 over DDC. Off powers the panel off (DPMS), which may also cut power to a touchscreen wired through the monitor's USB hub.",
+            "title": "Sleep Mode"
           }
         },
         "title": "KioskConfigPatch",
@@ -13499,7 +13527,7 @@
     },
     "/api/v1/kiosk/display": {
       "get": {
-        "description": "Open, read-only stream of whether the kiosk screen should be on or off.\n\nSends the current state on connect and on every change, and `on` whenever the sleep\nsetting is set to 0 (never). Open like the scale stream.",
+        "description": "Open, read-only stream of whether the kiosk screen should be on or off.\n\nSends the current state on connect and on every change (`on`, or `off <mode>` with the\nsleep mode: black, dim or off), `off <mode>` again if the mode changes while asleep, and\n`on` whenever the sleep setting is set to 0 (never). Open like the scale stream.",
         "operationId": "stream_kiosk_display",
         "responses": {
           "200": {
@@ -13511,7 +13539,7 @@
                 }
               }
             },
-            "description": "One `data: on` or `data: off` line per state"
+            "description": "One `data: on` or `data: off <black|dim|off>` line per state"
           }
         },
         "summary": "Stream Kiosk Display",
